@@ -1,0 +1,9 @@
+# Scripts shell DEVEM usar fim de linha LF.
+# Com CRLF o Termux falha com "bad interpreter: /bin/sh^M".
+# Isto substitui o "sed -i" em massa que a versao anterior rodava sobre
+# os scripts em execucao para converter CRLF (ver CORRECOES.md, secao 2.1).
+*.sh text eol=lf
+*.md text eol=lf
+.gitignore text eol=lf
+.integrity text eol=lf
+LICENSE text eol=lf

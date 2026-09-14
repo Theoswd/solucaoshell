@@ -1,0 +1,77 @@
+# ============================================================
+#  NUNCA VERSIONAR — CREDENCIAIS
+#  O accounts.conf guarda login e senha das suas contas.
+#  Se ele for parar num repositorio publico, suas contas foram.
+# ============================================================
+accounts.conf
+accounts.conf.*
+cript_file
+cookie.txt
+
+# ============================================================
+#  Estado de execucao (normalmente fica em ~/.sls/<conta>/,
+#  mas listado aqui como rede de seguranca)
+# ============================================================
+config.cfg
+runmode_file
+translations.po
+ERROR_DEBUG
+msg_file
+bottom_file
+*.log
+*.log.1
+
+# Listas de aliados e IDs coletados do jogo
+allies.txt
+callies.txt
+tmp.txt
+ids.txt
+
+# Paginas baixadas e arquivos de estado de combate
+SRC
+src.html
+TRAIN
+LEAGUE_SRC
+col_src
+col_full
+ccol_src
+ccol_full
+flag_src
+flag_full
+CLD
+CLAN
+USER
+ACCESS
+HP
+HP2
+USH
+FULL
+RHP
+HLHP
+ATK
+ATKRND
+DODGE
+HEAL
+STONE
+SHIELD
+ENH
+UNRIP
+KINGATK
+BREAK_LOOP
+old_HP
+last_atk
+last_heal
+last_dodge
+
+# ============================================================
+#  Diretorio de backup local (versao anterior as correcoes).
+#  Fica so na sua maquina — nao faz sentido publicar o codigo
+#  com os bugs junto do codigo corrigido.
+# ============================================================
+_backup_original/
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.swp
+*~
