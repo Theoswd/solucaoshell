@@ -263,7 +263,7 @@ printf "${CYAN}solucaoshell - %s conta(s)${RESET}\n" "$total"
 # subir lendo um arquivo antigo de outra instalacao.
 [ "$ACCOUNTS_FILE" = "$SLSDIR/accounts.conf" ] || \
     printf "${GOLD}Contas:${RESET} %s\n" "$ACCOUNTS_FILE"
-printf "${GOLD}Mod Author:${RESET} SB\n\n"
+printf "\n"
 
 # Android 12+ derruba a sessao inteira com SIGKILL.
 #

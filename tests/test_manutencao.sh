@@ -974,7 +974,7 @@ if mkdir -p "$_td/home/.sls/status" 2>/dev/null; then
     # medir o caso que nao tem o problema.
     for _modo in 0 1 2; do
     _estouros=0
-    for _c in 36 40 44 46 48 50 52 56 60; do
+    for _c in 36 40 44 46 48 50 52 56 60 90 100; do
         (
             HOME="$_td/home"
             SLSDIR="$ROOT"
@@ -1005,9 +1005,17 @@ if mkdir -p "$_td/home/.sls/status" 2>/dev/null; then
             _n=$(( ${_n:-0} + ${_w:-0} ))
             [ "$_n" -gt "$_c" ] && _estouros=$((_estouros + 1))
         done < "$_td/limpa.txt"
+        # Celular (56) e PC (100): titulo de uma linha, sem autor, e numeros
+        # em texto (sem emoji) em qualquer modo.
+        case "$_c" in 56|100)
+            grep -q 'Painel SLS · BR · [0-9][0-9]:' "$_td/limpa.txt" \
+                && ! grep -q 'Mod Author' "$_td/limpa.txt" \
+                && grep -q 'HP 900 .*En 5 .*Nv 7 .*Ou 12 .*Pr 3,4K' "$_td/limpa.txt" \
+                || { _estouros=$((_estouros + 1)); printf '  [INFO] modo %s, %s colunas: titulo ou numeros fora do formato\n' "$_modo" "$_c"; }
+        esac
     done
     if [ "$_estouros" -eq 0 ]; then
-        ok "painel (modo $_modo) cabe em 36, 40, 44, 46, 48, 50, 52, 56 e 60 colunas"
+        ok "painel (modo $_modo) cabe de 36 a 100 colunas, titulo e numeros no formato"
     else
         bad "painel (modo $_modo) estourou a largura em $_estouros linha(s)"
     fi
@@ -1609,66 +1617,22 @@ else
     ok "painel: nenhum seletor de variacao"
 fi
 
-# O I_EXTRA e a diferenca entre bytes e colunas dos cinco icones da linha de
-# status. Escrito a mao ele mente assim que um icone muda — e mentia duas
-# vezes: 16 no modo emoji, para icones que somavam 14, e 9 fixo no modo 2.
-#
-# Aqui nao se le o arquivo procurando o texto "I_EXTRA=$((": isso so provaria
-# que a conta esta ESCRITA. Carrega-se o painel de verdade, em cada modo, e
-# confere-se o VALOR contra os icones que aquele modo carregou.
-for _modo in 0 1 2; do
+# Os simbolos de estado de cada modo tem os mesmos bytes: e o que faz o
+# "%-*s" com S_W deixar o nome da conta na mesma coluna em qualquer estado.
+for _modo in 1 2; do
     _r=$(
         SLS_EMOJI="$_modo" HOME=/nao/existe
         export SLS_EMOJI HOME
         . "$ROOT/lib/panel.sh" > /dev/null 2>&1
-        # Colunas ocupadas pelos cinco icones: 3 cada no modo emoji (glifo
-        # mais espaco), 1 cada no modo simbolo, e no modo texto os rotulos
-        # sao ASCII, onde byte e coluna sao a mesma coisa.
-        case "$_modo" in
-            1) _col=15 ;;
-            2) _col=5 ;;
-            *) _col="" ;;
-        esac
-        _by=`printf '%s' "$I_HP$I_EN$I_LV$I_GO$I_SI" | wc -c | tr -d ' '`
-        if [ -z "$_col" ]; then
-            # Modo texto: nada a compensar, I_EXTRA tem de ser 0.
-            [ "$I_EXTRA" = 0 ] && printf 'ok' || printf 'I_EXTRA=%s (esperado 0)' "$I_EXTRA"
-        else
-            _esp=$(( _by - _col ))
-            [ "$I_EXTRA" = "$_esp" ] \
-                && printf 'ok' \
-                || printf 'I_EXTRA=%s mas os icones pedem %s' "$I_EXTRA" "$_esp"
-        fi
+        for _s in "$S_ON" "$S_WAIT" "$S_ERR" "$S_OFF" "$S_UNK" "$S_PAUSE"; do
+            printf '%s ' "`printf '%s' "$_s" | wc -c | tr -d ' '`"
+        done
+        printf 'S_W=%s' "$S_W"
     )
-    [ "$_r" = ok ] \
-        && ok "painel (modo $_modo): I_EXTRA bate com os icones carregados" \
-        || bad "painel (modo $_modo): $_r"
+    case "$_modo" in 1) _esp="4 4 4 4 4 4 S_W=4" ;; 2) _esp="3 3 3 3 3 3 S_W=3" ;; esac
+    check "painel (modo $_modo): simbolos de estado com a mesma largura" "$_esp" "$_r"
 done
-unset _modo _r
-
-# Os cinco icones da linha de status tem de ter largura uniforme: no modo
-# emoji, 3 colunas cada. Carregado do painel, nao raspado do arquivo — a
-# raspagem quebra a cada mudanca de indentacao e testa o texto, nao o efeito.
-_ic=$(
-    SLS_EMOJI=1 HOME=/nao/existe
-    export SLS_EMOJI HOME
-    . "$ROOT/lib/panel.sh" > /dev/null 2>&1
-    printf '%s|%s|%s|%s|%s' "$I_HP" "$I_EN" "$I_LV" "$I_GO" "$I_SI"
-)
-_n=0
-_falhou=""
-IFS='|'
-for _i in $_ic; do
-    _n=$((_n + 1))
-    # 1 glifo largo + espacos, ou 1 glifo estreito + 2 espacos: 4 ou 5 bytes
-    _b=`printf '%s' "$_i" | wc -c | tr -d ' '`
-    [ "$_b" -ge 4 ] && [ "$_b" -le 5 ] || _falhou="$_falhou #$_n($_b)"
-done
-unset IFS
-[ "$_n" = 5 ] && [ -z "$_falhou" ] \
-    && ok "painel: os 5 icones da linha de status com largura uniforme" \
-    || bad "painel: icone fora do padrao:$_falhou (achei $_n)"
-unset _ic _n _b _falhou _i
+unset _modo _r _esp
 
 # =============================================================================
 printf "\n=== 30. modo de icone escolhido pelo aparelho ===\n"

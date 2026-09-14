@@ -29,6 +29,8 @@ C_RESET='\033[0m';   C_DIM='\033[2m';      C_BOLD='\033[1m'
 C_CYAN='\033[1;36m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'
 C_RED='\033[1;31m';  C_MAG='\033[1;35m';   C_WHITE='\033[1;37m'
 C_GOLD='\033[0;33m'; C_GRAY='\033[0;37m';  C_BLUE='\033[1;34m'
+# 256 cores (Termux, WSL e iSH desenham): nome das contas e nivel.
+C_LARANJA='\033[1;38;5;166m'; C_VERDE='\033[0;32m'; C_LIMAO='\033[1;38;5;154m'
 # O caractere ESC de verdade. As constantes acima sao strings com "\033"
 # literal, que so viram cor quando passam pelo printf %b — e o awk do
 # registro de combate imprime direto, sem esse tratamento.
@@ -132,12 +134,14 @@ fi
 # SLS_EMOJI direto, para o "-icones" poder desenhar os tres conjuntos na
 # mesma tela e depois devolver o que estava valendo.
 painel_icones_carregar() {
+    # HP, energia, nivel, ouro e prata sao TEXTO em todos os modos, cada um
+    # na sua cor (pedido do dono). Os icones abaixo sao so do estado da
+    # conta, das atividades e do rodape.
+    #
+    # S_W: largura em BYTES da coluna do simbolo de estado. Todos os simbolos
+    # de um modo tem os mesmos bytes e colunas, entao o nome cai sempre na
+    # mesma coluna, qualquer que seja o estado.
     if [ "$1" = "1" ]; then
-        # O ouro usava 🪙 (U+1FA99), que so entrou no Unicode 13, de 2020: e o
-        # unico glifo do conjunto novo o bastante para faltar mesmo numa fonte
-        # que ja tem emoji. 💰 e do Unicode 6.0 (2010) — nao falta em lugar
-        # nenhum.
-        #
         # NENHUM ICONE AQUI USA SELETOR DE VARIACAO (U+FE0F).
         #
         # "❤️" e o coracao de TEXTO U+2764 mais um pedido de "desenhe
@@ -149,42 +153,16 @@ painel_icones_carregar() {
         # Isso conserta o terminal que TEM fonte de emoji e nao entende o
         # seletor. NAO conserta o terminal SEM fonte de emoji: la falta o
         # glifo em si, e a saida e o modo 2.
-        # O NIVEL USA SETA, E VERDE.
         #
-        # Emoji carregam a propria cor e ignoram o ANSI: um "⬆️" sairia azul,
-        # nao verde. O "▲" e desenho de texto — o terminal o pinta com a cor
-        # que mandarmos. Dai a seta geometrica no lugar do emoji.
-        I_HP="🧡 "; I_EN="🔋 "; I_LV="▲  "; I_GO="💰 "; I_SI="🥈 "
-        # BYTES A MAIS QUE COLUNAS.
-        #
-        # O printf conta BYTES; o terminal desenha COLUNAS. Um "🧡" ocupa 6
-        # bytes e 2 colunas, um "💰" 4 bytes e 2 colunas. A linha de status em
-        # modo emoji tem 55 bytes para ~40 colunas de tela — e o corte final,
-        # feito com "%.*s" na largura do terminal, cortava no meio de um numero.
-        # Era o "🥈 22," do relato.
-        #
-        # Estas duas constantes devolvem a diferenca ao calculo:
-        #   I_EXTRA  bytes a mais dos cinco icones da linha de status
-        #   S_W      largura em BYTES da coluna do simbolo, para dar 5 colunas
-        # I_EXTRA CALCULADO, NAO ESCRITO A MAO.
-        #
-        # E a diferenca entre BYTES e COLUNAS dos cinco icones da linha de
-        # status, usada no corte "%.*s" (que conta bytes) para nao cortar no meio
-        # de um numero. Estava fixo em 16, valor calculado para os icones
-        # antigos; trocando qualquer icone ele silenciosamente passava a mentir.
-        #
-        # Por construcao cada I_* ocupa 3 colunas, entao a parte de colunas e
-        # sempre 15. So os bytes variam, e sao contados aqui.
-        I_EXTRA=$(( `printf '%s' "$I_HP$I_EN$I_LV$I_GO$I_SI" | wc -c` - 15 ))
-        S_W=7
+        # Estados: todos de 4 bytes e 2 colunas (o ⚫/⚪ de 3 bytes empurrava o
+        # nome da conta parada uma coluna para a direita).
+        S_W=4
         T_COLS=3
-        # Rotulos de EXATAMENTE 2 colunas, para a linha alinhada do celular.
-        L_HP="🧡"; L_EN="🔋"; L_LV="▲ "; L_GO="💰"; L_SI="🥈"
-        I_TIT="🎮 "; I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="▸"; I_LIVE="💥 "
+        I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="▸"; I_LIVE="💥 "
         # COLUNAS (nao bytes) do prefixo do bloco "ao vivo". O "💥 " desenha 2
         # colunas de glifo mais o espaco: 3. Ver LIVE_W no bloco de batalhas.
         LIVE_W=3
-        S_ON="🟢"; S_WAIT="🟡"; S_ERR="🔴"; S_OFF="⚫"; S_UNK="⚪"; S_PAUSE="💤"
+        S_ON="🟢"; S_WAIT="🟡"; S_ERR="🔴"; S_OFF="🌑"; S_UNK="🔘"; S_PAUSE="💤"
         A_CLANFIGHT="🏆  Torneio do Clã";   A_ALTARES="🔥  Altares dos Deuses"
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
         A_CLANCOL="🏅  Coliseu do Clã";     A_MASMORRA="🔑  Masmorra do Clã"
@@ -196,13 +174,10 @@ painel_icones_carregar() {
         A_EVENTO="🎉  Evento Especial";     A_DESCANSO="💤  Descansando"
         A_NONE="—"
     else
-        I_HP="HP"; I_EN="Eng"; I_LV="LV"; I_GO="Ouro"; I_SI="PR"
         # Em texto puro byte e coluna sao a mesma coisa.
-        I_EXTRA=0
         S_W=5
         T_COLS=0
-        L_HP="HP"; L_EN="En"; L_LV="LV"; L_GO="Ou"; L_SI="PR"
-        I_TIT=""; I_ACT=""; I_EVT=""; I_ARROW="->"; I_LIVE=""
+        I_ACT=""; I_EVT=""; I_ARROW="->"; I_LIVE=""
         LIVE_W=0
         S_ON="[on]"; S_WAIT="[..]"; S_ERR="[off]"; S_OFF="[--]"; S_UNK="[??]"; S_PAUSE="[||]"
         A_CLANFIGHT="Torneio do Clã";   A_ALTARES="Altares dos Deuses"
@@ -218,20 +193,13 @@ painel_icones_carregar() {
 
         # Modo 2: troca so os icones, mantendo os nomes de atividade em texto.
         if [ "$1" = "2" ]; then
-            # O ouro nao usa "●" de proposito: e o mesmo glifo do simbolo de
-            # conta online, e as duas marcas apareceriam iguais na mesma linha.
-            I_HP="♥"; I_EN="◆"; I_LV="▲"; I_GO="¤"; I_SI="○"
-            # Mesma conta do modo 1, CALCULADA e nao escrita a mao: bytes
-            # menos colunas dos cinco icones. Aqui cada um ocupa 1 coluna
-            # (sao glifos de largura simples), entao a parte de colunas e
-            # 5 — contra 15 do modo 1, onde cada icone ocupa 3 com o espaco.
-            I_EXTRA=$(( `printf '%s' "$I_HP$I_EN$I_LV$I_GO$I_SI" | wc -c` - 5 ))
-            S_W=7
+            # Estados de 3 bytes e 1 coluna cada ("×" tinha 2 e "?" 1, e o
+            # nome dessas contas saia fora da coluna).
+            S_W=3
             T_COLS=0
-            L_HP="♥ "; L_EN="◆ "; L_LV="▲ "; L_GO="¤ "; L_SI="○ "
-            I_TIT=""; I_ACT=""; I_EVT=""; I_ARROW="▸"; I_LIVE="» "
+            I_ACT=""; I_EVT=""; I_ARROW="▸"; I_LIVE="» "
             LIVE_W=2
-            S_ON="●"; S_WAIT="◐"; S_ERR="×"; S_OFF="○"; S_UNK="?"; S_PAUSE="‖"
+            S_ON="●"; S_WAIT="◐"; S_ERR="✕"; S_OFF="○"; S_UNK="◇"; S_PAUSE="‖"
         fi
     fi
 }
@@ -452,18 +420,12 @@ painel_icones() {
     printf '\nOs tres, desenhados agora nesta tela:\n\n'
     for _ic_m in 1 2 0; do
         painel_icones_carregar "$_ic_m"
-        printf '  %s  %-9s ' "$_ic_m" "`painel_icones_nome "$_ic_m"`"
-        printf '%b%s %s  %b%s %s  %b%s %s  %b%s %s  %b%s %s%b\n' \
-            "$C_RED"    "$I_HP" "65.312" \
-            "$C_YELLOW" "$I_EN" "470" \
-            "$C_GREEN"  "$I_LV" "120" \
-            "$C_GOLD"   "$I_GO" "3.2M" \
-            "$C_GRAY"   "$I_SI" "408,1M" "$C_RESET"
-        # Os sinais de estado de conta tambem mudam de conjunto, e no modo 1
-        # sao emoji: se a fonte nao os tiver, a coluna de estado do painel
-        # vira uma fileira de caixas. Entao entram na amostra.
-        printf '     %-9s %s %s %s %s %s %s\n' '' \
-            "$S_ON" "$S_WAIT" "$S_ERR" "$S_OFF" "$S_UNK" "$S_PAUSE"
+        # Os sinais de estado de conta mudam de conjunto, e no modo 1 sao
+        # emoji: se a fonte nao os tiver, a coluna de estado do painel vira
+        # uma fileira de caixas.
+        printf '  %s  %-9s %s %s %s %s %s %s  %s\n' \
+            "$_ic_m" "`painel_icones_nome "$_ic_m"`" \
+            "$S_ON" "$S_WAIT" "$S_ERR" "$S_OFF" "$S_UNK" "$S_PAUSE" "$A_ARENA"
     done
 
     # Devolve o conjunto que estava valendo: esta funcao mostra, nao muda.
@@ -1254,7 +1216,7 @@ while true; do
                 _nw=14; _bw=16
             fi
             BATALHAS="${BATALHAS}$(printf "  %b%s %b%-*.*s %b%-*.*s %b%s%b" \
-                "$_cor_c" "$_pre" "$C_WHITE" "$_nw" "$_nw" "$nome" \
+                "$_cor_c" "$_pre" "$C_LARANJA" "$_nw" "$_nw" "$nome" \
                 "$C_CYAN" "$_bw" "$_bw" "$_aba" "$_cor_c" "$_cbt" "$C_RESET")
 "
             # REGISTRO DA LUTA, LOGO ABAIXO DO NOME.
@@ -1285,7 +1247,7 @@ while true; do
             [ "$_aw" -lt 6 ] && _aw=6
             LISTA="${LISTA}$(printf "%b%2s %b%-*s %b%-*.*s %b%s %b%-.*s%b" \
                 "$C_DIM" "$idx" "$cor" "$S_W" "$sim" \
-                "$C_WHITE" "$_nw" "$_nw" "$nome" \
+                "$C_LARANJA" "$_nw" "$_nw" "$nome" \
                 "$C_DIM" "$I_ARROW" \
                 "$C_CYAN" "$_aw" "$_aba" "$C_RESET")
 "
@@ -1294,39 +1256,22 @@ while true; do
             # Com os valores separados por um espaco so, cada conta ficava
             # com os campos em posicao diferente e a leitura entre linhas
             # nao acontecia: o ouro de uma ficava sobre a energia da outra.
-            # Aqui cada valor ganha largura fixa, entao 🧡 ⚡ ▲ 💰 🥈 caem
-            # sempre na mesma coluna, conta a conta.
+            # Aqui cada valor ganha largura fixa, entao HP, En, Nv, Ou e Pr
+            # caem sempre na mesma coluna, conta a conta.
             #
-            #   4 de recuo + 5 campos de (rotulo 2 + espaco + valor) + 4
+            #   4 de recuo + HP 9 + En 12 + Nv 6 + Ou 9 + Pr ate 9 + 4
             #   separadores = 53 colunas. Abaixo disso nao cabe, e a linha
-            #   volta ao formato compacto de antes, cortado na largura.
+            #   vira o formato compacto, cortado na largura.
             #
-            # Os rotulos L_* tem EXATAMENTE 2 colunas em qualquer modo, entao
-            # o alinhamento e o mesmo com emoji, com simbolo ou com texto.
-            if [ $((LARG - 4)) -ge 53 ]; then
-                LISTA="${LISTA}$(printf "    %b%s %-6s %b%s %-9s %b%s %-3s %b%s %-6s %b%s %-6s%b" \
-                    "$C_RED"    "$L_HP" "$hp" \
-                    "$C_YELLOW" "$L_EN" "$ene" \
-                    "$C_GREEN"  "$L_LV" "$lvl" \
-                    "$C_GOLD"   "$L_GO" "$ouro" \
-                    "$C_GRAY"   "$L_SI" "$prata" "$C_RESET")
+            # Rotulos em texto, sem emoji, em qualquer modo de icone.
+            if [ "$LARG" -ge 53 ]; then
+                LISTA="${LISTA}$(printf "    %bHP %-6s %bEn %-9s %bNv %-3s %bOu %-6s %bPr %s%b" \
+                    "$C_RED" "$hp" "$C_VERDE" "$ene" "$C_LIMAO" "$lvl" \
+                    "$C_YELLOW" "$ouro" "$C_WHITE" "$prata" "$C_RESET")
 "
             else
-                # Tela curta demais para colunas: formato compacto, com o
-                # corte na largura. Abaixo de 56 os rotulos ja sao texto — e
-                # ai byte e coluna voltam a ser a mesma coisa, entao o
-                # I_EXTRA nao entra.
-                if [ "$LARG" -lt 56 ]; then
-                    _l1="HP"; _l2="En"; _l3="LV"; _l4="Ou"; _l5="PR"; _lx=0
-                else
-                    _l1="$I_HP"; _l2="$I_EN"; _l3="$I_LV"; _l4="$I_GO"; _l5="$I_SI"
-                    _lx=$I_EXTRA
-                fi
-                _num=$((LARG - 4 + _lx))
-                LISTA="${LISTA}$(printf "    %b%.*s%b" "$C_GRAY" "$_num" \
-                    "$(printf "%s %s %s %s %s %s %s %s %s %s" \
-                        "$_l1" "$hp" "$_l2" "$ene" "$_l3" "$lvl" \
-                        "$_l4" "$ouro" "$_l5" "$prata")" "$C_RESET")
+                LISTA="${LISTA}$(printf "    %b%.*s%b" "$C_GRAY" "$((LARG - 4))" \
+                    "HP $hp En $ene Nv $lvl Ou $ouro Pr $prata" "$C_RESET")
 "
             fi
             if [ -n "$_sessao" ]; then
@@ -1352,14 +1297,11 @@ while true; do
             # "[on]" (4 colunas) e "[off]" (5) empurravam o nome para
             # posicoes diferentes e a coluna inteira ficava torta. Agora o
             # simbolo tem campo proprio de largura fixa.
-            LISTA="${LISTA}$(printf "%b%2s %b%-5s %b%-18.18s %b%s %-7s %b%s %-10s %b%s %-4s %b%s %-8s %b%s %s%b" \
-                "$C_DIM" "$idx" "$cor" "$sim" \
-                "$C_WHITE" "$nome" \
-                "$C_RED" "$I_HP" "$hp" \
-                "$C_YELLOW" "$I_EN" "$ene" \
-                "$C_GREEN" "$I_LV" "$lvl" \
-                "$C_GOLD" "$I_GO" "$ouro" \
-                "$C_GRAY" "$I_SI" "$prata" "$C_RESET")
+            LISTA="${LISTA}$(printf "%b%2s %b%-*s %b%-18.18s %bHP %-7s %bEn %-10s %bNv %-4s %bOu %-8s %bPr %s%b" \
+                "$C_DIM" "$idx" "$cor" "$S_W" "$sim" \
+                "$C_LARANJA" "$nome" \
+                "$C_RED" "$hp" "$C_VERDE" "$ene" "$C_LIMAO" "$lvl" \
+                "$C_YELLOW" "$ouro" "$C_WHITE" "$prata" "$C_RESET")
 "
             # INDICADOR DE ATIVIDADE por conta: uma linha compacta e recuada,
             # logo abaixo dos numeros, mostrando a aba atual (o que a conta
@@ -1389,26 +1331,17 @@ while true; do
 
     if [ "${PANEL_DRAW:-$HAS_TTY}" = 1 ]; then
         painel_regua "$LARG"
-        # O relogio e alinhado a direita pela largura real, nao por um
-        # recuo fixo de 26 espacos que so servia para uma tela de 68.
         PANEL_TOTAL=$idx
-        # LARGURA DO TITULO EM COLUNAS, NAO EM BYTES.
+        # TITULO CENTRALIZADO, NUMA LINHA SO: "Painel SLS · BR · 19:37:40".
         #
-        # O calculo era "${#_tit}", que conta BYTES: o "·" ocupa dois e o
-        # icone do titulo, quando ligado, cinco para tres colunas. A conta
-        # saia errada nos dois sentidos e, em modo emoji, a linha passava da
-        # largura — o relogio aparecia cortado ("19:37:4") porque o terminal
-        # quebrava a linha.
-        #
-        # Parte fixa: 2 de recuo + "solucaoshell" (12) + 1 + "· BR" (4).
-        # O T_COLS vale para os icones do cabecalho e do rodape, que tem a
-        # mesma forma: um emoji mais um espaco, tres colunas.
-        _pad=$(( LARG - 19 - T_COLS - 8 ))
-        [ "$_pad" -lt 1 ] && _pad=1
-        printf "  %b%ssolucaoshell%b %b· BR%b%*s%b%s%b\n" \
-               "$C_CYAN$C_BOLD" "$I_TIT" "$C_RESET" "$C_DIM" "$C_RESET" \
-               "$_pad" '' "$C_WHITE" "$agora" "$C_RESET"
-        printf "  %bMod Author: SB%b\n" "$C_DIM" "$C_RESET"
+        # Largura em COLUNAS, nao em bytes: o "·" ocupa 2 bytes e 1 coluna,
+        # entao nada de ${#}. Parte fixa "Painel SLS · BR · " = 18 colunas,
+        # mais o relogio (ASCII).
+        _pad=$(( (LARG - 18 - ${#agora}) / 2 ))
+        [ "$_pad" -lt 0 ] && _pad=0
+        printf "%*s%bPainel SLS%b %b·%b %bBR%b %b· %s%b\n" "$_pad" '' \
+               "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET" \
+               "$C_WHITE" "$C_RESET" "$C_DIM" "$agora" "$C_RESET"
         painel_regua "$LARG"
         printf "%b" "$LISTA"
         painel_regua "$LARG"

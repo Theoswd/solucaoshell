@@ -116,10 +116,11 @@ show_menu() {
     # ou esvaziado por "Remover".
     ACCOUNTS_FILE=$(resolve_accounts_file)
 
+    # Titulo centralizado numa linha so (32 colunas, ASCII).
+    _pad=$(( (_cols - 32) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
     printf "%b%s%b\n" "$A2" "$_L" "$RESET"
-    printf "  %bSLS%b %b· Gerenciador%b   %bBR%b\n" \
+    printf "%*s%bSLS%b %b- Gerenciador de Contas -%b %bBR%b\n" "$_pad" '' \
            "$A1" "$RESET" "$DIM" "$RESET" "$WHITE" "$RESET"
-    printf "  %bMod Author: SB%b\n" "$DIM" "$RESET"
     printf "%b%s%b\n\n" "$A2" "$_L" "$RESET"
 
     printf "   %b1%b - Listar contas\n"   "$A1" "$RESET"
