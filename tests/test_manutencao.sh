@@ -1053,8 +1053,8 @@ _orfao=0
 _lista=$(sed -n '/^for _lib in/,/^do$/p' "$LIB/sls.sh" | tr ' ' '\n' | grep '\.sh$')
 for _f in "$LIB"/*.sh; do
     _b=$(basename "$_f")
-    # Estes cinco sao carregados por caminho proprio, nao pelo laco.
-    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh) continue ;; esac
+    # Estes sao carregados por caminho proprio, nao pelo laco.
+    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh) continue ;; esac
     echo "$_lista" | grep -qx "$_b" || { _orfao=$((_orfao + 1)); bad "modulo em lib/ que ninguem carrega: $_b"; }
 done
 [ "$_orfao" -eq 0 ] && ok "nenhum modulo orfao em lib/"
@@ -1905,7 +1905,7 @@ grep -q 'src\.html' "$LIB/flagfight.sh" \
     && bad "flagfight.sh: le src.html (arquivo do altars) em vez do proprio" \
     || ok "flagfight.sh: le a propria pagina, nao a do altars"
 
-printf "\n=== 34. prazo de 17s nas paginas de luta e amostras de pagina ===\n"
+printf "\n=== 34. prazo de 17s nas paginas de luta ===\n"
 # =============================================================================
 #
 # Coliseu de 12/09: tres contas com 107 requisicoes seguidas sem resposta,
@@ -1944,47 +1944,7 @@ check "prazo: SLS_LUTA_MAXTIME ajusta a luta"    12 "`_TLM=12 _prazo 'https://jo
 check "prazo: SLS_LUTA_MAXTIME invalido cai em 45" 45 "`_TLM=abc _prazo 'https://jogo.net/king/'`"
 unset -f _prazo
 
-# Toda funcao de luta guarda a amostra na leitura com luta na tela.
-for _m in altars:altars flagfight:flagfight clanfight:clanfight \
-          clandmg:clandmgfight clancoliseum:clancoliseum coliseum:coliseum \
-          king:king undying:undying; do
-    _arq="${_m%%:*}"; _sec="${_m##*:}"
-    grep -q "luta_amostra $_sec " "$LIB/$_arq.sh" \
-        && ok "$_arq.sh: guarda amostra da pagina de luta ($_sec)" \
-        || bad "$_arq.sh: sem luta_amostra"
-done
-
-# Comportamento: 3 amostras de luta espacadas >= 40s; fim/fora so a primeira.
-_r=$(
-    TMP="$_td4"; URL="https://jogo.net"; export TMP URL
-    . "$LIB/info.sh" > /dev/null 2>&1
-    _T=1000
-    date() { printf '%s\n' "$_T"; }
-    printf 'pagina A' > "$_td4/p"
-    luta_amostra king "$_td4/p" luta
-    [ -s "$_td4/amostras/king_luta1.html" ] || { printf 'sem-luta1'; exit; }
-    _T=1010; printf 'pagina B' > "$_td4/p"; luta_amostra king "$_td4/p" luta
-    [ -e "$_td4/amostras/king_luta2.html" ] && { printf 'luta2-cedo-demais'; exit; }
-    _T=1045; luta_amostra king "$_td4/p" luta
-    grep -q 'pagina B' "$_td4/amostras/king_luta2.html" 2>/dev/null || { printf 'sem-luta2'; exit; }
-    _T=1090; printf 'pagina C' > "$_td4/p"; luta_amostra king "$_td4/p" luta
-    _T=2000; printf 'pagina D' > "$_td4/p"; luta_amostra king "$_td4/p" luta
-    [ -e "$_td4/amostras/king_luta4.html" ] && { printf 'passou-de-3'; exit; }
-    grep -q 'pagina C' "$_td4/amostras/king_luta3.html" 2>/dev/null || { printf 'luta3-sobrescrita'; exit; }
-    printf 'fim 1' > "$_td4/p"; luta_amostra king "$_td4/p" fim
-    printf 'fim 2' > "$_td4/p"; luta_amostra king "$_td4/p" fim
-    grep -q 'fim 1' "$_td4/amostras/king_fim.html" || { printf 'fim-sobrescrito'; exit; }
-    LUTA_AMOSTRAS=0; luta_amostra altars "$_td4/p" fim
-    [ -e "$_td4/amostras/altars_fim.html" ] && { printf 'nao-desligou'; exit; }
-    LUTA_AMOSTRAS=1; luta_amostra altars "$_td4/nao_existe" fim
-    [ -e "$_td4/amostras/altars_fim.html" ] && { printf 'copiou-arquivo-ausente'; exit; }
-    printf 'ok'
-)
-[ "$_r" = ok ] \
-    && ok "luta_amostra: 3 paginas de luta espacadas, fim so a primeira, desligavel" \
-    || bad "luta_amostra: $_r"
-
-# O luta_acabou guarda a primeira pagina "fora" e a da saida pelos 90s.
+# O luta_acabou nao encerra na primeira pagina sem luta; encerra aos 90s.
 _r=$(
     TMP="$_td4/b"; URL="https://jogo.net"; export TMP URL
     mkdir -p "$TMP"
@@ -1994,16 +1954,13 @@ _r=$(
     printf "%s" "<img src='/images/icon/level.png'>Batalha finalizada! primeira" > "$TMP/p"
     luta_inicio altars > /dev/null 2>&1
     luta_acabou "$TMP/p" altars && { printf 'saiu-na-hora'; exit; }
-    [ -s "$TMP/amostras/altars_fora1.html" ] || { printf 'sem-fora1'; exit; }
     _T=5095
     printf "%s" "<img src='/images/icon/level.png'>ultima" > "$TMP/p"
     luta_acabou "$TMP/p" altars || { printf 'nao-saiu-aos-90s'; exit; }
-    grep -q 'ultima' "$TMP/amostras/altars_fora2.html" 2>/dev/null || { printf 'sem-fora2'; exit; }
-    grep -q 'primeira' "$TMP/amostras/altars_fora1.html" || { printf 'fora1-sobrescrito'; exit; }
     printf 'ok'
 )
 [ "$_r" = ok ] \
-    && ok "luta_acabou: guarda a primeira pagina sem luta e a da saida" \
+    && ok "luta_acabou: espera os 90s antes de dar a luta por encerrada" \
     || bad "luta_acabou: $_r"
 
 rm -rf "$_td4"; unset _td4 _r _m _arq _sec
@@ -2193,7 +2150,7 @@ printf "\n=== 37. morte escrita no log da batalha e botao 'Troca o alvo' ===\n"
 # =============================================================================
 #
 # Paginas reais do Torneio dos Clas (12/09, servidor BR), capturadas pela
-# luta_amostra. As fixtures abaixo reproduzem a MARCACAO delas, com nomes
+# coleta de amostras. As fixtures abaixo reproduzem a MARCACAO delas, com nomes
 # inventados:
 #   - quem morreu: "Fulano assassinou Voce" (13 de 14) e "Espere ate o fim
 #     da batalha" (14 de 14); nenhuma das 28 paginas com luta ativa tinha

@@ -27,7 +27,6 @@ flagfight_fight() {
       sessao_marcar
       printf "Em batalha flagfight - HP: %s\n" "`cat USH`"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      luta_amostra flagfight "$src_ram" luta
       if luta_hp "`cat USH`"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #

@@ -366,14 +366,10 @@ sls_start() {
     esac
 }
 
-# Limpa o estado de combate entre ciclos.
-# CORRECAO: a lista nao incluia CLD, FULL, RHP, HLHP, NOWHP, NOWMP, HPPER,
-# MPPER nem ACCESS, entao valores velhos vazavam para o ciclo seguinte e
-# contaminavam decisoes de cura/ataque.
+# Limpa o estado de combate entre ciclos: links e limiares de uma luta nao
+# podem vazar para a seguinte. So nomes que algum modulo ainda atribui.
 func_unset() {
-    unset HP1 HP2 YOU USER CLAN ENTER ATK ATKRND DODGE HEAL GRASS STONE \
-          BEXIT OUTGATE LEAVEFIGHT WDRED CAVE BREAK NEWCAVE \
-          FULL RHP HLHP ACCESS SHIELD UNRIP KINGATK
+    unset ATK ATKRND DODGE HEAL RHP HLHP ACCESS CAVE BREAK
 }
 
 [ -n "$SLS_STATUS_FILE" ] && echo "running" > "$SLS_STATUS_FILE"

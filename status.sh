@@ -76,23 +76,7 @@ done
 case "${PANEL_INTERVAL:-5}" in ''|*[!0-9]*) PANEL_INTERVAL=5 ;; esac
 export PANEL_INTERVAL
 
-# Localiza o arquivo de contas — MESMA regra do play.sh e do setup.sh.
-resolve_accounts_file() {
-    if [ -s "$SLSDIR/accounts.conf" ]; then
-        printf '%s' "$SLSDIR/accounts.conf"
-        return 0
-    fi
-    for _cand in "$HOME/solucaoshell/accounts.conf" \
-                 "$HOME/.sls/accounts.conf"; do
-        if [ -s "$_cand" ]; then
-            printf '%s' "$_cand"
-            unset _cand
-            return 0
-        fi
-    done
-    unset _cand
-    printf '%s' "$SLSDIR/accounts.conf"
-}
+. "$LIBDIR/contas.sh"
 
 # Calibracao da largura: nao depende de conta nem de worker no ar, entao
 # roda antes das checagens (e util justamente em aparelho recem-instalado).

@@ -24,7 +24,6 @@ altars_fight() {
       sessao_marcar
       printf "Em batalha - HP: %s\n" "`cat HP`"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      luta_amostra altars "$TMP/src.html" luta
       if luta_hp "`cat HP`"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #

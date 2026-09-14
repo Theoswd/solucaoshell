@@ -103,7 +103,6 @@ coliseum_fight() {
                 # viria vazio e contaria como zero — a conta VIVA seria dada
                 # por morta. Para a morte, a leitura aceita de 1 a 6 digitos.
                 _col_hp=`grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
-                luta_amostra coliseum "$src_ram" luta
                 if luta_hp "$_col_hp"; then
                   # ANTES DE ENCERRAR, TENTA VOLTAR.
                   #

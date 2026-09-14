@@ -118,7 +118,6 @@ king_fight() {
       # mantem os botoes depois da morte: a conta ficava "lutando" com HP 0
       # ate o teto de 30 min. Primeiro tenta a ressurreicao, uma vez; sem ela,
       # o jogo ja declarou a morte.
-      luta_amostra king "$TMP/SRC" luta
       if luta_hp "$_hpat"; then
         if ressuscitar king "$TMP/SRC"; then
           cl_access

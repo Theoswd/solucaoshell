@@ -30,7 +30,6 @@ clanfight_fight() {
       sessao_marcar
       printf "Em batalha clanfight - HP: %s\n" "`cat HP`"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      luta_amostra clanfight "$TMP/SRC" luta
       if luta_hp "`cat HP`"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #

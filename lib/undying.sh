@@ -39,7 +39,6 @@ undying_fight() {
       # O Vale nao le HP (sem luta_hp): marca aqui que a conta lutou, para o
       # fim sem botao valer em 15s e nao 90s (LUTA_FORA_LUTOU, em info.sh).
       _lt_lutou=1
-      luta_amostra undying "$TMP/SRC" luta
       printf "Em batalha undying\n"
       return 0
     fi

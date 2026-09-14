@@ -30,33 +30,7 @@ export LIBDIR
 unset _dir _self _link _hops
 export SLSDIR
 
-# Localiza o arquivo de contas.
-#
-# CORRECAO: o caminho vinha exclusivamente do diretorio do script. Com mais
-# de uma copia do repositorio no aparelho — o caso mais comum e clonar de
-# novo depois de um problema — o ./setup.sh cadastrava num accounts.conf e
-# o ./play.sh lia outro. O sintoma e justamente o menu anunciar
-# "Contas cadastradas: 0" enquanto o ./play.sh sobe as contas normalmente.
-#
-# Agora, se o arquivo local nao existir, os lugares conhecidos sao
-# procurados antes de desistir — e o caminho em uso passa a ser SEMPRE
-# impresso, para o numero nunca mais ficar sem explicacao.
-resolve_accounts_file() {
-    if [ -s "$SLSDIR/accounts.conf" ]; then
-        printf '%s' "$SLSDIR/accounts.conf"
-        return 0
-    fi
-    for _cand in "$HOME/solucaoshell/accounts.conf" \
-                 "$HOME/.sls/accounts.conf"; do
-        if [ -s "$_cand" ]; then
-            printf '%s' "$_cand"
-            unset _cand
-            return 0
-        fi
-    done
-    unset _cand
-    printf '%s' "$SLSDIR/accounts.conf"
-}
+. "$LIBDIR/contas.sh"
 
 ACCOUNTS_FILE=$(resolve_accounts_file)
 
@@ -103,15 +77,6 @@ if command -v setsid > /dev/null 2>&1; then
 else
     SETSID=""
 fi
-
-# ============================================================
-#  SOMENTE SERVIDOR BR
-#  O suporte aos outros 12 servidores foi removido a pedido.
-#  O campo de servidor continua no accounts.conf (sempre "1")
-#  para nao quebrar cadastros existentes.
-# ============================================================
-server_url()    { case "$1" in 1) printf %s ZnVyaWFkZXRpdGFzLm5ldA== | base64 -d ;; esac; }
-server_tag()    { case "$1" in 1) echo "BR" ;; esac; }
 
 # Remove CR (accounts.conf editado no Windows) e caracteres de controle.
 clean_field() {

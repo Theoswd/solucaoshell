@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.44"
+versionNum="3.9.45"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -797,55 +797,6 @@ luta_hp() {
     [ "$_lt_hp0" -ge 3 ]
 }
 
-# AMOSTRAS DA PAGINA DE LUTA (diagnostico).   luta_amostra SECAO ARQUIVO TIPO
-#
-# Guarda em $TMP/amostras/ copias de paginas reais de cada evento, para
-# decidir com o HTML do servidor BR na mao — e nao por palpite — duas melhorias:
-#   - o botao em recarga (b_green / b_grey) antes de gastar a requisicao;
-#   - o texto com que o jogo declara o fim ("Batalha finalizada!"). Hoje so o
-#     ?close=reward e o ?end_fight contam, e 140 de 184 saidas de batalha nos
-#     logs de 12/09 foram pelos 90s sem sinal — 90s relendo a pagina a toa.
-#
-# TIPO luta: ate 3 paginas por evento, 40s ou mais entre elas (a primeira tem
-# tudo pronto; as seguintes pegam botoes em recarga). Demais TIPOs (fim,
-# morto, unrip, fora1, fora2): so a primeira ocorrencia. Depois de cheio,
-# custa um teste de arquivo e nenhum processo. LUTA_AMOSTRAS=0 desliga.
-LUTA_AMOSTRAS="${LUTA_AMOSTRAS:-1}"
-
-luta_amostra() {
-    [ "$LUTA_AMOSTRAS" = 1 ] || return 0
-    [ -n "$TMP" ] && [ -s "$2" ] || return 0
-    _la_d="$TMP/amostras"
-    case "$3" in
-        luta)
-            if [ -s "$_la_d/${1}_luta3.html" ]; then unset _la_d; return 0; fi
-            _la_n=1
-            [ -s "$_la_d/${1}_luta1.html" ] && _la_n=2
-            [ -s "$_la_d/${1}_luta2.html" ] && _la_n=3
-            _la_t=`date +%s`
-            if [ "$_la_n" -gt 1 ]; then
-                _la_u=0
-                [ -r "$_la_d/${1}_luta.t" ] && read -r _la_u < "$_la_d/${1}_luta.t"
-                case "$_la_u" in ''|*[!0-9]*) _la_u=0 ;; esac
-                if [ $(( _la_t - _la_u )) -lt 40 ]; then
-                    unset _la_d _la_n _la_t _la_u; return 0
-                fi
-            fi
-            _la_f="$_la_d/${1}_luta${_la_n}.html"
-            ;;
-        *)
-            _la_f="$_la_d/${1}_${3}.html"
-            if [ -s "$_la_f" ]; then unset _la_d _la_f; return 0; fi
-            ;;
-    esac
-    [ -d "$_la_d" ] || mkdir -p "$_la_d" 2>/dev/null
-    if cp "$2" "$_la_f" 2>/dev/null && [ "$3" = luta ]; then
-        printf '%s\n' "$_la_t" > "$_la_d/${1}_luta.t" 2>/dev/null
-    fi
-    unset _la_d _la_f _la_n _la_t _la_u
-    return 0
-}
-
 # Pode tentar reconectar agora? Portao unico da luta e do descansar ($TMP/last_reconn,
 # FUNC_reconn_min + deslocamento por PID): a luta e o descanso nao podem
 # somar tentativas, senao a conta reconecta em rajada e o servidor passa a
@@ -878,7 +829,6 @@ luta_acabou() {
             unset _lz_e; return 1
             ;;
         morto)
-            luta_amostra "$2" "$1" morto
             LUTA_MOTIVO="o jogo declarou o personagem morto"
             _lz_k=`luta_assassino "$1"`
             [ -n "$_lz_k" ] && LUTA_MOTIVO="assassinado por $_lz_k (log da batalha)"
@@ -887,7 +837,6 @@ luta_acabou() {
             unset _lz_e; return 0
             ;;
         fim)
-            luta_amostra "$2" "$1" fim
             LUTA_MOTIVO="o jogo declarou o fim da batalha"
             batalha_limpar
             unset _lz_e; return 0
@@ -928,7 +877,6 @@ luta_acabou() {
             # os 15s relendo a pagina.
             if [ "${_lt_lutou:-0}" = 1 ] && \
                grep -q -F -e 'Batalha finalizada!' -e 'Vitória!' -e 'Luta acabou!' "$1" 2>/dev/null; then
-                luta_amostra "$2" "$1" fim
                 LUTA_MOTIVO="o jogo declarou o fim da batalha"
                 batalha_limpar
                 unset _lz_e; return 0
@@ -944,12 +892,10 @@ luta_acabou() {
             fi
             if [ -z "$_lt_fora_desde" ]; then
                 _lt_fora_desde=`date +%s`
-                luta_amostra "$2" "$1" fora1
                 [ "${_lt_lutou:-0}" = 1 ] && \
                     printf "Sem botao de luta na tela - confirmando o fim (%ss)\n" "$_lz_max"
             fi
             if [ $(( `date +%s` - _lt_fora_desde )) -ge "$_lz_max" ]; then
-                luta_amostra "$2" "$1" fora2
                 LUTA_MOTIVO="$_lz_mot"
                 batalha_limpar
                 unset _lz_e _lz_max _lz_mot; return 0
@@ -1010,7 +956,6 @@ ressuscitar() {
     [ -s "$2" ] || return 1
     _rs_l=`grep -o -E "(/$1/unrip/[^A-Za-z0-9_]r[^A-Za-z0-9_][0-9]+)" "$2" 2>/dev/null | sed -n 1p`
     [ -n "$_rs_l" ] || { unset _rs_l; return 1; }
-    luta_amostra "$1" "$2" unrip
     # Trava contra laco de unrip. So volta a zero quando o luta_hp vir HP de
     # verdade na tela — isto e, quando a ressurreicao tiver funcionado.
     _reviveu=1

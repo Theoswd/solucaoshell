@@ -30,34 +30,7 @@ export LIBDIR
 
 unset _dir _self _link _hops
 
-# Localiza o arquivo de contas — MESMA regra do play.sh.
-#
-# CORRECAO: o caminho vinha exclusivamente do diretorio do script, e as
-# duas ferramentas podiam terminar em arquivos diferentes. Com mais de uma
-# copia do repositorio no aparelho — o caso mais comum e clonar de novo
-# depois de um problema — este menu anunciava "Contas cadastradas: 0"
-# enquanto o ./play.sh subia as contas normalmente, sem nenhuma pista de
-# que estavam lendo arquivos distintos.
-#
-# Agora, se o arquivo local nao existir, os lugares conhecidos sao
-# procurados antes de desistir, e o caminho em uso e sempre exibido no
-# menu. Um cadastro novo continua indo para o diretorio do repositorio.
-resolve_accounts_file() {
-    if [ -s "$SLSDIR/accounts.conf" ]; then
-        printf '%s' "$SLSDIR/accounts.conf"
-        return 0
-    fi
-    for _cand in "$HOME/solucaoshell/accounts.conf" \
-                 "$HOME/.sls/accounts.conf"; do
-        if [ -s "$_cand" ]; then
-            printf '%s' "$_cand"
-            unset _cand
-            return 0
-        fi
-    done
-    unset _cand
-    printf '%s' "$SLSDIR/accounts.conf"
-}
+. "$LIBDIR/contas.sh"
 
 ACCOUNTS_FILE=$(resolve_accounts_file)
 
@@ -85,15 +58,6 @@ CYAN="$A1"
 DIM='[2m'
 WHITE='[1;37m'
 RESET='[0m'
-
-# ============================================================
-#  SOMENTE SERVIDOR BR
-#  O suporte aos outros 12 servidores foi removido a pedido.
-#  O campo de servidor continua no accounts.conf (sempre "1")
-#  para nao quebrar cadastros existentes.
-# ============================================================
-server_url()    { case "$1" in 1) printf %s ZnVyaWFkZXRpdGFzLm5ldA== | base64 -d ;; esac; }
-server_tag()    { case "$1" in 1) echo "BR" ;; esac; }
 
 show_menu() {
     clear
