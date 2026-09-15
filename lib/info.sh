@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.48"
+versionNum="3.9.49"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -652,7 +652,11 @@ batalha_pendente() {
     [ -n "$_bp_sec" ] || return 1
     _bp_min="$LUTA_TETO_MIN"
     case "$_bp_min" in ''|*[!0-9]*) _bp_min=30 ;; esac
-    [ $(( `date +%s` - _bp_t )) -lt $(( _bp_min * 60 )) ]
+    _bp_t=$(( `date +%s` - _bp_t ))
+    # Marca mais no futuro que o teto: o relogio voltou muito (data errada
+    # corrigida) e ela nao vale. Um ajuste pequeno do NTP no meio da luta
+    # continua valendo: sem a marca, o descansar confirmaria a fuga.
+    [ "$_bp_t" -gt $(( -_bp_min * 60 )) ] && [ "$_bp_t" -lt $(( _bp_min * 60 )) ]
     _bp_rc=$?
     unset _bp_min
     return $_bp_rc

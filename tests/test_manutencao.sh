@@ -2846,6 +2846,46 @@ check "stop.sh: sai com 0 fora do Termux" 0 "$?"
 
 rm -rf "$_td8"; unset _td8 _cr _f _p1 _p2 _p3 _bloco _p4
 
+printf "\n=== 44. stop.sh com PID reciclado, painel por conta e marca de batalha ===\n"
+_td9=`mktemp -d`
+
+# Marca de batalha: muito no futuro (relogio voltou) nao vale; ajuste pequeno vale.
+_r=`( TMP="$_td9"; LUTA_TETO_MIN=30; . "$LIB/info.sh" > /dev/null 2>&1
+      _ag=\`date +%s\`
+      for _d in 7200 60 -60 -3600; do
+          echo "king $(( _ag + _d ))" > "$TMP/batalha"
+          batalha_pendente && printf 'sim ' || printf 'nao '
+      done )`
+check "batalha_pendente: marca no futuro alem do teto nao vale" "nao sim sim nao " "$_r"
+
+if [ -r "/proc/$$/cmdline" ]; then
+    # stop.sh: orchestrator.pid reciclado para outro processo nao morre.
+    sh -c 'sleep 30; :' "$_td9/outro.sh" & _p1=$!
+    mkdir -p "$_td9/vazio/.sls/status"
+    echo $_p1 > "$_td9/vazio/.sls/status/orchestrator.pid"
+    ( HOME="$_td9/vazio" sh "$ROOT/stop.sh" ) > /dev/null 2>&1
+    case "`cut -d' ' -f3 /proc/$_p1/stat 2>/dev/null`" in ''|Z) _r=morto ;; *) _r=vivo ;; esac
+    check "stop.sh: PID do orchestrator reciclado nao e morto" vivo "$_r"
+
+    # Painel: PID gravado e o worker de OUTRA conta -> relanca esta.
+    sh -c 'sleep 30; :' "$_td9/lib/sls.sh" -boot "$_td9/h/.sls/BR_Ana" & _p2=$!
+    sleep 1
+    mkdir -p "$_td9/h/.sls/status" "$_td9/h/.sls/BR_Ze"
+    printf '1|Ze|x\n' > "$_td9/acc.conf"
+    echo $_p2 > "$_td9/h/.sls/status/BR_Ze.pid"
+    echo running > "$_td9/h/.sls/status/BR_Ze.status"
+    ( HOME="$_td9/h"; SLSDIR="$ROOT"; STATUS_DIR="$_td9/h/.sls/status"
+      ACCOUNTS_FILE="$_td9/acc.conf"; . "$LIB/contas.sh"
+      launch_worker() { echo L >> "$_td9/lancou"; }
+      PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+      . "$LIB/panel.sh"; painel_loop ) > /dev/null 2>&1
+    check "painel: PID que virou worker de outra conta e relancado" 1 "`cat "$_td9/lancou" 2>/dev/null | wc -l | tr -d ' '`"
+    kill $_p1 $_p2 2>/dev/null; wait $_p1 $_p2 2>/dev/null
+fi
+
+rm -rf "$_td9"; unset _td9 _p1 _p2
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

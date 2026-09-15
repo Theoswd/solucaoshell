@@ -246,10 +246,11 @@ remove_account() {
             # accounts.conf a cada volta) nao relancar.
             _pf="$HOME/.sls/status/${tag}_${user}"
             _pid=$(cat "$_pf.pid" 2>/dev/null)
+            # .pid antes do kill: painel sem PID gravado nao relanca.
+            rm -f "$_pf.pid" "$_pf.status"
             if worker_vivo "$_pid" "$acc_dir"; then
                 kill -TERM "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
             fi
-            rm -f "$_pf.pid" "$_pf.status"
             unset _pf _pid
             printf "${GREEN}Removida.${RESET}\n"
             if [ -d "$acc_dir" ]; then

@@ -48,18 +48,20 @@ worker_vivo() {
     [ -n "$wv_pid" ] || return 1
     case "$wv_pid" in *[!0-9]*) return 1 ;; esac
     kill -0 "$wv_pid" 2>/dev/null || return 1
+    [ -r "/proc/$wv_pid/cmdline" ] || return 0
+    # Um processo so (o tr): o painel chama isto para cada conta a cada volta.
+    wv_cl=$(tr '\0' '\n' < "/proc/$wv_pid/cmdline" 2>/dev/null)
     # Aceita worker.sh E sls.sh: o worker.sh faz exec do sls.sh, entao
     # depois da troca o PID e o mesmo mas o cmdline e o do sls.sh.
-    # Um grep so: o painel chama isto para cada conta a cada volta.
-    if [ -r "/proc/$wv_pid/cmdline" ]; then
-        grep -qE 'worker\.sh|sls\.sh' "/proc/$wv_pid/cmdline" 2>/dev/null || return 1
-        # Com a pasta, confere tambem DE QUAL conta: depois de reiniciar o
-        # aparelho, o PID antigo de uma conta pode ser o worker novo de outra.
-        # Sem pasta nenhuma no cmdline e o sls.sh da versao anterior, que
-        # ainda roda ate o stop.sh: vale so o teste de cima.
-        if [ -n "$2" ] && grep -q '/\.sls/' "/proc/$wv_pid/cmdline" 2>/dev/null; then
-            tr '\0' '\n' < "/proc/$wv_pid/cmdline" | grep -qxF "$2" || return 1
-        fi
-    fi
-    return 0
+    case "$wv_cl" in *worker.sh*|*sls.sh*) ;; *) return 1 ;; esac
+    # Com a pasta, confere tambem DE QUAL conta: depois de reiniciar o
+    # aparelho, o PID antigo de uma conta pode ser o worker novo de outra.
+    # Sem pasta nenhuma no cmdline e o sls.sh da versao anterior, que ainda
+    # roda ate o stop.sh: vale so o teste de cima.
+    [ -n "$2" ] || return 0
+    case "$wv_cl" in *"/.sls/"*) ;; *) return 0 ;; esac
+    wv_nl='
+'
+    case "$wv_nl$wv_cl$wv_nl" in *"$wv_nl$2$wv_nl"*) return 0 ;; esac
+    return 1
 }

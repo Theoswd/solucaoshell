@@ -37,7 +37,10 @@ printf "${GOLD}Parando todos os workers do solucaoshell...${RESET}\n\n"
 orch_pid=$(cat "$STATUS_DIR/orchestrator.pid" 2>/dev/null)
 case "$orch_pid" in
     ""|*[!0-9]*) ;;
-    *) kill -TERM "$orch_pid" 2>/dev/null ;;
+    # So se ainda for um play.sh: ele nao tem trap, entao o .pid fica para
+    # tras quando morre (Ctrl+C, SIGKILL do Android) e o PID e reciclado para
+    # outro processo do usuario — o shell, uma sessao SSH.
+    *) grep -q 'play\.sh' "/proc/$orch_pid/cmdline" 2>/dev/null && kill -TERM "$orch_pid" 2>/dev/null ;;
 esac
 rm -f "$STATUS_DIR/orchestrator.pid"
 

@@ -1020,10 +1020,10 @@ while true; do
         # e esse era justamente o defeito: a unica forma de rever o painel
         # era rodar o play.sh, que derrubava as 6 contas que estavam boas.
         #
-        # worker_vivo (contas.sh) confere que o PID ainda e do bot: o kernel
+        # worker_vivo (contas.sh) confere que o PID ainda e desta conta: o kernel
         # recicla PIDs. Relanca no maximo uma vez por minuto por conta, para
         # um worker que morre ao subir nao virar laco.
-        if [ -n "$pid" ] && ! worker_vivo "$pid"; then
+        if [ -n "$pid" ] && ! worker_vivo "$pid" "$acc_dir"; then
             status="dead"
             if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
                 ler_arq "$acc_dir/.relancado"
