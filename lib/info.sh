@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.58"
+versionNum="3.9.59"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -990,6 +990,33 @@ luta_acabou() {
 # rajada que o servidor estrangula. O deslocamento sai do PID, entao e fixo
 # por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
 # :59:30 de antes: a base e o inicio do minuto.
+# HP MAXIMO PARA A LUTA, SEM PEDIR /train A CADA EVENTO.
+#
+# O fetch_train_stats ja le o /train a cada ciclo; os modulos de batalha
+# pediam a mesma pagina de novo so para gravar o FULL — uma requisicao a mais
+# por entrada de evento, no minuto em que todas as contas do aparelho estao
+# pedindo. O HP maximo so muda ao subir de nivel, entao a leitura vale por
+# FULL_MAX_IDADE (30 min). Carimbo comum em $TMP/.full_ts.
+FULL_MAX_IDADE=${FULL_MAX_IDADE:-1800}
+full_atualizar() { # arquivo_do_HP_maximo
+    _fa_u=0
+    { read -r _fa_u < "$TMP/.full_ts"; } 2>/dev/null
+    case "$_fa_u" in ''|*[!0-9]*) _fa_u=0 ;; esac
+    _fa_u=$(( `date +%s` - _fa_u ))
+    # Carimbo no futuro (relogio voltou) vale como vencido.
+    if [ -s "$1" ] && [ "$_fa_u" -ge 0 ] && [ "$_fa_u" -lt "$FULL_MAX_IDADE" ]; then
+        unset _fa_u
+        return 0
+    fi
+    (
+        run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$1"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    [ -s "$1" ] && date +%s > "$TMP/.full_ts" 2>/dev/null
+    unset _fa_u
+    return 0
+}
+
 janela_alvo() { # MMSS_base -> MMSS
     printf '%s' $(( $1 + $$ % 30 ))
 }

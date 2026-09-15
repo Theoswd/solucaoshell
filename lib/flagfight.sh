@@ -86,6 +86,9 @@ flagfight_fight() {
     # Instante do INICIO da volta: o ataque marca o last_atk com ele para o
     # tempo do request contar DENTRO da recarga (LA), e nao somar-se a ela.
     _atk0=$(date +%s)
+    # Uma leitura so do last_atk por volta: dois "cat" na mesma condicao podiam
+    # devolver segundos diferentes e liberar o golpe antes da recarga.
+    _latk=$(( _atk0 - $(cat last_atk) ))
     if [ -s SHIELD ] && \
        awk -v ush="$(cat USH)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(ush < hlhp) }' && \
        [ "$(($(date +%s) - $(cat last_heal)))" -gt 90 ]; then
@@ -112,10 +115,10 @@ flagfight_fight() {
       date +%s > last_dodge
 
     elif [ -s ATKRND ] && { \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
          ! alvo_grey "$src_ram" && \
          awk -v rhp="$(cat RHP)" -v enh="$(cat ENH)" 'BEGIN { exit !(rhp < enh) }' || \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
          ! alvo_grey "$src_ram" && \
          alvo_aliado USER cla; }; then
       (
@@ -126,7 +129,7 @@ flagfight_fight() {
       echo "$_atk0" > last_atk
 
     elif [ -s ATK ] && \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
       (
         run_curl_exec "${URL}$(cat ATK)" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
@@ -147,7 +150,7 @@ flagfight_fight() {
         cf_access
         [ -s ATK ] || sleep 1
       else
-        _resta=$(( LA - ( $(date +%s) - $(cat last_atk) ) ))
+        _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
       fi
     fi
@@ -167,10 +170,7 @@ flagfight_start() {
 
   case `date +%H:%M` in
   (10:1[0-4]|16:1[0-4])
-    (
-      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$full_ram"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    full_atualizar "$full_ram"
     fetch_page "/flagfight/?close=reward" "$src_ram"
     # Inscricao: a batalha fica anotada para o worker relancado voltar a ela.
     batalha_marcar flagfight

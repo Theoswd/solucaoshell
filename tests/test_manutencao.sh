@@ -202,7 +202,7 @@ printf "\n=== 6. Uma requisicao por ciclo: recarga espera sem requisitar ===\n"
 # O ramo ocioso (else) so faz requisicao quando o alvo esta grey; fora disso
 # espera o restante da recarga com 'sleep \$_resta', sem recarregar a pagina.
 for f in clanfight.sh clandmg.sh altars.sh coliseum.sh clancoliseum.sh flagfight.sh; do
-    if grep -q 'LA - .*last_atk\|LA - time_since_last_atk' "$LIB/$f"; then
+    if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk' "$LIB/$f"; then
         ok "$f: espera o restante da recarga (sleep do cooldown, sem request)"
     else
         bad "$f: nao encontrou a espera de recarga sem requisicao"
@@ -3293,6 +3293,35 @@ _r=$(grep -cF 'BREAK=$(($(date +%s) + 95))' "$LIB/clanfight.sh" "$LIB/clandmg.sh
 check "espera da luta cobre a entrada adiantada (95s)" 3 "$_r"
 rm -rf "$_td15"; unset _td15 _r
 unset -f _esp50
+
+printf "\n=== 51. HP maximo em cache e leitura unica do last_atk ===\n"
+# =============================================================================
+_td16=`mktemp -d`
+_full51() { # idade_do_carimbo(ou "sem") conteudo_do_arquivo -> pediu|usou_cache
+    ( TMP="$_td16/f$1$2"; URL="http://jogo"; export TMP URL; rm -rf "$TMP"; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      [ "$1" != sem ] && echo $(( `date +%s` - $1 )) > "$TMP/.full_ts"
+      [ -n "$2" ] && echo "$2" > "$TMP/FULL"
+      run_curl_exec() { echo pediu >> "$TMP/req"; echo "(65312)"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      full_atualizar "$TMP/FULL" > /dev/null 2>&1
+      [ -f "$TMP/req" ] && printf 'pediu' || printf 'cache' )
+}
+check "HP maximo lido ha pouco: nao pede /train de novo" "cache" "`_full51 60 65312`"
+check "HP maximo vencido (35 min): pede de novo"         "pediu" "`_full51 2100 65312`"
+check "sem arquivo de HP maximo: pede"                   "pediu" "`_full51 60 ''`"
+check "sem carimbo: pede"                                "pediu" "`_full51 sem 65312`"
+check "carimbo no futuro: pede"                          "pediu" "`_full51 -300 65312`"
+_r=$(grep -c 'URL/train' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/clancoliseum.sh" \
+     "$LIB/flagfight.sh" "$LIB/king.sh" "$LIB/coliseum.sh" | grep -c ':0$')
+check "nenhum modulo de batalha pede /train direto" 7 "$_r"
+
+# last_atk lido uma vez por volta (duas leituras podiam dar segundos diferentes).
+_r=$(grep -c 'cat last_atk' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" \
+     "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c ':1$')
+check "last_atk lido uma vez por volta nos cinco modulos" 5 "$_r"
+rm -rf "$_td16"; unset _td16 _r
+unset -f _full51
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

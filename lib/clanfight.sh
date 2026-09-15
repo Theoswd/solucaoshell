@@ -98,6 +98,9 @@ clanfight_fight() {
     # (~1-2s) conta DENTRO da recarga (LA), em vez de somar-se a ela — sem
     # isso o intervalo entre golpes era LA + duracao do request (~6-8s).
     _atk0=$(date +%s)
+    # Uma leitura so do last_atk por volta: dois "cat" na mesma condicao podiam
+    # devolver segundos diferentes e liberar o golpe antes da recarga.
+    _latk=$(( _atk0 - $(cat last_atk) ))
     # PRIORIDADE 1 — CURA: manter a conta viva vem antes da esquiva. Com o
     # HP abaixo do limiar, cura na hora; nao esquiva e fica sem reler o HP.
     if { [ -s HEAL ] || [ -s GRASS ]; } && \
@@ -136,10 +139,10 @@ clanfight_fight() {
       date +%s > last_dodge
 
     elif [ -s ATKRND ] && { \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
          ! alvo_grey "$TMP/SRC" && \
          awk -v rhp="$(cat RHP)" -v enh="$(cat HP2)" 'BEGIN { exit !(rhp < enh) }' || \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
          ! alvo_grey "$TMP/SRC" && \
          alvo_aliado USER cla; }; then
       (
@@ -151,7 +154,7 @@ clanfight_fight() {
       sleep 0.3s
 
     elif [ -s ATK ] && \
-         awk -v latk="$(($(date +%s) - $(cat last_atk)))" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
+         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
       (
         run_curl_exec "${URL}$(cat ATK)" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &
@@ -176,7 +179,7 @@ clanfight_fight() {
         cf_access
         [ -s ATK ] || sleep 1
       else
-        _resta=$(( LA - ( $(date +%s) - $(cat last_atk) ) ))
+        _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
       fi
     fi
@@ -200,10 +203,7 @@ clanfight_start() {
   cd "$TMP" || return 1
   case `date +%H:%M` in
   10:5[5-9]|18:5[5-9])
-    (
-      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$TMP/FULL"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    full_atualizar "$TMP/FULL"
     (
       run_curl_exec "$URL/clanfight/?close=reward" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
