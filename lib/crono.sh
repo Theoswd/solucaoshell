@@ -273,7 +273,9 @@ masmorra_liberada() {
     [ "${FUNC_masmorra:-y}" = "y" ] || return 1
     _u=`cat "$TMP/next_masmorra" 2>/dev/null`
     case "$_u" in ''|*[!0-9]*) _u=0 ;; esac
-    [ "`date +%s`" -ge "$_u" ]
+    # Mais de 2 dias adiante nao e relogio do jogo (ver relogio_liberado).
+    _u=$(( _u - `date +%s` ))
+    [ "$_u" -le 0 ] || [ "$_u" -gt 172800 ]
 }
 # Segundos ate os golpes voltarem, lidos da pagina da masmorra ($1).
 masmorra_relogio() {
@@ -328,7 +330,11 @@ relogio_segundos() {
 relogio_liberado() { # nome -> 0 se o relogio da atividade venceu
     _rl=`cat "$TMP/next_$1" 2>/dev/null`
     case "$_rl" in ''|*[!0-9]*) unset _rl; return 2 ;; esac
-    if [ "`date +%s`" -ge "$_rl" ]; then unset _rl; return 0; fi
+    # Nenhum relogio do jogo passa de 1 dia. Mais de 2 dias adiante e marca
+    # gravada com o relogio do aparelho errado (o WSL ja pulou anos para a
+    # frente): vale como vencido, senao a atividade fecharia ate aquela data.
+    _rl=$(( _rl - `date +%s` ))
+    if [ "$_rl" -le 0 ] || [ "$_rl" -gt 172800 ]; then unset _rl; return 0; fi
     unset _rl
     return 1
 }

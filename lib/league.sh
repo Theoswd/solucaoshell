@@ -112,8 +112,10 @@ league_restauro_marcar() {
 league_restauro_pendente() {
     _re=`cat "$TMP/league_restauro" 2>/dev/null`
     case "$_re" in ''|*[!0-9]*) rm -f "$TMP/league_restauro"; unset _re; return 1 ;; esac
-    if [ "`date +%s`" -lt "$_re" ]; then
-        LEAGUE_RESTAURO_MIN=$(( (_re - `date +%s` + 59) / 60 ))
+    # Mais de 2 dias adiante e relogio do aparelho errado (ver relogio_liberado).
+    _re=$(( _re - `date +%s` ))
+    if [ "$_re" -gt 0 ] && [ "$_re" -le 172800 ]; then
+        LEAGUE_RESTAURO_MIN=$(( (_re + 59) / 60 ))
         unset _re
         return 0
     fi

@@ -2660,6 +2660,20 @@ _r=`( TMP=\`mktemp -d\`; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > 
       rm -rf "$TMP" )`
 check "relogio voltou: portoes com marca no futuro abrem" "ativ=abre reconn=abre estatua=abre" "$_r"
 
+# --- relogio do WSL pulou anos para a frente e foi corrigido: os relogios do
+# jogo anotados naquela data nao podem fechar caverna/campanha/masmorra/Liga.
+_r=`( TMP=\`mktemp -d\`; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      . "$LIB/league.sh" > /dev/null 2>&1
+      f=$(( \`date +%s\` + 110000000 )); p=$(( \`date +%s\` + 3600 ))
+      echo $f > "$TMP/next_campanha";   campanha_liberada        && printf 'campanha=abre ' || printf 'campanha=fechada '
+      echo $f > "$TMP/next_masmorra";   masmorra_liberada        && printf 'masmorra=abre ' || printf 'masmorra=fechada '
+      echo $f > "$TMP/league_restauro"; league_restauro_pendente && printf 'liga=espera ' || printf 'liga=livre '
+      echo $p > "$TMP/next_masmorra";   masmorra_liberada        && printf 'masmorra1h=abre ' || printf 'masmorra1h=fechada '
+      echo $p > "$TMP/league_restauro"; league_restauro_pendente && printf 'liga1h=espera' || printf 'liga1h=livre'
+      rm -rf "$TMP" )`
+check "relogio adiantado anos: marca de anos adiante abre; relogio de 1h continua valendo" \
+    "campanha=abre masmorra=abre liga=livre masmorra1h=fechada liga1h=espera" "$_r"
+
 # --- trava de reconexao: uma so
 _r=`grep -c 'FUNC_reconn_min' "$LIB/crono.sh" "$LIB/info.sh" | grep -v ':0$' | wc -l`
 check "reconexao: um portao so (luta_pode_reconectar)" 1 "$_r"
