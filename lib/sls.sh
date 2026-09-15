@@ -118,6 +118,8 @@ login_lock() {
     while [ "$_n" -lt 180 ]; do
         if mkdir "$LOCKDIR" 2>/dev/null; then
             echo $$ > "$LOCKDIR/pid" 2>/dev/null
+            # Dentro da trava: espaca este login do anterior (info.sh).
+            type login_espacar > /dev/null 2>&1 && login_espacar
             return 0
         fi
         _dono=`cat "$LOCKDIR/pid" 2>/dev/null`
@@ -136,7 +138,10 @@ login_lock() {
     return 0
 }
 
-login_unlock() { rm -rf "$LOCKDIR" 2>/dev/null; }
+login_unlock() {
+    type login_espacar_marcar > /dev/null 2>&1 && login_espacar_marcar
+    rm -rf "$LOCKDIR" 2>/dev/null
+}
 
 do_login() {
     # REAPROVEITA A SESSAO EXISTENTE.

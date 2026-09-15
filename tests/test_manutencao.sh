@@ -1721,9 +1721,9 @@ _s=$(espera_sim 0005 5500 5930)
 check "espera_janela: chegou depois de :59:59 -> segue na hora (antes: ~1h)" 0 "$_s"
 _s=$(espera_sim 1502 1000 1430)
 check "espera_janela: Bandeiras chegando em :15:02 -> segue na hora" 0 "$_s"
-for _p in "flagfight.sh 1000 1430" "clanfight.sh 5500 5930" "clandmg.sh 2500 2930"; do
+for _p in "flagfight.sh 1000 1400" "clanfight.sh 5500 5900" "clandmg.sh 2500 2900"; do
     set -- $_p
-    if grep -q "espera_janela $2 $3" "$LIB/$1" && \
+    if grep -q "espera_janela $2 .janela_alvo $3." "$LIB/$1" && \
        ! grep -q 'while (case `date +%M:%S`' "$LIB/$1"; then
         ok "$1: espera de inicio limitada a janela"
     else
@@ -3256,6 +3256,43 @@ grep -q 'aviso_subir' "$ROOT/setup.sh" && grep -q './play.sh' "$ROOT/setup.sh" \
     || bad "setup.sh: nao diz que falta subir o bot"
 rm -rf "$_td14"; unset _td14 _r
 unset -f _pan49
+
+printf "\n=== 50. rajada do mesmo IP: logins espacados e inscricao escalonada ===\n"
+# =============================================================================
+# Varias contas do mesmo IP autenticando ou se inscrevendo no mesmo segundo e
+# o padrao que o servidor estrangula (a resposta e a mesma de senha errada).
+_td15=`mktemp -d`
+_esp50() { # segundos_desde_o_ultimo_login [gap] -> segundos dormidos
+    ( HOME="$_td15/h$1$2"; mkdir -p "$HOME/.sls"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      [ "$1" != nunca ] && echo $(( `date +%s` - $1 )) > "$HOME/.sls/.login.ultimo"
+      [ -n "$2" ] && SLS_LOGIN_GAP="$2"
+      sleep() { printf '%s' "$1"; }
+      login_espacar )
+}
+check "login colado no anterior espera o intervalo"        "10" "`_esp50 0`"
+check "login 4s depois espera so o que falta"              "6"  "`_esp50 4`"
+check "login depois do intervalo nao espera"               ""   "`_esp50 30`"
+check "sem login anterior nao espera"                      ""   "`_esp50 nunca`"
+check "carimbo no futuro (relogio voltou) nao segura"      ""   "`_esp50 -60`"
+check "SLS_LOGIN_GAP=0 desliga o espacamento"              ""   "`_esp50 0 0`"
+grep -q 'login_espacar$' "$LIB/sls.sh" && grep -q 'login_espacar_marcar' "$LIB/sls.sh" \
+    && ok "sls.sh: a trava de login espaca e carimba" \
+    || bad "sls.sh: trava de login sem espacamento"
+
+# Inscricao escalonada: alvo dentro do minuto, nunca depois do :30 de antes.
+_r=$( . "$LIB/info.sh" > /dev/null 2>&1
+      _a=`janela_alvo 5900`
+      [ "$_a" -ge 5900 ] && [ "$_a" -le 5929 ] && printf 'ok' || printf '%s' "$_a" )
+check "janela_alvo: alvo entre :59:00 e :59:29" "ok" "$_r"
+_r=$(grep -cF 'espera_janela ' "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/flagfight.sh" | grep -cv ':0$')
+check "os tres eventos ainda esperam a janela" 3 "$_r"
+_r=$(grep -cF 'janela_alvo' "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/flagfight.sh" | grep -cv ':0$')
+check "os tres eventos com inscricao escalonada" 3 "$_r"
+_r=$(grep -cF 'BREAK=$(($(date +%s) + 95))' "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/flagfight.sh" | grep -c ':1$')
+check "espera da luta cobre a entrada adiantada (95s)" 3 "$_r"
+rm -rf "$_td15"; unset _td15 _r
+unset -f _esp50
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

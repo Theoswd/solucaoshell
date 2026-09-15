@@ -200,7 +200,7 @@ clandmgfight_start() {
     # depois de :29:59, a conta ficava parada ate o ramo de desistencia de
     # :45 e perdia o duelo inteiro. Agora, atrasada, ela segue direto para a
     # inscricao — o duelo aceita entrada durante :3x, como o ramo abaixo.
-    espera_janela 2500 2930
+    espera_janela 2500 `janela_alvo 2900`
     (
       run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
@@ -208,7 +208,8 @@ clandmgfight_start() {
     link_acao "$TMP/SRC" clandmgfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"
-    BREAK=$(($(date +%s) + 60))
+    # 95s: a inscricao e escalonada por conta (janela_alvo).
+    BREAK=$(($(date +%s) + 95))
     until [ "`estado_luta "$TMP/SRC" clandmgfight`" = luta ] || [ "$(date +%s)" -gt "$BREAK" ]; do
       printf " ...\n%s\n" "`cat "$TMP/ACCESS"`"
       (

@@ -181,7 +181,7 @@ flagfight_start() {
     # relogio MOSTRAR 14:30: chegando depois de :14:59 (tres requisicoes
     # lentas acima), a conta ficava presa ate a hora seguinte (ver
     # espera_janela, em info.sh).
-    espera_janela 1000 1430
+    espera_janela 1000 `janela_alvo 1400`
 
     (
       run_curl_exec "$URL/flagfight/enterFight" > "$src_ram"
@@ -191,7 +191,8 @@ flagfight_start() {
     printf " Entering...\n"
     printf " Waiting...\n"
 
-    BREAK=$(($(date +%s) + 60))
+    # 95s: a inscricao e escalonada por conta (janela_alvo).
+    BREAK=$(($(date +%s) + 95))
 
     # A espera termina quando ha LUTA na pagina (qualquer acao do evento),
     # nao quando o primeiro link por acaso e a esquiva.

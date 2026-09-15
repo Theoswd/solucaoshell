@@ -219,7 +219,9 @@ clanfight_start() {
     # relogio MOSTRAR 59:30: chegando depois de :59:59 (tres requisicoes
     # lentas acima), a conta ficava presa ate a hora seguinte, com o Torneio
     # ja em andamento (ver espera_janela, em info.sh).
-    espera_janela 5500 5930
+    # O alvo e escalonado por conta dentro de :59:00-:59:29 (janela_alvo):
+    # todas pediam a inscricao no mesmo segundo, do mesmo IP.
+    espera_janela 5500 `janela_alvo 5900`
     (
       run_curl_exec "$URL/clanfight/enterFight" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
@@ -227,7 +229,9 @@ clanfight_start() {
     link_acao "$TMP/SRC" clanfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"
-    BREAK=$(($(date +%s) + 60))
+    # 95s, nao 60: com a inscricao escalonada (janela_alvo) a conta pode
+    # entrar ja em :59:00, e a luta so aparece em :00.
+    BREAK=$(($(date +%s) + 95))
     # A espera termina quando ha LUTA na pagina (qualquer acao do evento),
     # nao quando o primeiro link por acaso e a esquiva.
     until [ "`estado_luta "$TMP/SRC" clanfight`" = luta ] || [ "$(date +%s)" -gt "$BREAK" ]; do

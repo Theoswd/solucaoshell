@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.57"
+versionNum="3.9.58"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -483,6 +483,29 @@ sessao_estado() {
 # de "sessao caida" quando a conta nao confirma a sessao ha minutos.
 servidor_mudo_marcar() { date +%s > "$TMP/last_rede" 2>/dev/null; }
 
+# INTERVALO MINIMO ENTRE LOGINS DE CONTAS DIFERENTES DO MESMO APARELHO.
+#
+# A trava do login (login_lock, em sls.sh) serializa, mas dois logins podiam
+# sair colados: quando o servidor derruba varias sessoes de uma vez, o mesmo
+# IP autentica N vezes em poucos segundos e a resposta e a mesma de senha
+# errada — contas boas caem no backoff longo. Chamada de dentro da trava,
+# com o carimbo comum a todas as contas. SLS_LOGIN_GAP=0 desliga.
+LOGIN_STAMP="$HOME/.sls/.login.ultimo"
+login_espacar() {
+    _le_g=${SLS_LOGIN_GAP:-10}
+    case "$_le_g" in ''|*[!0-9]*) _le_g=10 ;; esac
+    [ "$_le_g" -gt 0 ] || { unset _le_g; return 0; }
+    _le_u=0
+    { read -r _le_u < "$LOGIN_STAMP"; } 2>/dev/null
+    case "$_le_u" in ''|*[!0-9]*) _le_u=0 ;; esac
+    # Carimbo no futuro (relogio voltou) nao segura ninguem.
+    _le_u=$(( `date +%s` - _le_u ))
+    [ "$_le_u" -ge 0 ] && [ "$_le_u" -lt "$_le_g" ] && sleep $(( _le_g - _le_u ))
+    unset _le_g _le_u
+    return 0
+}
+login_espacar_marcar() { date +%s > "$LOGIN_STAMP" 2>/dev/null; }
+
 # O servidor esta mudo AGORA? A ultima conferencia de sessao (descanso, stats,
 # login) nao teve resposta e nenhuma pagina respondeu depois dela.
 #
@@ -960,6 +983,17 @@ luta_acabou() {
 # tinha passado de 59:59 e a proxima vez que mostraria 59:30 era UMA HORA
 # depois. A conta ficava presa ate la, perdendo o evento e os da hora
 # seguinte (das Bandeiras de 10:10, o Coliseu do Cla e o Torneio).
+# Alvo da inscricao, escalonado por conta: MMSS base mais 0 a 29 segundos.
+#
+# Todas as contas do aparelho acordavam no MESMO segundo (:59:30) e pediam o
+# enterFight juntas — N inscricoes do mesmo IP no mesmo instante, o padrao de
+# rajada que o servidor estrangula. O deslocamento sai do PID, entao e fixo
+# por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
+# :59:30 de antes: a base e o inicio do minuto.
+janela_alvo() { # MMSS_base -> MMSS
+    printf '%s' $(( $1 + $$ % 30 ))
+}
+
 espera_janela() {
     while :; do
         _ej=`date +%M%S`
