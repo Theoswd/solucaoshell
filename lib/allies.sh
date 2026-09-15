@@ -32,11 +32,10 @@ _aliado_norm() { sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:spac
 # Nenhum caminho com "delete" sai daqui, venha de onde vier.
 _aliado_pagina() {
     case "$1" in *delete*) : > "$2"; return 1 ;; esac
-    (
-        run_curl_exec "${URL}$1" > "$2"
-    ) </dev/null > /dev/null 2>&1 &
     # Pagina que nao veio fica anotada: o aliados_montar nao troca a lista.
-    if ! time_exit 17 || [ ! -s "$2" ]; then
+    # Pelo fetch_page, que devolve QUALQUER erro do curl: o time_exit so
+    # acusava o 28, e uma pagina cortada (18, 56) passava por boa.
+    if ! fetch_page "$1" "$2" || [ ! -s "$2" ]; then
         : > "$TMP/aliados.falha"
         return 1
     fi

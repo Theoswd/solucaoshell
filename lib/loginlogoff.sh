@@ -5,6 +5,9 @@ login_logoff() {
     PAGE=`run_curl "${URL}/user"`
 
     if is_logged_in "$PAGE"; then
+        # Sessao confirmada: libera a varredura que vem logo depois (ver
+        # servidor_mudo) mesmo que o ultimo descanso tenha ficado sem resposta.
+        sessao_marcar
         _acc=`extract_username "$PAGE"`
         [ -n "$_acc" ] && ACC=`echo "$_acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
         # A pagina /user ja esta em maos: aproveita para atualizar HP/MP
@@ -87,6 +90,7 @@ login_logoff() {
     PAGE=`run_curl "${URL}/user"`
 
     if is_logged_in "$PAGE"; then
+        sessao_marcar
         printf "[%s] %s — reconectado\n" "$SLS_TAG" "$SLS_USER"
         _acc=`extract_username "$PAGE"`
         [ -n "$_acc" ] && ACC=`echo "$_acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`

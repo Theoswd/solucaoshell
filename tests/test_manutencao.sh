@@ -2105,6 +2105,15 @@ _llo() { # pagina devolvida pelo /user -> "rc=N pedidos=N cookie=S|N" + msg
     )
 }
 check "login_logoff: /user vazio mantem cookie, sem POST"   "rc=1 pedidos=1 cookie=S msg=mudo" "`_llo vazia`"
+# Sessao confirmada no login libera a varredura (servidor_mudo) na hora.
+_r=$( TMP="$_td6/l_ok"; rm -rf "$TMP"; mkdir -p "$TMP"; URL="http://jogo"; TMP_COOKIE="$TMP/c"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1
+      . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      run_curl() { cat "$_td6/logada"; }; fetch_train_stats() { :; }; clan_id() { :; }; messages_info() { :; }
+      echo $(( `date +%s` - 5 )) > "$TMP/last_rede"
+      login_logoff > /dev/null 2>&1
+      servidor_mudo && printf 'mudo' || printf 'liberado' )
+check "login_logoff: sessao confirmada libera a varredura" "liberado" "$_r"
 check "login_logoff: /user com erro 502 mantem cookie"      "rc=1 pedidos=1 cookie=S msg=mudo" "`_llo erro502`"
 _r=`_llo anon_user`
 case "$_r" in "rc=1 pedidos="[2-9]*" cookie=N msg=expirada") ok "login_logoff: /user sem conta refaz o login ($_r)" ;;
@@ -2233,7 +2242,7 @@ printf "\n=== 38. aliados: amigos + membros do mesmo cla, e o nome certo do alvo
 # Fixtures com a marcacao das paginas reais e nomes inventados.
 _td8=`mktemp -d`
 _f38() { ( TMP="$_td8"; URL="http://jogo"; export TMP URL
-           . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; "$@" ); }
+           SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; "$@" ); }
 _FICHA="<div class='fl left w50'><img src='/images/icon/race/1.png' alt=''/> Minha Conta <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 35656</span><img src='/images/icon/race/0.png' alt=''/> Fulano Silva <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8092</span></div>"
 printf '%s' "<a href='/footer'>Fulano &amp; Cia</a>$_FICHA<div class='fight_buttons'></div>" > "$_td8/luta"
 printf '%s' "<div>Rei dos Imortais</div><img src='/images/icon/race/1.png' alt=''/> Minha Conta <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 100</span>" > "$_td8/sem_alvo"
@@ -2247,7 +2256,7 @@ printf '%s' "<a href='/user/444/'><img src='/images/icon/race/0.png' alt=''/>Ful
 printf '%s' "<a href='/mail/'><img src='/images/icon/mail.png' alt=''/></a><div class='block_zero'><img src='/images/icon/race/1-off.png' alt=''/> <a href='/user/555/'>Amigo Um</a>, <img src='/images/icon/level.png' alt=''/> 61 nível <span class='medium'>( <a href='/mail/555/'>Escrever</a> / <a href='/mail/friends/delete/555?r=91'>Exclui</a> )</span><br/><img src='/images/icon/race/0.png' alt=''/> <a href='/user/666/'>Amigo Dois</a>, <img src='/images/icon/level.png' alt=''/> 95 nível <span class='medium'>( <a href='/mail/666/'>Escrever</a> / <a href='/mail/friends/delete/666?r=92'>Exclui</a> )</span></div><a href='/user/777/'>Nao Amigo</a>" > "$_td8/amigos"
 _montar38() { # modo -> "allies|callies" (nomes separados por espaco)
     ( TMP="$_td8/m$1"; URL="http://jogo"; CLD=999; export TMP URL CLD; rm -rf "$TMP"; mkdir -p "$TMP"
-      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       echo "Velho_Amigo" > "$TMP/allies.txt"
       run_curl_exec() { case "$1" in
           */mail/friends)   cat "$_td8/amigos" ;;
@@ -2265,7 +2274,7 @@ check "aliados modo 3: so batalhas de cla (callies)"        "|$_todos"       "`_
 
 # A lista de amigos traz o link "Exclui": nenhum pedido pode desfazer amizade.
 _r=$( TMP="$_td8/del"; URL="http://jogo"; CLD=999; export TMP URL CLD; mkdir -p "$TMP"
-      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       run_curl_exec() { echo "$1" >> "$TMP/pedidos"; case "$1" in
           */mail/friends) cat "$_td8/amigos" ;; */clan/999) cat "$_td8/cla_p1" ;; */clan/999//2) cat "$_td8/cla_p2" ;; esac; }
       time_exit() { wait "$!" 2>/dev/null; }
@@ -2278,7 +2287,7 @@ check "aliados: nunca pede o link 'Exclui' da lista de amigos" "0" "$_r"
 # Lista de amigos em duas paginas (paginacao real: 10 por pagina, links
 # /mail/friends/2 na 1 e /mail/friends/1 na 2).
 _r=$( TMP="$_td8/pag"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"
-      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       _p1="<img src='/images/icon/race/1.png' alt=''/> <a href='/user/901/'>Pagina Um</a>, 10 nível <span class='medium'>( <a href='/mail/901/'>Escrever</a> / <a href='/mail/friends/delete/901?r=5'>Excluir</a> )</span><div class='block_zero'>&#60;&#60; &#60; 1 <a href='/mail/friends/2'>2</a> <a href='/mail/friends/2'>&#62;</a> <a href='/mail/friends/2'>&#62;&#62;</a></div>"
       _p2="<img src='/images/icon/race/1.png' alt=''/> <a href='/user/902/'>Pagina Dois</a>, 20 nível <span class='medium'>( <a href='/mail/902/'>Escrever</a> / <a href='/mail/friends/delete/902?r=6'>Excluir</a> )</span><div class='block_zero'><a href='/mail/friends/1'>&#60;&#60;</a> <a href='/mail/friends/1'>1</a> 2</div>"
       run_curl_exec() { echo "$1" >> "$TMP/pedidos"; case "$1" in
@@ -2290,14 +2299,14 @@ check "aliados: amigos das duas paginas, um pedido por pagina" "Pagina_Um Pagina
 
 # Servidor mudo nao apaga a lista.
 _r=$( TMP="$_td8/mudo"; URL="http://jogo"; CLD=999; export TMP URL CLD; mkdir -p "$TMP"
-      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       echo "Amigo_Antigo" > "$TMP/allies.txt"
       run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; }
       aliados_montar 1 > /dev/null 2>&1; cat "$TMP/allies.txt" )
 check "aliados: pagina que nao respondeu mantem a lista anterior" "Amigo_Antigo" "$_r"
 
 # alvo_aliado: Rei usa allies.txt; cla usa callies.txt; sem maiusculas.
-_r=$( TMP="$_td8/aa"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+_r=$( TMP="$_td8/aa"; mkdir -p "$TMP"; SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       printf 'Fulano_silva\n' > "$TMP/allies.txt"; : > "$TMP/callies.txt"
       printf 'Fulano_Silva\n' > "$TMP/U"
       alvo_aliado "$TMP/U" && printf 'rei=sim ' || printf 'rei=nao '
@@ -3037,17 +3046,23 @@ _td12=`mktemp -d`
 # Aliados: amigos respondem, a pagina do cla nao.
 _al47() { # com_lista_antiga(sim|nao) -> "lista|rc"
     ( TMP="$_td12/al$1"; URL="http://jogo"; CLD=999; export TMP URL CLD; rm -rf "$TMP"; mkdir -p "$TMP"
-      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       [ "$1" = sim ] && printf 'Amigo_Um\nMembro_Cla\n' > "$TMP/aliados.txt" && cp "$TMP/aliados.txt" "$TMP/allies.txt"
+      [ "$1" = cortada ] && printf 'Amigo_Velho\nMembro_Cla\n' > "$TMP/aliados.txt" && cp "$TMP/aliados.txt" "$TMP/allies.txt"
+      MODO="$1"
       run_curl_exec() { case "$1" in
-          */mail/friends) echo "<a href='/user/5/'>Amigo Um</a>, <a href='/mail/5/'>Escrever</a>" ;;
-          *) : ;; esac; }
-      time_exit() { wait "$!" 2>/dev/null; }
+          */mail/friends) echo "<a href='/user/5/'>Amigo Um</a>, <a href='/mail/5/'>Escrever</a>"
+                          [ "$MODO" = cortada ] && return 56 ;;
+          */clan/999) [ "$MODO" = cortada ] && echo "<a href='/user/9/'><img src='/r.png' alt=''/>Membro Cla, <span class='white'>Soldado</span>" ;;
+          *) : ;; esac; return 0; }
+      # Como o time_exit real: so o curl 28 conta como falha.
+      time_exit() { wait "$!" 2>/dev/null; [ $? = 28 ] && return 1; return 0; }
       aliados_montar 1 > /dev/null 2>&1; _rc=$?
       printf '%s|%s' "`tr '\n' ' ' < "$TMP/allies.txt" | sed 's/ $//'`" "$_rc" )
 }
 check "aliados: cla sem resposta mantem a lista com o cla" "Amigo_Um Membro_Cla|1" "`_al47 sim`"
 check "aliados: sem lista anterior, a parcial vale e pede nova tentativa" "Amigo_Um|1" "`_al47 nao`"
+check "aliados: pagina de amigos cortada (curl 56) mantem a lista" "Amigo_Velho Membro_Cla|1" "`_al47 cortada`"
 
 # Masmorra: um golpe e depois a rede cai -> nao conta como feita.
 _r=$( TMP="$_td12/ms"; CLD=999; export TMP CLD; mkdir -p "$TMP"
@@ -3132,8 +3147,8 @@ _r=$( TMP="$_td12/es"; CLD=999; FUNC_clan_statue=y; export TMP CLD; mkdir -p "$T
                     echo "<a href='/clan/999/built/?silverUpgrade=true&r=3'>p</a><a href='/clan/999/built/?goldUpgrade=true&r=2'>o</a>" > "$2" ;;
           *) : > "$TMP/clicou"; echo ok > "$2" ;; esac; }
       clan_statue > "$TMP/saida" 2>&1
-      printf 'ativado=%s' "`grep -c 'ativado' "$TMP/saida"`" )
-check "estatua: releitura sem resposta nao anuncia bonus ativado" "ativado=0" "$_r"
+      printf 'ativado=%s marcou=%s' "`grep -c 'ativado' "$TMP/saida"`" "`[ -f "$TMP/last_estatua" ] && echo sim || echo nao`" )
+check "estatua: releitura sem resposta nao anuncia bonus nem espera 6h" "ativado=0 marcou=nao" "$_r"
 
 # Campanha: clique e releitura sem resposta voltam em 15 min, nao em 8h.
 _r=$( TMP="$_td12/cp"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"

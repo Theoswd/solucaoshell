@@ -322,10 +322,13 @@ clan_statue() {
             # "ativado". Em producao: 31 sucessos no log enquanto o
             # link seguia na pagina e a tesouraria nao mudava.
             # Sem resposta, a pagina vazia "nao tem o link" e diria ativado;
-            # copiada para o STATUE, esconderia tambem o bonus de ouro.
+            # copiada para o STATUE, esconderia tambem o bonus de ouro. Sai
+            # SEM marcar: o proximo start (:00/:30) tenta os dois de novo, em
+            # vez de 6h sem o de ouro.
             if ! fetch_page "/clan/${CLD}/built/" "$TMP/STATUE2" || [ ! -s "$TMP/STATUE2" ]; then
                 printf "Estatua: sem resposta ao conferir o bonus de %s\n" "$_nm"
-                break
+                unset _nm _moeda _up _cl
+                return 1
             fi
             # VERIFICA o resultado em vez de assumir sucesso.
             #
