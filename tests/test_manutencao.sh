@@ -2839,6 +2839,11 @@ _r=`( TMP="$_td8"; eval "$(sed -n '/^rotate_log() {/,/^}/p' "$LIB/sls.sh")"
       [ -f "$TMP/ERROR_DEBUG.1" ] && printf 'rodou' || printf 'ficou' )`
 check "rotate_log: sls.log segue recebendo apos a rotacao" "x 1048576 ficou" "$_r"
 
+# stop.sh sem nada para parar, fora do Termux: sai com 0 (o README encadeia com &&).
+mkdir -p "$_td8/vazio"
+( HOME="$_td8/vazio" sh "$ROOT/stop.sh" ) > /dev/null 2>&1
+check "stop.sh: sai com 0 fora do Termux" 0 "$?"
+
 rm -rf "$_td8"; unset _td8 _cr _f _p1 _p2 _p3 _bloco _p4
 
 printf "\n=== RESUMO ===\n"

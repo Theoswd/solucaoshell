@@ -150,4 +150,6 @@ pkill -f "$LIBDIR/worker.sh" 2>/dev/null
 rm -rf "$HOME/.sls/.login.lock" 2>/dev/null
 
 printf "\n${GREEN}%s worker(s) encerrado(s).${RESET}\n" "$stopped"
-termux-wake-unlock 2>/dev/null
+# "|| :" : fora do Termux o comando nao existe, o stop.sh saia com 127 e o
+# "./stop.sh && git pull && ./play.sh" do README parava aqui.
+termux-wake-unlock 2>/dev/null || :
