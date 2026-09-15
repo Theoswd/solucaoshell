@@ -3323,6 +3323,22 @@ check "last_atk lido uma vez por volta nos cinco modulos" 5 "$_r"
 rm -rf "$_td16"; unset _td16 _r
 unset -f _full51
 
+# DIAGNOSTICO TEMPORARIO: pagina de missao do cla cheia sem link de concluir.
+_td17=`mktemp -d`
+_cq51() { # progresso -> "cheia|nenhuma guardou|nao"
+    ( TMP="$_td17/c"; export TMP; rm -rf "$TMP"; mkdir -p "$TMP"
+      . "$LIB/clanquest.sh" > /dev/null 2>&1
+      printf '<div>Progresso: %s</div>\n' "$1" > "$TMP/CQUEST"
+      cq_tem_completa && printf 'cheia ' || printf 'nenhuma '
+      cq_guardar_completa > /dev/null 2>&1
+      [ -f "$TMP/cq_completa.html" ] && printf 'guardou' || printf 'nao' )
+}
+check "missao em andamento: nada a guardar"          "nenhuma nao"    "`_cq51 '6 de 15'`"
+check "missao cheia: pagina guardada para diagnostico" "cheia guardou" "`_cq51 '15 de 15'`"
+check "cheia com separador de milhar"                  "cheia guardou" "`_cq51 \"150'000 de 150'000\"`"
+rm -rf "$_td17"; unset _td17
+unset -f _cq51
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

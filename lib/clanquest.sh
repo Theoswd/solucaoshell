@@ -124,6 +124,45 @@ cq_tomar() {
     return $_tomou
 }
 
+# DIAGNOSTICO TEMPORARIO — COMO O JOGO ESCREVE O LINK DE CONCLUIR.
+#
+# Nos logs de 15/09 nenhuma das 17 contas registrou "Missao do cla concluida",
+# e nas paginas salvas nao havia nenhum link take/end/help: so "delete"
+# (cancelar) e o progresso em andamento ("6 de 15"). Ou seja, ate agora
+# ninguem viu a pagina de uma missao CHEIA — e sem ela nao da para saber se o
+# link de concluir tem mesmo a forma que o bot procura.
+#
+# Entao: a primeira vez que houver missao com o progresso cheio e o bot nao
+# achar link de concluir, a pagina fica guardada em $TMP/cq_completa.html. Uma
+# copia so, e o teste do arquivo vem antes de qualquer processo — depois de
+# capturada, isto nao custa nada. Sai do codigo quando a duvida for resolvida.
+cq_tem_completa() {
+    [ -s "$TMP/CQUEST" ] || return 1
+    sed 's/<[^>]*>/ /g' "$TMP/CQUEST" 2>/dev/null | awk -v ap="'" '
+        { todo = todo " " $0 }
+        END {
+            # Separador de milhar do jogo ("44150 de 150000" vem como
+            # "44'"'"'150 de 150'"'"'000").
+            gsub("[.," ap "]", "", todo)
+            n = split(todo, p, /[Pp]rogresso:/)
+            for (i = 2; i <= n; i++) {
+                if (!match(p[i], /^[^0-9]*[0-9]+[^0-9]+de[^0-9]+[0-9]+/)) continue
+                t = substr(p[i], RSTART, RLENGTH)
+                feito = t; sub(/^[^0-9]*/, "", feito); sub(/[^0-9].*$/, "", feito)
+                alvo = t;  sub(/.*de[^0-9]+/, "", alvo); sub(/[^0-9].*$/, "", alvo)
+                if (alvo + 0 > 0 && feito + 0 >= alvo + 0) { print "cheia"; exit }
+            }
+        }' | grep -q cheia
+}
+
+cq_guardar_completa() {
+    [ -f "$TMP/cq_completa.html" ] && return 0
+    cq_tem_completa || return 0
+    cp "$TMP/CQUEST" "$TMP/cq_completa.html" 2>/dev/null
+    printf "Missao do cla com progresso cheio e sem link de concluir - pagina guardada em %s\n" \
+        "$TMP/cq_completa.html"
+}
+
 # cq_concluir
 # Recolhe as missoes ja concluidas.
 cq_concluir() {
@@ -139,6 +178,8 @@ cq_concluir() {
             _n=$((_n + 1))
         fi
     done
+    # Nada recolhido: e o caso em que a duvida aparece (ver cq_guardar_completa).
+    [ "$_n" -gt 0 ] || cq_guardar_completa
     unset _id _cl
     [ "$_n" -gt 0 ]
 }
