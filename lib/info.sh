@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.45"
+versionNum="3.9.46"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -980,8 +980,10 @@ hpmp() {
         FIXMP=`grep -o -E ': [0-9]+' "$TMP/TRAIN" | sed -n '5s/: //p'`
     fi
 
-    NOWHP=`grep -o -E "<img src='/images/icon/health.png' alt='hp'/> <span class='(dred|white)'>[ ]?[0-9]{1,7}[ ]?</span> | <img src='/images/icon/mana.png' alt='mp'/>" "$TMP/SRC" | tr -c -d '[:digit:]'`
-    NOWMP=`grep -o -E "</span> | <img src='/images/icon/mana.png' alt='mp'/>[ ]?[0-9]{1,7}[ ]?</span><div class='clr'></div></div>" "$TMP/SRC" | tr -c -d '[:digit:]'`
+    # Mesma leitura do parse_status. O " | " dos padroes antigos era
+    # alternancia do ERE: a mana dentro de <span> saia vazia (MPPER 0).
+    NOWHP=`grep -o -E "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" "$TMP/SRC" | grep -o -E '[0-9]{1,9}$' | head -n1`
+    NOWMP=`grep -o -E "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" "$TMP/SRC" | grep -o -E '[0-9]{1,9}$' | head -n1`
 
     # CORRECAO: se a requisicao foi cortada pelo time_exit, FIXHP/FIXMP ficam
     # vazios e o awk fazia divisao por zero -> "nan"/"inf" nas comparacoes.
@@ -1261,7 +1263,12 @@ valor_num() {
         *B|*b) _mu=1000000000 ;;
         *)     _mu=1 ;;
     esac
-    _dg=`printf '%s' "$_v" | tr -d "'" | tr ',' '.' | tr -cd '0-9.'`
+    # Sem sufixo o valor e inteiro: ponto ou virgula ali e milhar ("54.300").
+    if [ "$_mu" = 1 ]; then
+        _dg=`printf '%s' "$_v" | tr -cd '0-9'`
+    else
+        _dg=`printf '%s' "$_v" | tr -d "'" | tr ',' '.' | tr -cd '0-9.'`
+    fi
     [ -z "$_dg" ] && { echo 0; return; }
     awk -v d="$_dg" -v m="$_mu" 'BEGIN{ printf "%.0f", d*m }'
     unset _v _mu _dg

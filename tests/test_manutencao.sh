@@ -982,6 +982,7 @@ if mkdir -p "$_td/home/.sls/status" 2>/dev/null; then
             ACCOUNTS_FILE="$_td/accounts.conf"
             server_tag()  { case "$1" in 1) echo "BR" ;; esac; }
             clean_field() { printf '%s' "$1" | tr -d '\r'; }
+            worker_vivo() { kill -0 "$1"; }
             PANEL_SUPERVISE=0; PANEL_ONCE=1; PANEL_DRAW=1
             SLS_EMOJI="$_modo"; SLS_COLS="$_c"
             export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
@@ -2687,6 +2688,85 @@ check "limpezas: colors, teclado da caverna e chaves sem leitor fora" 0 "$_r"
 _r=`grep -c '^server_url()\|^server_tag()\|^clean_field()' "$ROOT/status.sh"`
 check "status.sh: sem as funcoes que ele nao usava" 0 "$_r"
 unset _r
+
+printf "\n=== 37. evento especial, relogio voltando, painel, sessao e mana ===\n"
+_td7=`mktemp -d`
+
+# Evento especial: sem link de ataque nao pede caminho vazio (= Home), e o
+# evento que sumiu da Home nao e repetido na chamada seguinte.
+( TMP="$_td7"; . "$LIB/specialevent.sh"
+  fetch_page() { printf '%s ' "${1:-VAZIO}" >> "$TMP/req"
+      case "$1" in /) printf '%s' "$_home" > "$TMP/SRC" ;; *) : > "$TMP/SRC" ;; esac; }
+  _home="<div class='shb_text'><a href='/fault/?x=1'>ev</a></div>"
+  specialEvent
+  _home="<div>sem evento</div>"
+  specialEvent ) > /dev/null 2>&1
+check "evento especial: sem link vazio e sem repetir evento que acabou" "/ /fault/?x=1 / " "`cat "$_td7/req"`"
+
+# evento_espera: inicio de evento 2h adiante (relogio voltou) nao prende.
+# O descansar falso encerra o teste na 3a volta em vez de esperar.
+( TMP="$_td7"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+  sleep() { :; }
+  descansar() { _n=$(( ${_n:-0} + 1 )); [ "$_n" -ge 3 ] && { printf 'espera' >> "$TMP/marca"; exit 0; }; }
+  echo $(( `date +%s` + 7200 )) > "$TMP/em_evento"
+  evento_espera; printf 'livre ' >> "$TMP/marca"
+  date +%s > "$TMP/em_evento"
+  evento_espera; printf 'nao_esperou' >> "$TMP/marca" ) > /dev/null 2>&1
+check "relogio voltou: evento_espera libera; evento de agora ainda espera" "livre espera" "`cat "$_td7/marca"`"
+
+# Cache da pagina do cla e das missoes com carimbo no futuro: le de novo.
+_r=`( TMP="$_td7"; CLD=999; . "$LIB/info.sh" > /dev/null 2>&1
+      . "$LIB/clanid.sh" > /dev/null 2>&1; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      fetch_page() { echo "$1" >> "$TMP/req2"; echo pagina > "${2:-$TMP/SRC}"; }
+      echo x > "$TMP/CLANPG"; _CLAN_TS=$(( \`date +%s\` + 3600 )); clan_pagina
+      echo x > "$TMP/CQUEST"; _CQ_TS=$(( \`date +%s\` + 3600 ))
+      printf %s "/clan/999/quest/" > "$TMP/.ult_req"; cq_pagina
+      wc -l < "$TMP/req2" | tr -d ' ' ) 2>/dev/null`
+check "relogio voltou: cache do cla e das missoes nao vale" 2 "$_r"
+
+# worker_vivo: PID vivo de outro programa nao e worker.
+if [ -r "/proc/$$/cmdline" ]; then
+    _r=`( SLSDIR="$ROOT"; . "$LIB/contas.sh"; worker_vivo $$ && echo vivo || echo outro )`
+    check "worker_vivo: PID de outro processo nao conta como conta viva" outro "$_r"
+fi
+
+# Painel supervisionando: worker morto e relancado uma vez, nao a cada volta.
+# Com /proc, o PID gravado e o deste teste: vivo, mas nao e worker.
+mkdir -p "$_td7/h/.sls/status" "$_td7/h/.sls/BR_Ze"
+printf '1|Ze|x\n' > "$_td7/acc.conf"
+_v=999999999; [ -r "/proc/$$/cmdline" ] && _v=$$
+echo "$_v" > "$_td7/h/.sls/status/BR_Ze.pid"
+echo running   > "$_td7/h/.sls/status/BR_Ze.status"
+for _v in 1 2; do
+    ( HOME="$_td7/h"; SLSDIR="$ROOT"; STATUS_DIR="$_td7/h/.sls/status"
+      ACCOUNTS_FILE="$_td7/acc.conf"; . "$LIB/contas.sh"
+      clean_field() { printf '%s' "$1"; }
+      launch_worker() { echo L >> "$_td7/lancou"; }
+      PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+      . "$LIB/panel.sh"; painel_loop ) > /dev/null 2>&1
+done
+check "painel: worker morto relancado no maximo 1x por minuto" 1 "`wc -l < "$_td7/lancou" | tr -d ' '`"
+
+# is_logged_in: o rodape do jogo decide; link para /user nao prova sessao.
+_ROD0='jsInterface.event("user=0;level=0");'
+_ROD1='jsInterface.event("user=12345;level=43");'
+_r=`( . "$LIB/session_check.sh"
+      is_logged_in "<title>Error 404</title><a href='/user/1'>x</a>$_ROD0" && printf 'anon=sim ' || printf 'anon=nao '
+      is_logged_in "<div>ok</div>$_ROD1" && printf 'logada=sim ' || printf 'logada=nao '
+      is_logged_in "<a href='/user/12345'>perfil</a>" && printf 'so_link=sim' || printf 'so_link=nao' )`
+check "is_logged_in: 404 anonimo e link solto nao sao sessao" "anon=nao logada=sim so_link=nao" "$_r"
+
+# hpmp: mana dentro de <span> (como o HP).
+printf '%s' "<img src='/images/icon/health.png' alt='hp'/> <span class='white'>6531</span> | <img src='/images/icon/mana.png' alt='mp'/> <span class='dred'>809</span><div class='clr'></div>" > "$_td7/SRC"
+_r=`( TMP="$_td7"; . "$LIB/info.sh" > /dev/null 2>&1; hpmp -now; echo "$NOWHP/$NOWMP" )`
+check "hpmp: le HP e mana com <span>" "6531/809" "$_r"
+
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1
+      for _x in 54.300 "1,234" 396 408,1M 3,4K; do printf '%s ' "$(valor_num "$_x")"; done )`
+check "valor_num: milhar sem sufixo e decimal com sufixo" "54300 1234 396 408100000 3400 " "$_r"
+
+rm -rf "$_td7"; unset _td7 _ROD0 _ROD1 _v
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

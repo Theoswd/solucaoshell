@@ -1,5 +1,8 @@
 #!/bin/sh
 specialEvent() {
+    # O worker nao reinicia: sem isto, com a Home ja sem evento, o ramo e o
+    # link do ultimo evento eram repetidos.
+    unset EVENT event_link
     fetch_page "/"
 
     if grep -q "shb_text" "$TMP/SRC"; then
@@ -27,9 +30,6 @@ specialEvent() {
         fault)
             fetch_page "${event_link}"
             printf "Event fault\n"
-            click=`grep -o -E "/fault/attack/\?r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
-            fetch_page "${click}"
-            sleep 1s
             click=`grep -o -E "/fault/attack/\?r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
             # Limite de tempo: se o link de ataque continuar presente,
             # o laco nao terminava sozinho.

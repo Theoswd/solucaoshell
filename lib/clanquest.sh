@@ -74,6 +74,7 @@ cq_pagina() {
     _cq_ts="${_CQ_TS:-0}"
     case "$_cq_ts" in '' | *[!0-9]* ) _cq_ts=0 ;; esac
     if [ -s "$TMP/CQUEST" ] && [ "$_cq_ts" -gt 0 ] \
+       && [ $(( `date +%s` - _cq_ts )) -ge 0 ] \
        && [ $(( `date +%s` - _cq_ts )) -lt "$CQ_VALIDADE" ] \
        && cq_ultima_foi_ela; then
         unset _cq_ts

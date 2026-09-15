@@ -29,3 +29,22 @@ resolve_accounts_file() {
 # "1") para nao quebrar cadastros existentes.
 server_url() { case "$1" in 1) printf %s ZnVyaWFkZXRpdGFzLm5ldA== | base64 -d ;; esac; }
 server_tag() { case "$1" in 1) echo "BR" ;; esac; }
+
+# O PID ainda e um worker deste bot, vivo?
+#
+# Confere a IDENTIDADE pelo cmdline, nao so a existencia: o kernel recicla
+# PIDs, e um "kill -0" que acerta um processo qualquer do usuario faria o
+# play.sh e o painel acharem que a conta esta no ar quando nao esta.
+worker_vivo() {
+    wv_pid="$1"
+    [ -n "$wv_pid" ] || return 1
+    case "$wv_pid" in *[!0-9]*) return 1 ;; esac
+    kill -0 "$wv_pid" 2>/dev/null || return 1
+    # Aceita worker.sh E sls.sh: o worker.sh faz exec do sls.sh, entao
+    # depois da troca o PID e o mesmo mas o cmdline e o do sls.sh.
+    # Um grep so: o painel chama isto para cada conta a cada volta.
+    if [ -r "/proc/$wv_pid/cmdline" ]; then
+        grep -qE 'worker\.sh|sls\.sh' "/proc/$wv_pid/cmdline" 2>/dev/null || return 1
+    fi
+    return 0
+}

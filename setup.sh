@@ -152,16 +152,19 @@ add_account() {
     esac
     [ -z "$user" ] && printf "${RED}Usuario vazio.${RESET}\n" && sleep 2 && return
 
-    # Verifica duplicata
-    if [ -f "$ACCOUNTS_FILE" ] && grep -q "^${srv}|${user}|" "$ACCOUNTS_FILE" 2>/dev/null; then
+    # Verifica duplicata (texto exato: "." ou "*" no nome nao sao curinga)
+    if [ -f "$ACCOUNTS_FILE" ] && cut -d'|' -f1,2 "$ACCOUNTS_FILE" 2>/dev/null | tr -d '\r' | grep -qxF "${srv}|${user}"; then
         printf "${RED}Conta [%s] %s ja existe.${RESET}\n" "$tag" "$user"
         sleep 2; return
     fi
 
     printf "Senha: "
+    # Ctrl+C na senha nao pode deixar o terminal sem eco.
+    trap 'stty echo 2>/dev/null; printf "\n"; exit 130' INT TERM
     stty -echo 2>/dev/null
     read -r pass
     stty echo 2>/dev/null
+    trap - INT TERM
     printf "\n"
     [ -z "$pass" ] && printf "${RED}Senha vazia.${RESET}\n" && sleep 2 && return
 

@@ -25,6 +25,13 @@ is_logged_in() {
     page="$1"
     [ -z "$page" ] && return 1
 
+    # Rodape de toda pagina do jogo (ver sessao_estado): user=0 e visitante.
+    # O /user anonimo e um 404 que nao traz formulario de login.
+    case "$page" in
+        *'jsInterface.event("user=0'[!0-9]*) return 1 ;;
+        *'jsInterface.event("user='[1-9]*)   return 0 ;;
+    esac
+
     if echo "$page" | grep -qiE "name=['\"]?pass['\"]?|action=[^>]*sign_in|[?&]sign_in=1"; then
         return 1
     fi
@@ -32,7 +39,6 @@ is_logged_in() {
     echo "$page" | grep -q "icon/level\.png"     && return 0
     echo "$page" | grep -qi "\[level"            && return 0
     echo "$page" | grep -qiE "/logout|[?&]exit"  && return 0
-    echo "$page" | grep -qi "/user"              && return 0
 
     return 1
 }

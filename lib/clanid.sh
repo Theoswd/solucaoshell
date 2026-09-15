@@ -140,7 +140,9 @@ clan_pagina() {
 
     _clp_ts="${_CLAN_TS:-0}"
     case "$_clp_ts" in '' | *[!0-9]* ) _clp_ts=0 ;; esac
+    # Idade negativa = relogio voltou: a leitura nao vale.
     if [ -s "$TMP/CLANPG" ] && [ "$_clp_ts" -gt 0 ] \
+       && [ $(( `date +%s` - _clp_ts )) -ge 0 ] \
        && [ $(( `date +%s` - _clp_ts )) -lt "$CLAN_VALIDADE" ]; then
         unset _clp_ts
         return 0

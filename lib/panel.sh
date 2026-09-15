@@ -1019,12 +1019,22 @@ while true; do
         # apenas mostra "off" — abrir o painel NUNCA pode mexer nos workers,
         # e esse era justamente o defeito: a unica forma de rever o painel
         # era rodar o play.sh, que derrubava as 6 contas que estavam boas.
-        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+        #
+        # worker_vivo (contas.sh) confere que o PID ainda e do bot: o kernel
+        # recicla PIDs. Relanca no maximo uma vez por minuto por conta, para
+        # um worker que morre ao subir nao virar laco.
+        if [ -n "$pid" ] && ! worker_vivo "$pid"; then
             status="dead"
             if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
-                echo "dead" > "$status_file"
-                printf "[monitor] relancando worker\n" >> "$acc_dir/sls.log" 2>/dev/null
-                launch_worker "$srv" "$user" "" > /dev/null 2>&1
+                ler_arq "$acc_dir/.relancado"
+                case "$_LIDO" in ''|*[!0-9]*) _LIDO=0 ;; esac
+                _LIDO=$(( _agora_ep - _LIDO ))
+                if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge 60 ]; then
+                    echo "$_agora_ep" > "$acc_dir/.relancado" 2>/dev/null
+                    echo "dead" > "$status_file"
+                    printf "[monitor] relancando worker\n" >> "$acc_dir/sls.log" 2>/dev/null
+                    launch_worker "$srv" "$user" "" > /dev/null 2>&1
+                fi
             fi
         fi
 

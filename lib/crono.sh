@@ -645,6 +645,8 @@ evento_espera() {
     _ee_fim=$(( _ee_ini + _ee_dur * 60 ))
 
     while [ "`date +%s`" -lt "$_ee_fim" ]; do
+        # Falta mais que a inscricao (10 min) + o evento: o relogio voltou.
+        [ $(( _ee_fim - `date +%s` )) -gt $(( (_ee_dur + 10) * 60 )) ] && break
         printf "Evento em andamento - atividades suspensas (%ss)\n" \
             $(( _ee_fim - `date +%s` ))
         descansar

@@ -110,25 +110,6 @@ kill_worker_tree() {
     return 0
 }
 
-# O PID ainda e um worker deste bot, vivo?
-#
-# Confere a IDENTIDADE pelo cmdline, nao so a existencia: o kernel recicla
-# PIDs, e um "kill -0" que acerta um processo qualquer do usuario faria o
-# play.sh achar que a conta esta no ar quando nao esta.
-worker_vivo() {
-    wv_pid="$1"
-    [ -n "$wv_pid" ] || return 1
-    case "$wv_pid" in *[!0-9]*) return 1 ;; esac
-    kill -0 "$wv_pid" 2>/dev/null || return 1
-    # Aceita worker.sh E sls.sh: o worker.sh faz exec do sls.sh, entao
-    # depois da troca o PID e o mesmo mas o cmdline e o do sls.sh.
-    if [ -r "/proc/$wv_pid/cmdline" ]; then
-        tr '\0' ' ' < "/proc/$wv_pid/cmdline" 2>/dev/null \
-            | grep -qE 'worker\.sh|sls\.sh' || return 1
-    fi
-    return 0
-}
-
 # Sobe o worker de uma conta.  $1=srv  $2=usuario  $3=credencial (opcional)
 # Retorna 0 = subiu, 1 = falhou, 2 = ja estava rodando e foi mantida.
 launch_worker() {
