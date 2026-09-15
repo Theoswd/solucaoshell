@@ -162,7 +162,8 @@ add_account() {
     # Ctrl+C na senha nao pode deixar o terminal sem eco.
     trap 'stty echo 2>/dev/null; printf "\n"; exit 130' INT TERM
     stty -echo 2>/dev/null
-    read -r pass
+    # IFS= : sem ele o read tira espacos do comeco e do fim da senha.
+    IFS= read -r pass
     stty echo 2>/dev/null
     trap - INT TERM
     printf "\n"
@@ -195,37 +196,38 @@ add_account() {
     sleep 2
 }
 
-remove_account() {
-    clear
-    printf "${CYAN}=== Remover conta ===${RESET}\n\n"
-    [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ] && \
-        printf "${RED}Nenhuma conta.${RESET}\n" && sleep 2 && return
-
-    n=1
-    while IFS='|' read -r srv user _enc || [ -n "$srv" ]; do
-        case "$srv" in ''|\#*) continue ;; esac
-        [ -z "$user" ] && continue
-        tag=$(server_tag "$srv")
-        printf "${GOLD}%d)${RESET} [%s] %s\n" "$n" "$tag" "$user"
-        n=$((n + 1))
-    done < "$ACCOUNTS_FILE"
+# Lista as contas numeradas, le o numero e deixa srv, user e encoded da
+# escolhida. Lista e escolha saem da mesma contas_validas (contas.sh), entao
+# o numero da tela e sempre a conta certa. Volta 1 se cancelou ou invalido.
+escolher_conta() {
+    if [ -z "$(contas_validas)" ]; then
+        printf "${RED}Nenhuma conta.${RESET}\n"; sleep 2; return 1
+    fi
+    _n=1
+    contas_validas | while IFS='|' read -r srv user _enc; do
+        printf "${GOLD}%d)${RESET} [%s] %s\n" "$_n" "$(server_tag "$srv")" "$user"
+        _n=$((_n + 1))
+    done
 
     printf "\nNumero (0 = cancelar): "
     read -r choice
-    [ "$choice" = "0" ] || [ -z "$choice" ] && return
-
-    total=$(grep -c -E '^[0-9]+[|]' "$ACCOUNTS_FILE" 2>/dev/null)
-    case "$total" in ''|*[!0-9]*) total=0 ;; esac
+    line=""
     case "$choice" in
-        *[!0-9]*) printf "${RED}Invalido.${RESET}\n"; sleep 2; return ;;
+        ''|0) return 1 ;;
+        *[!0-9]*) ;;
+        *) line=$(contas_validas | sed -n "${choice}p") ;;
     esac
-    [ "$choice" -lt 1 ] || [ "$choice" -gt "$total" ] && \
-        printf "${RED}Invalido.${RESET}\n" && sleep 2 && return
+    if [ -z "$line" ]; then
+        printf "${RED}Invalido.${RESET}\n"; sleep 2; return 1
+    fi
+    srv=${line%%|*}; line=${line#*|}
+    user=${line%%|*}; encoded=${line#*|}
+}
 
-    # Extrai a linha escolhida (apenas linhas validas)
-    line=$(grep '|' "$ACCOUNTS_FILE" | sed -n "${choice}p")
-    srv=$(echo "$line" | cut -d'|' -f1)
-    user=$(echo "$line" | cut -d'|' -f2)
+remove_account() {
+    clear
+    printf "${CYAN}=== Remover conta ===${RESET}\n\n"
+    escolher_conta || return
     tag=$(server_tag "$srv")
 
     printf "Remover [%s] %s? (y/n): " "$tag" "$user"
@@ -238,8 +240,18 @@ remove_account() {
             awk -F'|' -v s="$srv" -v u="$user" '!($1==s && $2==u)' \
                 "$ACCOUNTS_FILE" > "$ACCOUNTS_FILE.tmp" && \
                 mv "$ACCOUNTS_FILE.tmp" "$ACCOUNTS_FILE"
-            printf "${GREEN}Removida.${RESET}\n"
             acc_dir="$HOME/.sls/${tag}_${user}"
+            # Derruba o worker: sem isto a conta sumia do painel e seguia
+            # jogando ate o stop.sh. Depois do awk, para o painel (que le o
+            # accounts.conf a cada volta) nao relancar.
+            _pf="$HOME/.sls/status/${tag}_${user}"
+            _pid=$(cat "$_pf.pid" 2>/dev/null)
+            if worker_vivo "$_pid" "$acc_dir"; then
+                kill -TERM "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
+            fi
+            rm -f "$_pf.pid" "$_pf.status"
+            unset _pf _pid
+            printf "${GREEN}Removida.${RESET}\n"
             if [ -d "$acc_dir" ]; then
                 printf "Remover dados em %s? (y/n): " "$acc_dir"
                 read -r rd
@@ -254,36 +266,14 @@ remove_account() {
 test_account() {
     clear
     printf "${CYAN}=== Testar login ===${RESET}\n\n"
-    [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ] && \
-        printf "${RED}Nenhuma conta.${RESET}\n" && sleep 2 && return
-
-    n=1
-    while IFS='|' read -r srv user _enc || [ -n "$srv" ]; do
-        case "$srv" in ''|\#*) continue ;; esac
-        [ -z "$user" ] && continue
-        tag=$(server_tag "$srv")
-        printf "${GOLD}%d)${RESET} [%s] %s\n" "$n" "$tag" "$user"
-        n=$((n + 1))
-    done < "$ACCOUNTS_FILE"
-
-    printf "\nNumero: "
-    read -r choice
-    total=$(grep -c -E '^[0-9]+[|]' "$ACCOUNTS_FILE" 2>/dev/null)
-    case "$total" in ''|*[!0-9]*) total=0 ;; esac
-    case "$choice" in *[!0-9]*) printf "${RED}Invalido.${RESET}\n"; sleep 2; return ;; esac
-    [ "$choice" -lt 1 ] || [ "$choice" -gt "$total" ] && \
-        printf "${RED}Invalido.${RESET}\n" && sleep 2 && return
-
-    line=$(grep '|' "$ACCOUNTS_FILE" | sed -n "${choice}p")
-    srv=$(echo "$line" | cut -d'|' -f1)
-    user=$(echo "$line" | cut -d'|' -f2)
-    encoded=$(echo "$line" | cut -d'|' -f3)
+    escolher_conta || return
     tag=$(server_tag "$srv")
     url=$(server_url "$srv")
 
-    creds=$(echo "$encoded" | base64 -d 2>/dev/null)
-    luser=$(echo "$creds" | sed 's/login=//;s/&pass=.*//')
-    lpass=$(echo "$creds" | sed 's/.*&pass=//')
+    creds=$(printf '%s' "$encoded" | base64 -d 2>/dev/null)
+    # Sem echo|sed: ver do_login (lib/sls.sh).
+    luser=${creds#login=}; luser=${luser%%"&pass="*}
+    lpass=${creds#"login=${luser}&pass="}
     unset creds
 
     printf "Testando [%s] %s...\n" "$tag" "$user"

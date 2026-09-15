@@ -50,27 +50,6 @@ if [ ! -s "$SLS_ACC_DIR/cript_file" ]; then
 fi
 chmod 600 "$SLS_ACC_DIR/cript_file" 2>/dev/null
 
-# Rotaciona o log da conta.
-#
-# CORRECAO: o play.sh redireciona a saida do worker com ">>" e nada limitava
-# o crescimento. Com o busy-loop do crono.sh o sls.log chegava a encher o
-# armazenamento do aparelho, e o Android passava a matar o processo — o que
-# aparentava "bug aleatorio". O busy-loop foi corrigido; isto e a rede de
-# protecao para qualquer coisa que volte a gerar log em excesso.
-rotate_log() {
-    _lg="$SLS_ACC_DIR/sls.log"
-    [ -f "$_lg" ] || return 0
-    _sz=$(wc -c < "$_lg" 2>/dev/null)
-    case "$_sz" in ''|*[!0-9]*) return 0 ;; esac
-    if [ "$_sz" -gt 5242880 ]; then
-        rm -f "$_lg.1"
-        mv "$_lg" "$_lg.1" 2>/dev/null
-        : > "$_lg"
-    fi
-    unset _lg _sz
-}
-
-rotate_log
 echo "running" > "$SLS_STATUS_FILE"
 
 # SUBSTITUI este processo pelo sls.sh, em vez de ficar parado esperando por
@@ -89,4 +68,6 @@ echo "running" > "$SLS_STATUS_FILE"
 # stop.sh continua encontrando a conta. Quem relanca agora e o play.sh, que
 # ja verifica a cada volta do painel se o PID morreu — antes eram 15s de
 # espera aqui, agora sao no maximo 20s la, sem custar um processo parado.
-exec sh "$LIBDIR/sls.sh" "$RUN" < /dev/null
+# A pasta da conta vai no cmdline so para o worker_vivo (contas.sh) saber de
+# qual conta e este PID; o sls.sh nao le o $2.
+exec sh "$LIBDIR/sls.sh" "$RUN" "$SLS_ACC_DIR" < /dev/null

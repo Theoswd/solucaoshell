@@ -63,6 +63,16 @@ mkdir -p "$STATUS_DIR"
 # encerrar o monitor: ele roda como "./play.sh" (caminho relativo) e
 # um pgrep por caminho absoluto nao casa. Cada ./play.sh deixava mais
 # um monitor vivo, todos supervisionando as mesmas contas.
+#
+# Um painel so: o ./play.sh novo encerra o anterior (outra aba, sessao do
+# Termux esquecida em segundo plano). Os workers seguem rodando; o play.sh
+# nao tem trap que derrube conta.
+_orq=$(cat "$STATUS_DIR/orchestrator.pid" 2>/dev/null)
+case "$_orq" in
+    ''|*[!0-9]*|"$$") ;;
+    *) grep -q 'play\.sh' "/proc/$_orq/cmdline" 2>/dev/null && kill -TERM "$_orq" 2>/dev/null ;;
+esac
+unset _orq
 echo "$$" > "$STATUS_DIR/orchestrator.pid"
 chmod 700 "$HOME/.sls" 2>/dev/null
 [ -f "$ACCOUNTS_FILE" ] && chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
@@ -88,19 +98,11 @@ clean_field() {
 # CORRECAO: antes era "kill -0 PID && kill -9 PID". O kill -0 verifica
 # EXISTENCIA, nao IDENTIDADE: com o PID reciclado pelo kernel, o kill -9
 # acertava um processo inocente. Alem disso matava so o pai, deixando o
-# sls.sh filho orfao e ativo.
+# sls.sh filho orfao e ativo.  $1=PID  $2=pasta da conta
 kill_worker_tree() {
     kw_pid="$1"
-    [ -n "$kw_pid" ] || return 1
-    case "$kw_pid" in *[!0-9]*) return 1 ;; esac
-
-    # worker.sh OU sls.sh: apos o exec do worker.sh o cmdline e o do sls.sh.
-    if [ -r "/proc/$kw_pid/cmdline" ]; then
-        tr '\0' ' ' < "/proc/$kw_pid/cmdline" 2>/dev/null \
-            | grep -qE 'worker\.sh|sls\.sh' || return 1
-    else
-        kill -0 "$kw_pid" 2>/dev/null || return 1
-    fi
+    # So o worker DESTA conta: um PID reciclado por outra conta nao morre.
+    worker_vivo "$kw_pid" "$2" || return 1
 
     kill -TERM "-$kw_pid" 2>/dev/null || kill -TERM "$kw_pid" 2>/dev/null
     sleep 2
@@ -164,12 +166,12 @@ launch_worker() {
     # Para forcar o reinicio de tudo: ./play.sh --restart
     if [ -f "$lw_pidf" ]; then
         lw_old=$(cat "$lw_pidf" 2>/dev/null)
-        if [ "$FORCE_RESTART" != "1" ] && worker_vivo "$lw_old"; then
+        if [ "$FORCE_RESTART" != "1" ] && worker_vivo "$lw_old" "$lw_dir"; then
             printf "   ${GREEN}ja rodando${RESET} (PID %s) - mantida\n" "$lw_old"
             unset lw_old
             return 2
         fi
-        kill_worker_tree "$lw_old"
+        kill_worker_tree "$lw_old" "$lw_dir"
         rm -f "$lw_pidf"
         unset lw_old
     fi
@@ -205,7 +207,7 @@ printf "${CYAN}solucaoshell - %s conta(s)${RESET}\n" "$total"
 # O caminho do accounts.conf so aparece quando NAO e o do proprio
 # repositorio. No uso normal e uma linha que nao informa nada — o arquivo
 # esta onde deveria. Fora do lugar, e a primeira coisa que se quer saber:
-# o resolve_accounts_file procura em quatro pastas e ja aconteceu de o bot
+# o resolve_accounts_file procura em outras pastas e ja aconteceu de o bot
 # subir lendo um arquivo antigo de outra instalacao.
 [ "$ACCOUNTS_FILE" = "$SLSDIR/accounts.conf" ] || \
     printf "${GOLD}Contas:${RESET} %s\n" "$ACCOUNTS_FILE"

@@ -61,8 +61,9 @@ login_logoff() {
     run_curl "${URL}/?sign_in=1" > /dev/null 2>&1
 
     creds=`base64 -d "$cript_file" 2>/dev/null`
-    luser=`echo "$creds" | sed 's/login=//;s/&pass=.*//'`
-    lpass=`echo "$creds" | sed 's/.*&pass=//'`
+    # Sem echo|sed: ver do_login (sls.sh).
+    luser=${creds#login=}; luser=${luser%%"&pass="*}
+    lpass=${creds#"login=${luser}&pass="}
     unset creds
 
     # Senha pelo stdin, fora do argv (ver sls.sh).

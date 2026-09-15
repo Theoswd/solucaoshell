@@ -2580,8 +2580,8 @@ _r=`( RUN=-cv; TMP=\`mktemp -d\`; . "$LIB/cave.sh" > /dev/null 2>&1
       cave_start 2>/dev/null | tail -n 1; rm -rf "$TMP" )`
 check "cave_start sem acao: espera 60s antes de sair" "espera 60" "$_r"
 
-# --- senha fora do argv do curl
-_r=`grep -c 'pass=\${' "$LIB/sls.sh" "$LIB/loginlogoff.sh" "$LIB/session_check.sh" | grep -vc ':0$'`
+# --- senha fora do argv do curl (lpass=${creds...} e so a leitura do cript_file)
+_r=`grep -c '[^l]pass=\${' "$LIB/sls.sh" "$LIB/loginlogoff.sh" "$LIB/session_check.sh" | grep -vc ':0$'`
 check "login: senha nunca na linha de comando do curl" 0 "$_r"
 _r=`cat "$LIB/sls.sh" "$LIB/loginlogoff.sh" "$LIB/session_check.sh" | grep -c '"pass@-"'`
 check "login: senha pelo stdin nos tres POSTs" 3 "$_r"
@@ -2767,6 +2767,79 @@ _r=`( . "$LIB/info.sh" > /dev/null 2>&1
 check "valor_num: milhar sem sufixo e decimal com sufixo" "54300 1234 396 408100000 3400 " "$_r"
 
 rm -rf "$_td7"; unset _td7 _ROD0 _ROD1 _v
+
+printf "\n=== 43. escolha de conta, senha, identidade do PID, logs e painel unico ===\n"
+_td8=`mktemp -d`
+
+# setup.sh: comentario com "|" e linha sem nome nao deslocam a numeracao.
+printf '# srv|usuario|cred\n1|Ana|YQ==\n1||x\n1|Bia|Yg==\n' > "$_td8/acc.conf"
+_r=`( SLSDIR="$ROOT"; ACCOUNTS_FILE="$_td8/acc.conf"; . "$LIB/contas.sh"
+      eval "$(sed -n '/^escolher_conta() {/,/^}/p' "$ROOT/setup.sh")"
+      sleep() { :; }
+      echo 2 | { escolher_conta > /dev/null; printf '%s ' "$user|$encoded"; }
+      echo 3 | { escolher_conta > /dev/null || printf 'invalido '; }
+      printf '' | { escolher_conta > /dev/null || printf 'cancelou'; } )`
+check "setup: numero da tela e a conta certa" "Bia|Yg== invalido cancelou" "$_r"
+
+# Credencial: "\", espacos e "&pass=" dentro da senha chegam intactos.
+_cr='login=Ze&pass= a\nb\c&pass=%+ '
+for _f in lib/sls.sh lib/loginlogoff.sh setup.sh; do
+    _r=`( creds="$_cr"; eval "$(grep -E '^ *(luser|lpass)=' "$ROOT/$_f")"; printf '[%s][%s]' "$luser" "$lpass" )`
+    check "senha com barra invertida e espacos: $_f" '[Ze][ a\nb\c&pass=%+ ]' "$_r"
+done
+
+if [ -r "/proc/$$/cmdline" ]; then
+    # worker_vivo com a pasta: so a conta dona do PID; sls.sh antigo sem pasta vale.
+    sh -c 'sleep 30; :' "$_td8/lib/sls.sh" -boot "$_td8/h/.sls/BR_Ana" & _p1=$!
+    sh -c 'sleep 30; :' "$_td8/lib/sls.sh" -boot & _p2=$!
+    sh -c 'sleep 30; :' "$_td8/play.sh" & _p3=$!
+    sleep 1
+    _r=`( SLSDIR="$ROOT"; . "$LIB/contas.sh"
+          worker_vivo $_p1 "$_td8/h/.sls/BR_Ana" && printf 'dona ' || printf 'nao '
+          worker_vivo $_p1 "$_td8/h/.sls/BR_An" && printf 'outra ' || printf 'nao '
+          worker_vivo $_p2 "$_td8/h/.sls/BR_Ana" && printf 'antigo' || printf 'nao' )`
+    check "worker_vivo: PID de outra conta nao conta" "dona nao antigo" "$_r"
+
+    # setup: remover a conta derruba o worker dela.
+    mkdir -p "$_td8/h/.sls/status"
+    sh -c 'sleep 30; :' "$_td8/lib/sls.sh" -boot "$_td8/h/.sls/BR_Ana" & _p4=$!
+    sleep 1
+    echo $_p4 > "$_td8/h/.sls/status/BR_Ana.pid"
+    printf '1|Ana|YQ==\n1|Bia|Yg==\n' > "$_td8/acc2.conf"
+    ( HOME="$_td8/h"; SLSDIR="$ROOT"; ACCOUNTS_FILE="$_td8/acc2.conf"; . "$LIB/contas.sh"
+      eval "$(sed -n '/^escolher_conta() {/,/^}/p;/^remove_account() {/,/^}/p' "$ROOT/setup.sh")"
+      sleep() { :; }; clear() { :; }
+      printf '1\ny\nn\n' | remove_account ) > /dev/null 2>&1
+    sleep 1
+    case "`cut -d' ' -f3 /proc/$_p4/stat 2>/dev/null`" in ''|Z) _r=morto ;; *) _r=vivo ;; esac
+    [ -f "$_td8/h/.sls/status/BR_Ana.pid" ] && _r="$_r pid" || _r="$_r sem_pid"
+    _r="$_r `cut -d'|' -f2 "$_td8/acc2.conf"`"
+    kill $_p4 2>/dev/null; wait $_p4 2>/dev/null
+    check "setup: remover conta derruba o worker dela" "morto sem_pid Bia" "$_r"
+
+    # play.sh novo encerra o painel anterior, e so se o PID for de um play.sh.
+    _bloco=$(sed -n '/^_orq=\$(cat/,/^unset _orq/p' "$ROOT/play.sh")
+    ( STATUS_DIR="$_td8"; echo $_p3 > "$_td8/orchestrator.pid"; eval "$_bloco"
+      echo $_p1 > "$_td8/orchestrator.pid"; eval "$_bloco" )
+    sleep 1
+    _r=""
+    for _v in $_p3 $_p1; do
+        case "`cut -d' ' -f3 /proc/$_v/stat 2>/dev/null`" in ''|Z) _r="$_r morto" ;; *) _r="$_r vivo" ;; esac
+    done
+    kill $_p1 $_p2 $_p3 2>/dev/null; wait $_p1 $_p2 $_p3 2>/dev/null
+    check "play.sh: encerra o painel anterior, nao outro processo" " morto vivo" "$_r"
+fi
+
+# Logs: copia e esvazia no lugar; quem escreve com ">>" continua no sls.log.
+_r=`( TMP="$_td8"; eval "$(sed -n '/^rotate_log() {/,/^}/p' "$LIB/sls.sh")"
+      head -c 5242881 /dev/zero > "$TMP/sls.log"; echo erro > "$TMP/ERROR_DEBUG"
+      exec 9>> "$TMP/sls.log"
+      rotate_log; printf 'x' >&9
+      printf '%s %s ' "$(cat "$TMP/sls.log")" "$(wc -c < "$TMP/sls.log.1" | tr -d ' ')"
+      [ -f "$TMP/ERROR_DEBUG.1" ] && printf 'rodou' || printf 'ficou' )`
+check "rotate_log: sls.log segue recebendo apos a rotacao" "x 1048576 ficou" "$_r"
+
+rm -rf "$_td8"; unset _td8 _cr _f _p1 _p2 _p3 _bloco _p4
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

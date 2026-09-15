@@ -190,19 +190,17 @@ Nunca use `curl -k` nem opção de ignorar certificado: a senha passa por essa c
 date
 ```
 
-Se a data estiver errada, desligue o serviço de hora do Ubuntu, que atrapalha no WSL:
+Se a data estiver errada, primeiro rode `wsl --shutdown` no **PowerShell do Windows** e abra o Ubuntu de novo: o WSL pega a hora do Windows ao abrir.
+
+Só se a data voltar a errar depois disso, o serviço de hora do Ubuntu (chrony) está desregulado. Desligue-o e acerte pela hora do Windows:
 
 ```bash
 sudo systemctl disable --now chrony
 ```
 
-E acerte pela hora do Windows:
-
 ```bash
 sudo date -s "@$(powershell.exe -NoProfile -Command '[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()' < /dev/null | tr -d '\r')"
 ```
-
-Se não der certo, no **PowerShell do Windows** rode `wsl --shutdown` e abra o Ubuntu de novo.
 
 ### Conta amarela que nunca sobe
 

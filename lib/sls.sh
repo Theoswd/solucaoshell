@@ -204,8 +204,10 @@ do_login() {
         printf "[%s] %s — ERRO: cript_file ilegivel\n" "$SLS_TAG" "$SLS_USER"
         return 1
     fi
-    luser=$(echo "$creds" | sed 's/login=//;s/&pass=.*//')
-    lpass=$(echo "$creds" | sed 's/.*&pass=//')
+    # Sem echo|sed: o echo do dash interpreta "\", e uma senha com "\n" ou
+    # "\c" chegava alterada ao servidor.
+    luser=${creds#login=}; luser=${luser%%"&pass="*}
+    lpass=${creds#"login=${luser}&pass="}
     unset creds
 
     # O GET INICIAL PRECISA SER A PAGINA DE LOGIN, NAO A HOME.
@@ -398,6 +400,20 @@ printf "[%s] %s — loop principal iniciado\n" "$SLS_TAG" "$ACC"
 #
 #   $HOME/.sls/PAUSED   pausa todas as contas
 #   $TMP/PAUSED         pausa somente esta conta
+
+# Limite dos logs da conta, conferido a cada ciclo: o sls.sh roda por meses
+# sem reiniciar. Copia e esvazia no lugar, sem mv: o sls.log e o arquivo que
+# o play.sh abriu com ">>", e o processo continua escrevendo no que abriu.
+# Com mv o log seguia crescendo no .1 e o sls.log ficava vazio.
+rotate_log() {
+    for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG"; do
+        _sz=$(wc -c < "$_lg" 2>/dev/null)
+        case "$_sz" in ''|*[!0-9]*) continue ;; esac
+        [ "$_sz" -gt 5242880 ] && tail -c 1048576 "$_lg" > "$_lg.1" && : > "$_lg"
+    done
+    unset _lg _sz
+}
+
 while true; do
     if [ -f "$HOME/.sls/PAUSED" ] || [ -f "$TMP/PAUSED" ]; then
         [ -n "$SLS_STATUS_FILE" ] && echo "paused" > "$SLS_STATUS_FILE"
@@ -405,5 +421,6 @@ while true; do
         continue
     fi
     [ -n "$SLS_STATUS_FILE" ] && echo "running" > "$SLS_STATUS_FILE"
+    rotate_log
     sls_start
 done
