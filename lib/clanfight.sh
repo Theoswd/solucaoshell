@@ -201,7 +201,7 @@ clanfight_start() {
   case `date +%H:%M` in
   10:5[5-9]|18:5[5-9])
     (
-      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | sed 's/[()]//g' > "$TMP/FULL"
+      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$TMP/FULL"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
     (

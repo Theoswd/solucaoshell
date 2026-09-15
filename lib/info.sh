@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.52"
+versionNum="3.9.53"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -240,7 +240,7 @@ fetch_page() {
     if [ -z "$relative_url" ]; then
         : > "$output_file"
         # A ultima pagina pedida aponta o modulo que chamou.
-        printf "fetch_page sem link (depois de %s)\n" "`cat "${TMP:-.}/pagina" 2>/dev/null`" >> "${TMP:-.}/ERROR_DEBUG"
+        printf "fetch_page sem link (depois de %s)\n" "`cat "${TMP:-.}/.ult_req" 2>/dev/null`" >> "${TMP:-.}/ERROR_DEBUG"
         return 1
     fi
 

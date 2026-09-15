@@ -396,7 +396,7 @@ king_start() {
   case `date +%H:%M` in
   (12:2[5-9]|16:2[5-9]|22:2[5-9])
     (
-      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | sed 's/[()]//g' > "$TMP/FULL"
+      run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$TMP/FULL"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
     # Inscrita, a conta ja esta comprometida com o evento: a batalha fica

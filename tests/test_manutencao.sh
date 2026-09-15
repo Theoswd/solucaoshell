@@ -2930,16 +2930,31 @@ unset -f _liga45
 
 _r=$( TMP="$_td10/fp"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
       run_curl_exec() { echo "$1" >> "$TMP/curl"; echo home; }
-      SLS_PACING=0; echo velho > "$TMP/SRC"; echo /arena/ > "$TMP/pagina"
+      SLS_PACING=0; echo velho > "$TMP/SRC"; echo /arena/ > "$TMP/.ult_req"; echo / > "$TMP/pagina"
       fetch_page "" && printf 'ok ' || printf 'falhou '
       [ -s "$TMP/SRC" ] && printf 'sujo ' || printf 'vazio '
       [ -f "$TMP/curl" ] && printf 'pediu' || printf 'nao_pediu'
       grep -q 'sem link (depois de /arena/)' "$TMP/ERROR_DEBUG" && printf ' origem' )
 check "fetch_page sem link: nao pede a Home, esvazia a pagina e diz a origem" "falhou vazio nao_pediu origem" "$_r"
 
-# Nenhum modulo guarda um link de "grep -o" sem pegar a primeira linha.
-_soltos=$(grep -nE '^[^#]*=`grep -o [^|`]*`[[:space:]]*$' "$LIB"/*.sh | wc -l | tr -d ' ')
-check "links de grep -o sempre com a primeira linha so" 0 "$_soltos"
+# Nenhum "grep -o" de link (?r=) ou de HP maximo ("(N)") sem escolher UMA
+# linha, em qualquer forma: `...`, $(...), "> ARQUIVO", "if grep -o",
+# com ou sem outros comandos no pipe e com continuacao de linha.
+# Contar (wc -l, grep -c) e testar (grep -q) nao pedem uma linha so.
+_soltos=$(awk '
+    FNR == 1 { buf = "" }
+    /^[ \t]*#/ { next }
+    {
+        l = $0
+        if (buf != "") l = buf " " l
+        if (l ~ /\\$/) { buf = substr(l, 1, length(l) - 1); next }
+        buf = ""
+    }
+    l ~ /grep -o/ && (l ~ /r\[=\]|r=/ || l ~ /\(\[0-9\]\+\)/) {
+        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q/) next
+        f = FILENAME; sub(/.*\//, "", f); printf "%s:%s ", f, FNR
+    }' "$LIB"/*.sh)
+check "grep -o de link ou HP maximo sempre com uma linha so" "" "$_soltos"
 grep -q 'access_link:-/coliseum/' "$LIB/coliseum.sh" \
     && ok "coliseu: espera com link vazio pede o coliseu, nao a Home" \
     || bad "coliseu: espera com link vazio ainda pede a Home"
