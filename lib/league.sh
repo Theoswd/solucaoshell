@@ -208,7 +208,6 @@ league_play() {
     fights_done=0
     j=1
     enemy_index=1
-    FUNC_play_league=`get_config "FUNC_play_league"`
 
     # O LACO DAS LUTAS TEM TETO.
     #
@@ -236,14 +235,6 @@ league_play() {
                     E_AGILITY=`get_enemy_stat "$INDEX" 3`
                     E_PROTECTION=`get_enemy_stat "$INDEX" 4`
                     printf "Enemy Number: %s\n" "$ENEMY_NUMBER"
-
-                    if [ "$AVAILABLE_FIGHTS" -eq 0 ] && [ "$ENEMY_NUMBER" -gt "$FUNC_play_league" ]; then
-                        printf "Refreshed fights\n"
-                        click=`grep -o -E "/league/refreshFights/\?r=[0-9]+" "$TMP/SRC" | sed -n 1p`
-                        fetch_page "$click"
-                        enemy_index=1
-                        j=1
-                    fi
                     action="fight_or_skip"
                 else
                     printf "No fight buttons found for button %s\n" "$j" >> "$TMP/ERROR_DEBUG"
@@ -306,13 +297,20 @@ league_play() {
                         fetch_available_fights
                         sleep 1s
                         potion_click=`grep -o -E "/league/potion/\?r=[0-9]+" "$TMP/SRC" | sed -n 1p`
-                        fetch_page "$potion_click"
-                        printf "Used a potion\n"
-                        echo "potion used" > "$TMP/POTION"
-                        E_STRENGTH=50
-                        enemy_index=1
-                        j=1
-                        action="check_fights"
+                        # Sem pocao o POTION nao pode nascer: com ele a
+                        # volta seguinte ataca o 1o adversario sem olhar a
+                        # forca e perde uma luta.
+                        if [ -n "$potion_click" ] && fetch_page "$potion_click"; then
+                            printf "Used a potion\n"
+                            echo "potion used" > "$TMP/POTION"
+                            E_STRENGTH=50
+                            enemy_index=1
+                            j=1
+                            action="check_fights"
+                        else
+                            printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta na proxima passagem.\n"
+                            action="exit_loops"
+                        fi
                     else
                         action="check_fights"
                     fi

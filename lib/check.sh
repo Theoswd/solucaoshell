@@ -46,7 +46,9 @@ check_missions() {
     done
 
     fetch_page "/collector/"
-    click=`grep -o -E "/collector/reward/element/[?]r=[0-9]+" "$TMP/SRC"`
+    # "sed -n 1p": link repetido na pagina virava duas linhas e o curl
+    # recusava a URL, sem nada no log.
+    click=`grep -o -E "/collector/reward/element/[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -n "$click" ]; then
         fetch_page "$click"
         printf "Collection collected\n"
@@ -64,7 +66,7 @@ check_rewards() {
 
     _ck_i=0
     while [ "$_ck_i" -le 11 ]; do
-        click=`grep -o -E "/relic/reward/${_ck_i}/[?]r=[0-9]+" "$TMP/SRC"`
+        click=`grep -o -E "/relic/reward/${_ck_i}/[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
         if [ -n "$click" ]; then
             fetch_page "$click"
             printf "Relic %s collected\n" "$_ck_i"
@@ -76,8 +78,8 @@ check_rewards() {
 apply_event() {
     event_path="${1}"
     fetch_page "/${event_path}/"
-    if grep -o -E "/${event_path}/enter(Game|Fight)/[?]r=[0-9]+" "$TMP/SRC"; then
-        APPLY=`grep -o -E "/${event_path}/enter(Game|Fight)/[?]r=[0-9]+" "$TMP/SRC"`
+    APPLY=`grep -o -E "/${event_path}/enter(Game|Fight)/[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
+    if [ -n "$APPLY" ]; then
         fetch_page "$APPLY"
         printf "Applied for battle\n"
     fi

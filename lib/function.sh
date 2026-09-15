@@ -7,7 +7,6 @@ FUNC_use_elixir=y
 FUNC_trade=y
 FUNC_trade_dias=365
 FUNC_coliseum=y
-FUNC_play_league=999
 FUNC_clan_fight=y
 FUNC_collect_mission_rewards=y
 FUNC_auto_events=y
@@ -52,7 +51,10 @@ load_config() {
             printf '%s=%s\n' "$_dk" "$_dv" >> "$CONFIG_FILE"
     done
 
+    _cr=$(printf '\r')
     while IFS='=' read -r _ck _cv; do
+        # Salvo no Windows (CRLF): o \r reprovava o valor e valia o padrao.
+        _cv=${_cv%"$_cr"}
         case "$_ck" in
             FUNC_*|ALLIES|CAVE_SILVER_LIMIT) ;;
             *) continue ;;
@@ -63,13 +65,13 @@ load_config() {
         eval "${_ck}=\"\$_cv\""
     done < "$CONFIG_FILE"
 
-    unset _ck _cv _dk _dv
+    unset _ck _cv _dk _dv _cr
 }
 
 get_config() {
     _gc_key="$1"
     load_config
     # Lê o valor diretamente do arquivo (compatível com sh, sem ${!var})
-    grep -E "^${_gc_key}=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2-
+    grep -E "^${_gc_key}=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '\r'
 }
 

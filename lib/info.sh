@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.49"
+versionNum="3.9.50"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -235,6 +235,13 @@ run_curl_exec() { _rc_run "exec" "$@"; }
 fetch_page() {
     relative_url="$1"
     output_file="${2:-$TMP/SRC}"
+
+    # Link vazio pedia a Home e o chamador seguia como se tivesse clicado.
+    if [ -z "$relative_url" ]; then
+        : > "$output_file"
+        printf "fetch_page sem link\n" >> "${TMP:-.}/ERROR_DEBUG"
+        return 1
+    fi
 
     SLS_MAXTIME=17
     run_curl_exec "${URL}${relative_url}" > "$output_file" 2>/dev/null &

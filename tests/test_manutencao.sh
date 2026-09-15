@@ -2886,6 +2886,83 @@ fi
 
 rm -rf "$_td9"; unset _td9 _p1 _p2
 
+printf "\n=== 45. Liga sem pocao, link vazio ou repetido, uninstall por atalho e config CRLF ===\n"
+# =============================================================================
+_td10=`mktemp -d`
+
+# Liga com todos os adversarios mais fortes: ataca o ultimo e busca a pocao.
+_liga45() { # pocao(sim|nao) -> "lutas=N alvos=A,B pocao=N POTION=S|N"
+    ( TMP="$_td10/c$1"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"
+      echo 3 > "$TMP/sim_lutas"; echo "$1" > "$TMP/sim_pocao"; : > "$TMP/sim_req"
+      . "$LIB/league.sh" > /dev/null 2>&1
+      load_config() { :; }; checkQuest() { return 1; }; get_config() { echo 5; }
+      player_stats() { echo 3165; }; sleep() { :; }
+      fetch_page() {
+          _d="${2:-$TMP/SRC}"; echo "$1" >> "$TMP/sim_req"; _n=`cat "$TMP/sim_lutas"`
+          case "$1" in
+              /league/)
+                  _p="Lutas disponiveis: <b>$_n</b><br/>"
+                  for _e in 302 312 322 332; do
+                      _p="$_p<a href='/league/fight/$_e/?r=77'></a><b>$_e. Nome</b><br/>Força: 9999<br/>Saúde: 50<br/>Agilidade: 50<br/>Proteção: 50<br/><a class='btn' href='/league/fight/$_e/?r=77'>Atacar</a>"
+                  done
+                  printf '%s\n' "$_p" > "$_d" ;;
+              /league/fight/*)
+                  [ "$_n" -gt 0 ] && echo $((_n - 1)) > "$TMP/sim_lutas"
+                  _p="resultado"
+                  [ "`cat "$TMP/sim_pocao"`" = sim ] && _p="$_p <a href='/league/potion/?r=5'>pocao</a>"
+                  printf '%s\n' "$_p" > "$_d" ;;
+              *) : > "$_d" ;;
+          esac
+      }
+      league_play > "$TMP/saida" 2>&1
+      _alvos=`grep '^/league/fight/' "$TMP/sim_req" | cut -d/ -f4 | tr '\n' ',' | sed 's/,$//'`
+      [ -f "$TMP/POTION" ] && _pt=S || _pt=N
+      printf 'lutas=%s alvos=%s pocao=%s POTION=%s' "`grep -c '^/league/fight/' "$TMP/sim_req"`" \
+          "$_alvos" "`grep -c '^/league/potion/' "$TMP/sim_req"`" "$_pt" )
+}
+check "Liga sem pocao: ataca o ultimo e sai, sem luta forcada" "lutas=1 alvos=332 pocao=0 POTION=N" "`_liga45 nao`"
+check "Liga com pocao: usa e ataca o 1o" "lutas=2 alvos=332,302 pocao=1 POTION=N" "`_liga45 sim`"
+unset -f _liga45
+
+_r=$( TMP="$_td10/fp"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { echo "$1" >> "$TMP/curl"; echo home; }
+      SLS_PACING=0; echo velho > "$TMP/SRC"
+      fetch_page "" && printf 'ok ' || printf 'falhou '
+      [ -s "$TMP/SRC" ] && printf 'sujo ' || printf 'vazio '
+      [ -f "$TMP/curl" ] && printf 'pediu' || printf 'nao_pediu' )
+check "fetch_page sem link: nao pede a Home e esvazia a pagina" "falhou vazio nao_pediu" "$_r"
+
+# Link repetido na pagina: um clique com uma URL so; apply_event sem eco.
+_r=$( TMP="$_td10/ck"; mkdir -p "$TMP"; . "$LIB/check.sh" > /dev/null 2>&1
+      FUNC_check_rewards=y
+      fetch_page() { echo "[$1]" >> "$TMP/pedidos"
+          case "$1" in
+              /relic/reward/) echo "<a href='/relic/reward/1/?r=9'>x</a> <a href='/relic/reward/1/?r=9'>y</a>" > "$TMP/SRC" ;;
+              /king/) echo "<a href='/king/enterGame/?r=4'>a</a> <a href='/king/enterGame/?r=4'>b</a>" > "$TMP/SRC" ;;
+          esac; }
+      check_rewards > /dev/null; apply_event king > "$TMP/saida"
+      printf '%s|%s' "`tr '\n' ' ' < "$TMP/pedidos"`" "`cat "$TMP/saida"`" )
+check "link repetido: relíquia e evento clicam uma URL so" \
+    "[/relic/reward/] [/relic/reward/1/?r=9] [/king/] [/king/enterGame/?r=4] |Applied for battle" "$_r"
+
+# uninstall.sh por atalho: rm/pkill falsos registram o que seria apagado.
+mkdir -p "$_td10/bin" "$_td10/fake" "$_td10/home/.sls"
+ln -s "$ROOT/uninstall.sh" "$_td10/bin/sls-remover"
+for _b in rm pkill sleep du termux-wake-unlock; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$_b" "$_td10/apagou" > "$_td10/fake/$_b"
+    chmod +x "$_td10/fake/$_b"
+done
+echo REMOVER | ( HOME="$_td10/home" PATH="$_td10/fake:$PATH" sh "$_td10/bin/sls-remover" ) > /dev/null 2>&1
+grep -q "rm -rf $_td10/bin" "$_td10/apagou" 2>/dev/null && _r=apagaria || _r=recusou
+check "uninstall.sh por atalho: nao apaga a pasta do atalho" recusou "$_r"
+
+_r=$( TMP="$_td10/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
+      printf 'FUNC_trade=n\r\nALLIES=4\r\n' > "$TMP/config.cfg"
+      load_config; printf '%s %s' "$FUNC_trade" "`get_config ALLIES`" )
+check "config.cfg salvo no Windows: valores valem" "n 4" "$_r"
+
+rm -rf "$_td10"; unset _td10 _b
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

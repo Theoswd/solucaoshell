@@ -9,6 +9,10 @@
 _dir=$(dirname "$0")
 SLSDIR=$(cd "$_dir" && pwd)
 
+# Chamado por um atalho (ex.: $PREFIX/bin), o SLSDIR seria a pasta do atalho
+# e o "rm -rf" do fim a apagaria inteira.
+[ -f "$SLSDIR/lib/sls.sh" ] || { printf "Rode o uninstall.sh de dentro da pasta do bot.\n"; exit 1; }
+
 # O motor mora em lib/. Os comandos do usuario ficam na raiz; tudo que e
 # biblioteca (worker, painel, modulos de batalha) e carregado daqui.
 LIBDIR="$SLSDIR/lib"
