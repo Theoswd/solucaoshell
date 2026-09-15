@@ -124,6 +124,25 @@ list_accounts() {
     read -r _d
 }
 
+# Conta cadastrada nao joga sozinha: ou o bot ja esta no ar (o painel a sobe
+# na volta seguinte), ou falta o ./play.sh. Sem este aviso ela so aparecia
+# parada no painel.
+aviso_subir() {
+    _as=$(cat "$HOME/.sls/status/orchestrator.pid" 2>/dev/null)
+    # O .pid fica para tras quando o play.sh morre (Ctrl+C, SIGKILL): so
+    # vale se o PID ainda for um play.sh.
+    case "$_as" in
+        ''|*[!0-9]*) _as="" ;;
+        *) grep -q 'play\.sh' "/proc/$_as/cmdline" 2>/dev/null || _as="" ;;
+    esac
+    if [ -n "$_as" ]; then
+        printf "O bot ja esta rodando: a conta sobe sozinha em ate 1 minuto.\n"
+    else
+        printf "Para comecar a jogar: ${CYAN}./play.sh${RESET}\n"
+    fi
+    unset _as
+}
+
 # Servidor unico: nao ha o que escolher.
 show_servers() {
     printf "
@@ -176,6 +195,7 @@ add_account() {
         printf "%s|%s|%s\n" "$srv" "$user" "$encoded" >> "$ACCOUNTS_FILE"
         chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
         printf "${GREEN}[OK] Conta [%s] %s adicionada!${RESET}\n" "$tag" "$user"
+        aviso_subir
     else
         printf "${RED}Login nao confirmado automaticamente.${RESET}\n"
         printf "Isso pode ocorrer por bloqueio de IP no teste.\n"
@@ -187,6 +207,7 @@ add_account() {
                 printf "%s|%s|%s\n" "$srv" "$user" "$encoded" >> "$ACCOUNTS_FILE"
                 chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
                 printf "${GOLD}Conta salva sem validacao.${RESET}\n"
+                aviso_subir
                 ;;
             *) printf "Conta nao salva.\n" ;;
         esac

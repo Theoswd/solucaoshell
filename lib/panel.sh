@@ -1214,18 +1214,33 @@ while true; do
         # worker_vivo (contas.sh) confere que o PID ainda e desta conta: o kernel
         # recicla PIDs. Relanca no maximo uma vez por minuto por conta, para
         # um worker que morre ao subir nao virar laco.
+        _sobe=0
         if [ -n "$pid" ] && ! worker_vivo "$pid" "$acc_dir"; then
             status="dead"
-            if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
-                ler_arq "$acc_dir/.relancado"
-                case "$_LIDO" in ''|*[!0-9]*) _LIDO=0 ;; esac
-                _LIDO=$(( _agora_ep - _LIDO ))
-                if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge 60 ]; then
-                    echo "$_agora_ep" > "$acc_dir/.relancado" 2>/dev/null
-                    echo "dead" > "$status_file"
-                    printf "[monitor] relancando worker\n" >> "$acc_dir/sls.log" 2>/dev/null
-                    launch_worker "$srv" "$user" "" > /dev/null 2>&1
-                fi
+            _sobe=1
+        elif [ -z "$pid" ] && [ "$status" != "stopped" ]; then
+            # CONTA NOVA, CADASTRADA COM O BOT NO AR.
+            #
+            # Sem .pid nenhum, o ramo acima nunca pegava: a conta ficava
+            # parada no painel para sempre e nada dizia que faltava o
+            # ./play.sh. "stopped" fica de fora — ai foi o stop.sh.
+            _sobe=1
+        fi
+        if [ "$_sobe" = 1 ] && [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
+            # O diretorio antes do marcador: sem ele o carimbo nao grava e a
+            # conta nova seria relancada a cada desenho.
+            mkdir -p "$acc_dir" 2>/dev/null
+            ler_arq "$acc_dir/.relancado"
+            case "$_LIDO" in ''|*[!0-9]*) _LIDO=0 ;; esac
+            _LIDO=$(( _agora_ep - _LIDO ))
+            if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge 60 ]; then
+                echo "$_agora_ep" > "$acc_dir/.relancado" 2>/dev/null
+                [ "$status" = "dead" ] && echo "dead" > "$status_file"
+                printf "[monitor] subindo worker\n" >> "$acc_dir/sls.log" 2>/dev/null
+                # A credencial do accounts.conf: a conta nova ainda nao tem
+                # cript_file, e o launch_worker sem ela desiste.
+                limpa_campo "$_enc"
+                launch_worker "$srv" "$user" "$_CF" > /dev/null 2>&1
             fi
         fi
 

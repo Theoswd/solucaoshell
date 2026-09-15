@@ -3212,6 +3212,51 @@ check "liga: forca do adversario ilegivel -> nenhuma luta nem pocao" "0" "$_r"
 rm -rf "$_td13"; unset _td13 _r _ag
 unset -f _tl48
 
+printf "\n=== 49. conta nova sobe com o bot no ar ===\n"
+# =============================================================================
+_td14=`mktemp -d`
+_pan49() { # estado(nova|parada|morta) supervisao -> "lancou=N enc=S|N"
+    ( _h="$_td14/$1$2"; rm -rf "$_h"; mkdir -p "$_h/.sls/status"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"
+      case "$1" in
+          parada) echo stopped > "$_h/.sls/status/BR_Ze.status" ;;
+          morta)  mkdir -p "$_h/.sls/BR_Ze"; echo 999999 > "$_h/.sls/status/BR_Ze.pid"
+                  echo running > "$_h/.sls/status/BR_Ze.status" ;;
+      esac
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      ACC_TEST_OUT="$_h/lancou"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE ACC_TEST_OUT
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      launch_worker() { printf '%s\n' "$3" >> "$ACC_TEST_OUT"; }
+      PANEL_SUPERVISE="$2"; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+      . "$LIB/panel.sh" > /dev/null 2>&1; painel_loop > /dev/null 2>&1
+      printf 'lancou=%s enc=%s' "`cat "$_h/lancou" 2>/dev/null | wc -l | tr -d ' '`" \
+          "`grep -q 'Y3JlZGVuY2lhbA==' "$_h/lancou" 2>/dev/null && echo S || echo N`" )
+}
+check "conta nova (sem .pid) sobe com o play.sh no ar, com a credencial" "lancou=1 enc=S" "`_pan49 nova 1`"
+check "conta nova nao sobe pelo status.sh (somente leitura)"             "lancou=0 enc=N" "`_pan49 nova 0`"
+check "conta parada pelo stop.sh continua parada"                        "lancou=0 enc=N" "`_pan49 parada 1`"
+check "worker morto continua sendo relancado"                            "lancou=1 enc=S" "`_pan49 morta 1`"
+# Duas voltas seguidas nao sobem a mesma conta duas vezes (carimbo de 1 min).
+_r=$( _h="$_td14/duas"; rm -rf "$_h"; mkdir -p "$_h/.sls/status"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      launch_worker() { echo L >> "$_h/lancou"; }
+      PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      painel_loop > /dev/null 2>&1; painel_loop > /dev/null 2>&1
+      cat "$_h/lancou" 2>/dev/null | wc -l | tr -d ' ' )
+check "duas voltas do painel nao sobem a conta duas vezes" 1 "$_r"
+grep -q 'aviso_subir' "$ROOT/setup.sh" && grep -q './play.sh' "$ROOT/setup.sh" \
+    && ok "setup.sh: diz como a conta nova comeca a jogar" \
+    || bad "setup.sh: nao diz que falta subir o bot"
+rm -rf "$_td14"; unset _td14 _r
+unset -f _pan49
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
