@@ -256,6 +256,13 @@ league_play() {
                 ;;
 
             fight_or_skip)
+                # Forca do adversario ilegivel: o "-gt" com vazio da falso e
+                # a Liga pularia todos ate a pocao.
+                case "$E_STRENGTH" in
+                    ''|*[!0-9]*)
+                        printf "[LIGA] Forca do adversario nao lida - volta na proxima passagem.\n"
+                        action="exit_loops"; continue ;;
+                esac
                 if [ "$PLAYER_STRENGTH" -gt "$E_STRENGTH" ] || [ -f "$TMP/POTION" ]; then
                     printf "Strength (%s) > enemy (%s). Fighting %s.\n" "$PLAYER_STRENGTH" "$E_STRENGTH" "$ENEMY_NUMBER"
                     _lg_antes=$AVAILABLE_FIGHTS

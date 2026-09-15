@@ -1314,6 +1314,14 @@ while true; do
                            ''|*[!0-9]*) _sessao="sessao caida" ;;
                            *) if [ "$_rd" -ge "$_ok" ]; then
                                   _sessao="sem resposta"; _cor_s="$C_YELLOW"
+                                  # O codigo do curl diz a causa (60 =
+                                  # certificado ou relogio; 6/7/28 = rede).
+                                  ler_arq "$acc_dir/.curl_erro"
+                                  case "$_LIDO" in
+                                      ''|*[!0-9]*) ;;
+                                      *) [ "$acc_dir/.curl_erro" -nt "$acc_dir/last_ok" ] \
+                                             && _sessao="sem resposta (curl $_LIDO)" ;;
+                                  esac
                               else
                                   _sessao="sessao caida"
                               fi ;;

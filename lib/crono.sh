@@ -236,6 +236,8 @@ atualiza_stats() {
     fi
     _a=`extract_username "$_pg"`
     [ -n "$_a" ] && ACC="$_a"
+    # Pagina logada: a sessao respondeu (libera a varredura, ver servidor_mudo).
+    sessao_marcar
     parse_status "$_pg"
     messages_info
     date +%s > "$TMP/last_stats" 2>/dev/null
@@ -421,6 +423,18 @@ tarefas_livres() {
     # --- Numeros do painel, a cada 3 min
     if stats_liberado; then
         atualiza_stats 2>/dev/null
+    fi
+
+    # SERVIDOR MUDO: NENHUMA ATIVIDADE NESTA VOLTA.
+    #
+    # Cada atividade faz varios pedidos, e cada pedido sem resposta espera ate
+    # 17s: com o servidor fora, uma volta passava minutos presa em falhas
+    # (nos logs, 6.404 falhas so na pagina de missoes do cla), inclusive
+    # perto das inscricoes dos eventos. O descanso do fim da volta confere a
+    # sessao de novo e, respondendo, a proxima volta faz tudo.
+    if servidor_mudo; then
+        printf "Servidor sem resposta - atividades na proxima volta\n"
+        return 0
     fi
 
     # --- Checklist das missoes do cla

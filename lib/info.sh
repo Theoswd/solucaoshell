@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.54"
+versionNum="3.9.55"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -274,6 +274,8 @@ fetch_page() {
 
     if [ "$_fp_rc" != "0" ]; then
         printf "curl %s: %s\n" "$_fp_rc" "$relative_url" >> "${TMP:-.}/ERROR_DEBUG"
+        # O painel mostra o codigo junto do "sem resposta" (60 = certificado).
+        printf %s "$_fp_rc" > "${TMP:-.}/.curl_erro" 2>/dev/null
         unset _fp_rc
         return 1
     fi
@@ -480,6 +482,24 @@ sessao_estado() {
 # Servidor sem resposta: carimbo para o painel dizer "sem resposta" em vez
 # de "sessao caida" quando a conta nao confirma a sessao ha minutos.
 servidor_mudo_marcar() { date +%s > "$TMP/last_rede" 2>/dev/null; }
+
+# O servidor esta mudo AGORA? A ultima conferencia de sessao (descanso, stats,
+# login) nao teve resposta e nenhuma pagina respondeu depois dela.
+#
+# Carimbo com mais de 10 min (ou no futuro, relogio voltou) nao vale: enquanto
+# o servidor seguir mudo, o descanso de cada volta carimba de novo.
+servidor_mudo() {
+    _sm_r=""; _sm_o=""
+    { read -r _sm_r < "$TMP/last_rede"; } 2>/dev/null
+    { read -r _sm_o < "$TMP/last_ok"; } 2>/dev/null
+    case "$_sm_r" in ''|*[!0-9]*) unset _sm_r _sm_o; return 1 ;; esac
+    case "$_sm_o" in ''|*[!0-9]*) _sm_o=0 ;; esac
+    _sm_i=$(( `date +%s` - _sm_r ))
+    [ "$_sm_r" -ge "$_sm_o" ] && [ "$_sm_i" -ge 0 ] && [ "$_sm_i" -lt 600 ]
+    _sm_rc=$?
+    unset _sm_r _sm_o _sm_i
+    return $_sm_rc
+}
 
 # Primeiro link de ACAO de um evento, preferindo o que tem nonce (?r=N).
 #

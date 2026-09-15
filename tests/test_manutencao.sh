@@ -2596,7 +2596,7 @@ _r=`grep -rn -w 'TOYBOX\|server_scheme\|resource_allow\|update_check\|fetch_max_
 check "codigo morto: nenhuma chamada ao que foi removido" 0 "$_r"
 
 # --- start() repetido na janela de um evento sem inscricao so refaz o que venceu
-_r=`( TMP=\`mktemp -d\`; CLD=1; . "$LIB/crono.sh" > /dev/null 2>&1
+_r=`( TMP=\`mktemp -d\`; CLD=1; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       for _f in load_config clan_id clan_statue cq_antes messages_info \
                 descansar func_crono func_sleep cq_ajudar cq_elixir cq_mercador; do eval "$_f() { :; }"; done
       login_logoff() { return 0; }
@@ -3148,6 +3148,54 @@ case "$_r" in 89[0-9]|900) ok "campanha: duas falhas voltam em 15 min ($_r s)" ;
 
 rm -rf "$_td12"; unset _td12 _r
 unset -f _al47 _cq47
+
+printf "\n=== 48. servidor mudo: varredura em espera, codigo do erro no painel ===\n"
+# =============================================================================
+_td13=`mktemp -d`
+
+_tl48() { # last_rede last_ok -> atividades chamadas
+    ( TMP="$_td13/tl"; CLD=1; export TMP CLD; rm -rf "$TMP"; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      [ -n "$1" ] && echo "$1" > "$TMP/last_rede"
+      [ -n "$2" ] && echo "$2" > "$TMP/last_ok"
+      stats_liberado() { return 1; }
+      for _f in cq_liberado masmorra_liberada arena_liberada campanha_liberada caverna_liberada; do eval "$_f() { return 0; }"; done
+      for _f in cq_concluir cq_ajudar cq_elixir cq_mercador cq_marcar clanDungeon masmorra_marcar masmorra_adiar \
+                cq_antes arena_duel career_func campaign_func cave_routine check_missions check_rewards \
+                liga_do_dia func_trade clanQuests specialEvent allies_refresh; do eval "$_f() { printf '%s ' $_f; }"; done
+      tarefas_livres 2>/dev/null | grep -o 'arena_duel\|Servidor sem resposta' | tr '\n' ' ' | sed 's/ $//' )
+}
+_ag=`date +%s`
+check "servidor mudo agora: nenhuma atividade na volta" "Servidor sem resposta" "`_tl48 "$_ag" $((_ag - 100))`"
+check "servidor respondeu depois da falha: varredura normal" "arena_duel" "`_tl48 $((_ag - 100)) "$_ag"`"
+check "falha de mais de 10 min nao trava a varredura" "arena_duel" "`_tl48 $((_ag - 900)) $((_ag - 1000))`"
+
+# Painel: "sem resposta" com o codigo do curl.
+mkdir -p "$_td13/h/.sls/status" "$_td13/h/.sls/BR_Ze"
+printf '1|Ze|x\n' > "$_td13/acc.conf"
+echo running > "$_td13/h/.sls/status/BR_Ze.status"; echo $$ > "$_td13/h/.sls/status/BR_Ze.pid"
+echo $((_ag - 900)) > "$_td13/h/.sls/BR_Ze/last_ok"
+sleep 1
+echo "$_ag" > "$_td13/h/.sls/BR_Ze/last_rede"; printf 60 > "$_td13/h/.sls/BR_Ze/.curl_erro"
+_r=$( ( HOME="$_td13/h"; SLSDIR="$ROOT"; STATUS_DIR="$_td13/h/.sls/status"; ACCOUNTS_FILE="$_td13/acc.conf"
+        worker_vivo() { kill -0 "$1"; }
+        PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=1; SLS_EMOJI=0; SLS_COLS=80
+        export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+        . "$LIB/panel.sh"; painel_loop ) 2>/dev/null | grep -o 'sem resposta[^ ]* *(curl [0-9]*)' )
+check "painel: sem resposta mostra o codigo do curl" "sem resposta (curl 60)" "$_r"
+
+# Liga: pagina sem a forca do adversario -> nenhuma luta.
+_r=$( TMP="$_td13/lg"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/league.sh" > /dev/null 2>&1
+      load_config() { :; }; checkQuest() { return 1; }; player_stats() { echo 3165; }; sleep() { :; }
+      fetch_page() { echo "$1" >> "$TMP/req"
+          printf '%s\n' "Lutas disponiveis: <b>3</b><a href='/league/fight/302/?r=1'></a><a href='/league/fight/312/?r=1'></a>" > "${2:-$TMP/SRC}"; }
+      league_play > /dev/null 2>&1
+      grep -c '/league/fight/\|/league/potion/' "$TMP/req" )
+check "liga: forca do adversario ilegivel -> nenhuma luta nem pocao" "0" "$_r"
+
+rm -rf "$_td13"; unset _td13 _r _ag
+unset -f _tl48
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
