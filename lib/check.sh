@@ -16,11 +16,17 @@ check_missions() {
 
     fetch_page "/quest/"
 
+    # A RESPOSTA DE UM CLIQUE NAO E A LISTA DE MISSOES.
+    #
+    # O SRC passa a ser a pagina de resultado do bau (ou da missao), entao o
+    # proximo link era procurado na pagina errada: saia um por passagem. Cada
+    # clique rele /quest/, que tambem traz o nonce novo.
     for _ck_i in 1 2; do
         click=`grep -o -E "/quest/openChest/$_ck_i/[?]r=[0-9]+" "$TMP/SRC" | head -n1`
         if [ -n "$click" ]; then
             fetch_page "$click"
             printf "Chest %s opened\n" "$_ck_i"
+            fetch_page "/quest/"
         fi
     done
 
@@ -28,19 +34,13 @@ check_missions() {
         return
     fi
 
-    # CORRECAO: o laco de missoes lia $TMP/SRC, mas ao abrir os baus acima o
-    # fetch_page ja tinha sobrescrito o SRC com a pagina de resultado do bau —
-    # entao os links /quest/end/ eram procurados na pagina errada e as missoes
-    # concluidas nao eram recolhidas. Rebusca a pagina de missoes (que ja
-    # reflete o estado apos abrir os baus).
-    fetch_page "/quest/"
-
     _ck_i=0
     while [ "$_ck_i" -le 16 ]; do
         click=`grep -o -E "/quest/end/${_ck_i}[?]r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
         if [ -n "$click" ]; then
             fetch_page "$click"
             printf "Mission %s Completed\n" "$_ck_i"
+            fetch_page "/quest/"
         fi
         _ck_i=$((_ck_i + 1))
     done
@@ -70,6 +70,7 @@ check_rewards() {
         if [ -n "$click" ]; then
             fetch_page "$click"
             printf "Relic %s collected\n" "$_ck_i"
+            fetch_page "/relic/reward/"
         fi
         _ck_i=$((_ck_i + 1))
     done

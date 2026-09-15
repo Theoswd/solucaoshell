@@ -522,8 +522,12 @@ tarefas_livres() {
     # dois), e a conta que atualizar o bot refaz a sua no primeiro intervalo,
     # sem esperar as 12h da lista velha.
     if ativ_liberada aliados2 720; then
-        allies_refresh 2>/dev/null
-        ativ_marcar aliados2
+        if allies_refresh 2>/dev/null; then
+            ativ_marcar aliados2
+        else
+            # Pagina que nao respondeu: nova tentativa em 30 min, nao em 12h.
+            echo $(( `date +%s` - 690 * 60 )) > "$TMP/last_aliados2" 2>/dev/null
+        fi
     fi
 }
 

@@ -70,7 +70,12 @@ func_trade() {
         return 0
     fi
 
-    fetch_page "$_cl"
+    # Clique sem resposta nao gasta a troca do dia: tenta na proxima passagem.
+    if ! fetch_page "$_cl"; then
+        printf "Trade: sem resposta na troca - tenta de novo depois\n"
+        unset _hoje _ult _dias _pr _prata _lote _cl
+        return 0
+    fi
     printf '%s' "$_hoje" > "$TMP/last_trade" 2>/dev/null
     printf "Trade: prata %s — trocou por %s de ouro (1x hoje)\n" "$_pr" "$_lote"
     printf "Trade ok\n"

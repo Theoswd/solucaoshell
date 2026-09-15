@@ -35,7 +35,11 @@ _aliado_pagina() {
     (
         run_curl_exec "${URL}$1" > "$2"
     ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    # Pagina que nao veio fica anotada: o aliados_montar nao troca a lista.
+    if ! time_exit 17 || [ ! -s "$2" ]; then
+        : > "$TMP/aliados.falha"
+        return 1
+    fi
 }
 
 # AMIGOS: nomes da lista de amigos (/mail/friends e paginas seguintes).
@@ -90,7 +94,11 @@ aliados_amigos() {
 # nomes com numero ficavam de fora). Ate 10 paginas, pelos links do proprio jogo.
 aliados_cla() {
     [ -n "$CLD" ] || clan_id 2>/dev/null
-    [ -n "$CLD" ] || return 0
+    if [ -z "$CLD" ]; then
+        # /clan sem resposta nao e o mesmo que estar sem cla.
+        [ -s "$TMP/CLD" ] || : > "$TMP/aliados.falha"
+        return 0
+    fi
     _ac_d="$TMP/aliados_pag"; mkdir -p "$_ac_d" 2>/dev/null
     rm -f "$_ac_d"/cla_* 2>/dev/null
     _aliado_pagina "/clan/${CLD}" "$_ac_d/cla_1"
@@ -103,7 +111,8 @@ aliados_cla() {
         _aliado_pagina "/clan/${CLD}//${_ac_i}" "$_ac_d/cla_$_ac_i"
         _ac_i=$((_ac_i + 1))
     done
-    cat "$_ac_d"/cla_* 2>/dev/null | awk -v q="'" '
+    # A propria conta e membro: pagina do cla sem nenhum nome nao carregou.
+    _ac_nomes=`cat "$_ac_d"/cla_* 2>/dev/null | awk -v q="'" '
         { t = t $0 "\n" }
         END {
             n = split(t, p, "href=" q "/user/")
@@ -117,26 +126,34 @@ aliados_cla() {
                 if (index(nome, "<") || length(nome) == 0 || length(nome) > 40) continue
                 print nome
             }
-        }' | _aliado_norm
-    unset _ac_d _ac_n _ac_i
+        }' | _aliado_norm`
+    if [ -n "$_ac_nomes" ]; then printf '%s\n' "$_ac_nomes"; else : > "$TMP/aliados.falha"; fi
+    unset _ac_d _ac_n _ac_i _ac_nomes
 }
 
 # Monta as listas conforme o modo (1 a 4) — sem perguntar nada.
 #
-# SERVIDOR MUDO NAO APAGA A LISTA: se nem amigos nem cla vierem (pagina que
-# nao carregou), as listas anteriores ficam como estao.
+# SERVIDOR MUDO NAO APAGA A LISTA: se QUALQUER pagina de amigos ou do cla nao
+# vier, as listas anteriores ficam como estao. So com os amigos, a lista nova
+# perderia o cla — o caso de 12/09 — e ficaria valendo por 12h. Sem lista
+# anterior, a parcial vale (melhor que nenhuma) e a funcao devolve 1 para o
+# worker tentar de novo mais cedo.
 aliados_montar() {
     _am_modo="$1"
     case "$_am_modo" in 1|2|3) ;; 4) unset _am_modo; return 0 ;; *) _am_modo=1 ;; esac
     cd "$TMP" || return 1
 
+    rm -f "$TMP/aliados.falha"
     { aliados_amigos; aliados_cla; } 2>/dev/null | grep -v '^$' | LC_ALL=C sort -u > "$TMP/aliados.novo"
-    if [ ! -s "$TMP/aliados.novo" ]; then
-        rm -f "$TMP/aliados.novo"
-        printf "Aliados: nenhuma pagina de amigos/cla respondeu - listas mantidas\n"
-        unset _am_modo
+    _am_rc=0
+    [ -f "$TMP/aliados.falha" ] && _am_rc=1
+    if [ ! -s "$TMP/aliados.novo" ] || { [ "$_am_rc" = 1 ] && [ -s "$TMP/aliados.txt" ]; }; then
+        rm -f "$TMP/aliados.novo" "$TMP/aliados.falha"
+        printf "Aliados: pagina de amigos ou do cla nao respondeu - listas mantidas\n"
+        unset _am_modo _am_rc
         return 1
     fi
+    rm -f "$TMP/aliados.falha"
     mv "$TMP/aliados.novo" "$TMP/aliados.txt"
 
     case "$_am_modo" in
@@ -148,7 +165,7 @@ aliados_montar() {
         "`grep -c . "$TMP/aliados.txt" 2>/dev/null`" "$_am_modo"
     rm -rf "$TMP/aliados_pag" 2>/dev/null
     unset _am_modo
-    return 0
+    return $_am_rc
 }
 
 # ============================================================
@@ -178,8 +195,8 @@ allies_refresh() {
 
     printf "Atualizando lista de aliados (modo %s)\n" "$_ar"
     aliados_montar "$_ar"
-    unset _ar
-    return 0
+    _ar=$?
+    return $_ar
 }
 
 # O alvo da vez e aliado?

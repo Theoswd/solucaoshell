@@ -227,13 +227,17 @@ clanDungeon() {
         _cl=`masmorra_golpe "$TMP/DUNGEON"`
     done
 
-    unset _golpes _br _cl _max
-    if [ "$_n" -gt 0 ]; then
+    unset _golpes _br _max
+    # Feita so quando o link de golpe SUMIU. Com a rede caindo no meio ou um
+    # dos tetos cortando o laco, ainda ha golpe: o 0 levaria a masmorra_marcar,
+    # que sem relogio na pagina espera as 8h.
+    if [ "$_n" -gt 0 ] && [ -z "$_cl" ]; then
         printf "Masmorra do cla ok (%s golpes)\n" "$_n"
-        unset _n
+        unset _n _cl
         return 0
     fi
-    unset _n
+    [ "$_n" -gt 0 ] && printf "Masmorra: %s golpe(s) e ainda ha golpe - volta mais cedo\n" "$_n"
+    unset _n _cl
     return 1
 }
 
@@ -317,7 +321,12 @@ clan_statue() {
             # quando a ativacao falha, entao checar ali dava sempre
             # "ativado". Em producao: 31 sucessos no log enquanto o
             # link seguia na pagina e a tesouraria nao mudava.
-            fetch_page "/clan/${CLD}/built/" "$TMP/STATUE2"
+            # Sem resposta, a pagina vazia "nao tem o link" e diria ativado;
+            # copiada para o STATUE, esconderia tambem o bonus de ouro.
+            if ! fetch_page "/clan/${CLD}/built/" "$TMP/STATUE2" || [ ! -s "$TMP/STATUE2" ]; then
+                printf "Estatua: sem resposta ao conferir o bonus de %s\n" "$_nm"
+                break
+            fi
             # VERIFICA o resultado em vez de assumir sucesso.
             #
             # A versao anterior clicava e registrava "ativado" sempre. Em

@@ -97,19 +97,27 @@ cq_pagina() {
 # cq_tomar <tipo>
 # Toma a missao do cla correspondente aquela atividade, se houver.
 # Devolve 0 se tomou alguma (a atividade vale a pena agora).
+#
+# RELE A PAGINA DEPOIS DE CADA CLIQUE. O nonce da leitura anterior nao vale
+# para o proximo link (ver cq_ultima_foi_ela), e e a releitura que confirma:
+# tomada so se o link "take" daquela missao sumiu. Sem isso o cq_elixir e o
+# cq_mercador produziam com o pedido falhado, sem a missao ativa.
 cq_tomar() {
     _tipo="$1"
     [ "${FUNC_clan_quests:-y}" = "y" ] || return 1
-    cq_pagina || return 1
 
     _tomou=1
     for _id in `cq_ids "$_tipo"`; do
+        cq_pagina || break
         _cl=`grep -o -E "/clan/${CLD}/quest/take/${_id}/[?]r=[0-9]+" "$TMP/CQUEST" | sed -n 1p`
-        if [ -n "$_cl" ]; then
-            fetch_page "$_cl"
-            cq_invalidar
+        [ -n "$_cl" ] || continue
+        fetch_page "$_cl"
+        cq_invalidar
+        if cq_pagina && ! grep -q "/clan/${CLD}/quest/take/${_id}/" "$TMP/CQUEST"; then
             printf "Missao do cla tomada (%s #%s)\n" "$_tipo" "$_id"
             _tomou=0
+        else
+            printf "Missao do cla nao confirmada (%s #%s)\n" "$_tipo" "$_id"
         fi
     done
     unset _tipo _id _cl
@@ -120,12 +128,12 @@ cq_tomar() {
 # Recolhe as missoes ja concluidas.
 cq_concluir() {
     [ "${FUNC_clan_quests:-y}" = "y" ] || return 1
-    cq_pagina || return 1
     _n=0
     for _id in 1 2 3 4 5 6 7 8; do
+        # Releitura so depois de um clique (o cq_pagina reaproveita).
+        cq_pagina || break
         _cl=`grep -o -E "/clan/${CLD}/quest/end/${_id}/?[?]r=[0-9]+" "$TMP/CQUEST" | sed -n 1p`
-        if [ -n "$_cl" ]; then
-            fetch_page "$_cl"
+        if [ -n "$_cl" ] && fetch_page "$_cl"; then
             cq_invalidar
             printf "Missao do cla concluida (#%s)\n" "$_id"
             _n=$((_n + 1))
@@ -143,9 +151,10 @@ cq_ajudar() {
     cq_pagina || return 1
 
     for _id in 1 2 3 4 5 6 7 8; do
+        cq_pagina || break
         _cl=`grep -o -E "/clan/${CLD}/quest/help/${_id}/?[?]r=[0-9]+" "$TMP/CQUEST" | sed -n 1p`
         [ -n "$_cl" ] || continue
-        fetch_page "$_cl"
+        fetch_page "$_cl" || continue
         cq_invalidar
         printf "Ajuda em missao do cla (#%s)\n" "$_id"
     done

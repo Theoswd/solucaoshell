@@ -31,20 +31,30 @@ campaign_func() {
         relogio_anotar campanha 900
     else
         _cp=`campanha_relogio "$TMP/SRC"`
+        # So a releitura que RESPONDEU diz se a campanha acabou: um clique sem
+        # resposta tambem tira o link de acao, e duas falhas davam 8h.
+        _cp_ok=1
         if [ -z "$_cp" ] && [ -n "$RESULT" ]; then
-            fetch_page "/campaign/"
-            _cp=`campanha_relogio "$TMP/SRC"`
+            if fetch_page "/campaign/" && [ -s "$TMP/SRC" ]; then
+                _cp=`campanha_relogio "$TMP/SRC"`
+                grep -q -E '/campaign/(go|fight|attack|end)/[?]r[=][0-9]+' "$TMP/SRC" && _cp_ok=0
+            else
+                _cp_ok=0
+            fi
         fi
         if [ -n "$_cp" ]; then
             relogio_anotar campanha $(( _cp + 60 ))
             printf "Campanha: a proxima em %s min\n" $(( _cp / 60 ))
+        elif [ "$_cp_ok" = 0 ]; then
+            # Sem resposta, ou a campanha ainda tem acao: volta na varredura.
+            relogio_anotar campanha 900
         elif [ -n "$RESULT" ]; then
             relogio_anotar campanha 28800
         else
             cp "$TMP/SRC" "$TMP/campanha_sem_relogio.html" 2>/dev/null
             relogio_anotar campanha 3600
         fi
-        unset _cp
+        unset _cp _cp_ok
     fi
     unset CAMPAIGN RESULT BREAK
 

@@ -160,7 +160,13 @@ league_collect_reward() {
 
     # CONFIRMACAO REAL: recarrega a pagina; se o botao sumiu, o servidor
     # aceitou a coleta. So entao a recompensa e dada como recebida.
-    fetch_page "/league/"
+    # Releitura sem resposta nao confirma nada: a pagina vazia tambem "nao
+    # tem o botao".
+    if ! fetch_page "/league/" || [ ! -s "$TMP/SRC" ]; then
+        printf "[LIGA] Sem resposta ao conferir a coleta. Fica pendente.\n"
+        unset _lr_click
+        return 1
+    fi
     if grep -q -o -E "/league/takeReward/\?r=[0-9]+" "$TMP/SRC"; then
         printf "[LIGA] Falha ao coletar recompensa. Nova tentativa sera programada.\n"
         unset _lr_click
@@ -219,7 +225,14 @@ league_play() {
     _lg_fim=$(( `date +%s` + 300 ))
     _lg_voltas=0
     _lg_falhas=0
-    while [ "$AVAILABLE_FIGHTS" -gt 0 ] && [ "$_lg_voltas" -lt 40 ] && \
+    # Forca nao lida (/train sem resposta): comparado com vazio, todo
+    # adversario pareceria mais forte e a Liga iria direto para a pocao.
+    case "$PLAYER_STRENGTH" in
+        ''|*[!0-9]*)
+            PLAYER_STRENGTH=""
+            printf "[LIGA] Forca do personagem nao lida - lutas na proxima passagem.\n" ;;
+    esac
+    while [ -n "$PLAYER_STRENGTH" ] && [ "$AVAILABLE_FIGHTS" -gt 0 ] && [ "$_lg_voltas" -lt 40 ] && \
           [ "`date +%s`" -lt "$_lg_fim" ]; do
         _lg_voltas=$((_lg_voltas + 1))
         case "$action" in

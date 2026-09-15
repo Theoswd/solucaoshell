@@ -2970,7 +2970,7 @@ _r=$( TMP="$_td10/ck"; mkdir -p "$TMP"; . "$LIB/check.sh" > /dev/null 2>&1
       check_rewards > /dev/null; apply_event king > "$TMP/saida"
       printf '%s|%s' "`tr '\n' ' ' < "$TMP/pedidos"`" "`cat "$TMP/saida"`" )
 check "link repetido: relíquia e evento clicam uma URL so" \
-    "[/relic/reward/] [/relic/reward/1/?r=9] [/king/] [/king/enterGame/?r=4] |Applied for battle" "$_r"
+    "[/relic/reward/] [/relic/reward/1/?r=9] [/relic/reward/] [/king/] [/king/enterGame/?r=4] |Applied for battle" "$_r"
 
 # uninstall.sh por atalho: rm/pkill falsos registram o que seria apagado.
 mkdir -p "$_td10/bin" "$_td10/fake" "$_td10/home/.sls"
@@ -3029,6 +3029,125 @@ for _modo in 1 2; do
     done
 done
 rm -rf "$_td11"; unset _td11 _ag _c _u _n _h _m _modo _pos _hp
+
+printf "\n=== 47. pagina que nao respondeu nao conta como feito ===\n"
+# =============================================================================
+_td12=`mktemp -d`
+
+# Aliados: amigos respondem, a pagina do cla nao.
+_al47() { # com_lista_antiga(sim|nao) -> "lista|rc"
+    ( TMP="$_td12/al$1"; URL="http://jogo"; CLD=999; export TMP URL CLD; rm -rf "$TMP"; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      [ "$1" = sim ] && printf 'Amigo_Um\nMembro_Cla\n' > "$TMP/aliados.txt" && cp "$TMP/aliados.txt" "$TMP/allies.txt"
+      run_curl_exec() { case "$1" in
+          */mail/friends) echo "<a href='/user/5/'>Amigo Um</a>, <a href='/mail/5/'>Escrever</a>" ;;
+          *) : ;; esac; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      aliados_montar 1 > /dev/null 2>&1; _rc=$?
+      printf '%s|%s' "`tr '\n' ' ' < "$TMP/allies.txt" | sed 's/ $//'`" "$_rc" )
+}
+check "aliados: cla sem resposta mantem a lista com o cla" "Amigo_Um Membro_Cla|1" "`_al47 sim`"
+check "aliados: sem lista anterior, a parcial vale e pede nova tentativa" "Amigo_Um|1" "`_al47 nao`"
+
+# Masmorra: um golpe e depois a rede cai -> nao conta como feita.
+_r=$( TMP="$_td12/ms"; CLD=999; export TMP CLD; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      sleep() { :; }
+      fetch_page() { case "$1" in
+          /clandungeon/?close) echo "<a href='/clandungeon/attack/?r=1'>Golpe</a>" > "$2" ;;
+          /clandungeon/attack/*)
+              if [ -f "$TMP/deu" ]; then : > "$2"; return 1; fi
+              : > "$TMP/deu"; echo "<a href='/clandungeon/attack/?r=2'>Golpe</a>" > "$2" ;;
+          esac; }
+      clanDungeon > /dev/null 2>&1 && printf 'feita' || printf 'adiada' )
+check "masmorra: rede caiu com golpe disponivel -> adiada, nao 8h" "adiada" "$_r"
+
+# Liga: releitura sem resposta nao confirma a coleta.
+_r=$( TMP="$_td12/lg"; export TMP; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
+      fetch_page() { case "$1" in
+          /league/) if [ -f "$TMP/clicou" ]; then : > "$TMP/SRC"; return 1; fi
+                    echo "<a href='/league/takeReward/?r=7'>Pegar</a>" > "$TMP/SRC" ;;
+          *) : > "$TMP/clicou"; echo ok > "$TMP/SRC" ;;
+          esac; }
+      league_collect_reward > /dev/null 2>&1 && printf 'confirmada' || printf 'pendente' )
+check "liga: releitura sem resposta deixa a recompensa pendente" "pendente" "$_r"
+
+# Liga: sem a forca do personagem, nenhuma luta (nem pocao).
+_r=$( TMP="$_td12/lf"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/league.sh" > /dev/null 2>&1
+      load_config() { :; }; checkQuest() { return 1; }; player_stats() { :; }; sleep() { :; }
+      fetch_page() { echo "$1" >> "$TMP/req"
+          printf '%s\n' "Lutas disponiveis: <b>3</b><a href='/league/fight/302/?r=1'></a>Força: 50<br/>" > "${2:-$TMP/SRC}"; }
+      league_play > "$TMP/saida" 2>&1
+      printf 'lutas=%s aviso=%s' "`grep -c '/league/fight/\|/league/potion/' "$TMP/req"`" "`grep -c 'Forca do personagem nao lida' "$TMP/saida"`" )
+check "liga: forca nao lida -> nenhuma luta nesta passagem" "lutas=0 aviso=1" "$_r"
+
+# Missoes do cla: releitura entre cliques (nonce novo) e confirmacao.
+_cq47() { # take(ok|falha) -> "pedidos|rc"
+    ( TMP="$_td12/cq$1"; CLD=777; export TMP CLD; rm -rf "$TMP"; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/clanquest.sh" > /dev/null 2>&1
+      clan_id() { :; }; MODO="$1"
+      fetch_page() { echo "$1" >> "$TMP/req"; _d="${2:-$TMP/SRC}"
+          case "$1" in
+              */quest/) _p=""
+                  [ -f "$TMP/t1" ] || _p="$_p<a href='/clan/777/quest/take/1/?r=1'>x</a>"
+                  [ -f "$TMP/t2" ] || _p="$_p<a href='/clan/777/quest/take/2/?r=$(( $(wc -l < "$TMP/req") ))'>x</a>"
+                  echo "<html>$_p</html>" > "$_d" ;;
+              */take/1/*) [ "$MODO" = ok ] || { : > "$_d"; return 1; }; : > "$TMP/t1"; echo ok > "$_d" ;;
+              */take/2/*) [ "$MODO" = ok ] || { : > "$_d"; return 1; }; : > "$TMP/t2"; echo ok > "$_d" ;;
+          esac; }
+      cq_tomar liga > /dev/null 2>&1; _rc=$?
+      printf '%s|%s' "`sed 's,^/clan/777/quest/$,Q,; s,/clan/777/quest/,,' "$TMP/req" | tr '\n' ' ' | sed 's/ $//'`" "$_rc" )
+}
+check "missao do cla: rele entre as duas tomadas e usa o nonce novo" \
+    "Q take/1/?r=1 Q take/2/?r=3 Q|0" "`_cq47 ok`"
+check "missao do cla: pedido que falhou nao conta como tomada" \
+    "Q take/1/?r=1 Q take/2/?r=3 Q|1" "`_cq47 falha`"
+
+# Sabio: o bau 2 e procurado na lista de missoes relida, nao na resposta do bau 1.
+_r=$( TMP="$_td12/sb"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"; . "$LIB/check.sh" > /dev/null 2>&1
+      FUNC_collect_mission_rewards=y
+      fetch_page() { echo "$1" >> "$TMP/req"; case "$1" in
+          /quest/) echo "<a href='/quest/openChest/1/?r=1'>a</a><a href='/quest/openChest/2/?r=1'>b</a><a href='/quest/end/3?r=1'>c</a>" > "$TMP/SRC" ;;
+          *) echo "resultado" > "$TMP/SRC" ;; esac; }
+      check_missions > /dev/null 2>&1
+      grep -c 'openChest/2\|/quest/end/3' "$TMP/req" )
+check "sabio: os dois baus e a missao na mesma passagem" "2" "$_r"
+
+# Troca: clique sem resposta nao marca o dia.
+_r=$( TMP="$_td12/tr"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a>" > "$TMP/SRC" ;;
+          *) : > "$TMP/SRC"; return 1 ;; esac; }
+      func_trade > /dev/null 2>&1
+      [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
+check "troca: clique sem resposta deixa o dia em aberto" "em_aberto" "$_r"
+
+# Estatua: releitura sem resposta nao diz "ativado".
+_r=$( TMP="$_td12/es"; CLD=999; FUNC_clan_statue=y; export TMP CLD; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      clan_lider() { return 0; }
+      fetch_page() { echo "$1" >> "$TMP/req"; case "$1" in
+          */built/) if [ -f "$TMP/clicou" ]; then : > "$2"; return 1; fi
+                    echo "<a href='/clan/999/built/?silverUpgrade=true&r=3'>p</a><a href='/clan/999/built/?goldUpgrade=true&r=2'>o</a>" > "$2" ;;
+          *) : > "$TMP/clicou"; echo ok > "$2" ;; esac; }
+      clan_statue > "$TMP/saida" 2>&1
+      printf 'ativado=%s' "`grep -c 'ativado' "$TMP/saida"`" )
+check "estatua: releitura sem resposta nao anuncia bonus ativado" "ativado=0" "$_r"
+
+# Campanha: clique e releitura sem resposta voltam em 15 min, nao em 8h.
+_r=$( TMP="$_td12/cp"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/campaign.sh" > /dev/null 2>&1
+      fetch_page() { echo "$1" >> "$TMP/req"
+          if [ "`grep -c . "$TMP/req"`" = 1 ]; then echo "<a href='/campaign/go/?r=1'>Ir</a>" > "$TMP/SRC"
+          else : > "$TMP/SRC"; return 1; fi; }
+      campaign_func > /dev/null 2>&1
+      echo $(( `cat "$TMP/next_campanha"` - `date +%s` )) )
+case "$_r" in 89[0-9]|900) ok "campanha: duas falhas voltam em 15 min ($_r s)" ;;
+              *) bad "campanha: duas falhas agendaram $_r s (esperado ~900)" ;; esac
+
+rm -rf "$_td12"; unset _td12 _r
+unset -f _al47 _cq47
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
