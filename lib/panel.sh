@@ -31,6 +31,7 @@ C_RED='\033[1;31m';  C_MAG='\033[1;35m';   C_WHITE='\033[1;37m'
 C_GOLD='\033[0;33m'; C_GRAY='\033[0;37m';  C_BLUE='\033[1;34m'
 # 256 cores (Termux, WSL e iSH desenham): nome das contas e nivel.
 C_LARANJA='\033[1;38;5;166m'; C_VERDE='\033[0;32m'; C_LIMAO='\033[1;38;5;154m'
+C_LINHA='\033[38;5;240m'
 # O caractere ESC de verdade. As constantes acima sao strings com "\033"
 # literal, que so viram cor quando passam pelo printf %b — e o awk do
 # registro de combate imprime direto, sem esse tratamento.
@@ -156,9 +157,12 @@ painel_icones_carregar() {
         #
         # Estados: todos de 4 bytes e 2 colunas (o ⚫/⚪ de 3 bytes empurrava o
         # nome da conta parada uma coluna para a direita).
-        S_W=4
+        S_W=4; S_COL=2
         T_COLS=3
-        I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="▸"; I_LIVE="💥 "
+        I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="›"; I_LIVE="💥 "
+        # Tabela: linhas do bloco de desenho de caixa, que toda fonte
+        # monoespacada cobre (o mesmo caso do "▸").
+        T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
         # COLUNAS (nao bytes) do prefixo do bloco "ao vivo". O "💥 " desenha 2
         # colunas de glifo mais o espaco: 3. Ver LIVE_W no bloco de batalhas.
         LIVE_W=3
@@ -175,9 +179,10 @@ painel_icones_carregar() {
         A_NONE="—"
     else
         # Em texto puro byte e coluna sao a mesma coisa.
-        S_W=5
+        S_W=5; S_COL=5
         T_COLS=0
-        I_ACT=""; I_EVT=""; I_ARROW="->"; I_LIVE=""
+        I_ACT=""; I_EVT=""; I_ARROW=">"; I_LIVE=""
+        T_V="|"; T_H="-"; T_X="+"; T_B="+"; T_D="-"; T_RET="~"
         LIVE_W=0
         S_ON="[on]"; S_WAIT="[..]"; S_ERR="[off]"; S_OFF="[--]"; S_UNK="[??]"; S_PAUSE="[||]"
         A_CLANFIGHT="Torneio do Clã";   A_ALTARES="Altares dos Deuses"
@@ -195,9 +200,10 @@ painel_icones_carregar() {
         if [ "$1" = "2" ]; then
             # Estados de 3 bytes e 1 coluna cada ("×" tinha 2 e "?" 1, e o
             # nome dessas contas saia fora da coluna).
-            S_W=3
+            S_W=3; S_COL=1
             T_COLS=0
-            I_ACT=""; I_EVT=""; I_ARROW="▸"; I_LIVE="» "
+            I_ACT=""; I_EVT=""; I_ARROW="›"; I_LIVE="» "
+            T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
             LIVE_W=2
             S_ON="●"; S_WAIT="◐"; S_ERR="✕"; S_OFF="○"; S_UNK="◇"; S_PAUSE="‖"
         fi
@@ -440,15 +446,206 @@ painel_icones() {
     unset _ic_atual _ic_m
 }
 
-# Desenha a linha separadora na largura da tela.
+# Desenha a linha separadora na largura da tela: cheia, ou tracejada com $2.
+#
+# Conta CARACTERES, e nao bytes: o "─" tem 3 bytes e 1 coluna, e o antigo
+# "%.*s" cortaria a linha a um terco da tela.
 painel_regua() {
     _rn=$1
+    _rc="$T_H"; [ -n "$2" ] && _rc="$T_D"
     _rs=""
-    while [ "${#_rs}" -lt "$_rn" ]; do
-        _rs="$_rs----------"
-    done
-    printf '%b%.*s%b\n' "$C_BLUE" "$_rn" "$_rs" "$C_RESET"
-    unset _rn _rs
+    while [ "$_rn" -gt 0 ]; do _rs="$_rs$_rc"; _rn=$((_rn - 1)); done
+    printf '%b%s%b\n' "$C_LINHA" "$_rs" "$C_RESET"
+    unset _rn _rc _rs
+}
+
+# Separador dos campos que o painel_loop manda ao painel_render.
+_US=$(printf '\037')
+
+# DESENHO DA TABELA E DO RODAPE — UM AWK SO.
+#
+# O printf do shell alinha por BYTES: "Clã", "·" e o emoji tem mais bytes que
+# colunas, e as barras da tabela sairiam tortas. Aqui a largura e contada em
+# colunas (bytes, menos os de continuacao do UTF-8, mais um por emoji) e as
+# colunas de numeros tem a largura do maior valor.
+#
+# Entrada, um registro por linha, campos separados por $_US:
+#   R estado simbolo nome aba hp hp_max energia nivel ouro prata aviso cor
+#   C online subindo paradas        contadores
+#   L solida|tracejada              linha separadora
+#   T cor texto                     texto cortado na largura da tela
+# As linhas R sao desenhadas juntas, como tabela, no fim da entrada.
+#
+# TRES FORMATOS, do mais largo ao mais estreito:
+#   barras   "● Nome │ 92% │ 1790/1810 │ 87 │ 4.793 │ 699,7M"
+#   espacos  "● Nome   92% 1790/1810 87 4.793 699,7M"
+#   empilha  "● Nome › aba" e os numeros na linha de baixo
+# Vale o primeiro em que o nome ainda cabe com 10 colunas.
+painel_render() {
+    LC_ALL=C awk -v fs="$_US" -v larg="$LARG" -v scol="$S_COL" -v esc="$ESC" \
+        -v son="$S_ON" -v sup="$S_WAIT" -v soff="$S_ERR" -v seta="$I_ARROW" \
+        -v tv="$T_V" -v th="$T_H" -v tx="$T_X" -v tb="$T_B" -v td="$T_D" -v ret="$T_RET" \
+        -v cont="$(printf '[\200-\277]')" -v lead2="$(printf '[\300-\337]')" \
+        -v lead3="$(printf '[\340-\357]')" -v lead4="$(printf '[\360-\367]')" '
+    BEGIN {
+        FS = fs; nr = 0
+        fim = esc "[0m"
+        cor["verde"] = esc "[38;5;84m";  cor["amarelo"] = esc "[38;5;221m"
+        cor["vermelho"] = esc "[38;5;210m"; cor["ciano"] = esc "[38;5;117m"
+        cor["lilas"] = esc "[38;5;183m"; cor["prata"] = esc "[38;5;252m"
+        cor["cinza"] = esc "[38;5;245m"; cor["linha"] = esc "[38;5;240m"
+        cor["nome"] = esc "[97m";        cor["rotulo"] = esc "[38;5;250m"
+        est["on"] = "verde"; est["pause"] = "ciano"; est["wait"] = "amarelo"
+        est["err"] = "vermelho"; est["off"] = "cinza"; est["unk"] = "cinza"
+        rot[1] = "HP"; rot[2] = "ENERGIA"; rot[3] = "NV"; rot[4] = "OURO"; rot[5] = "PRATA"
+    }
+    function cols(s,   t, n, e) {
+        t = s; n = gsub(cont, "", t)
+        t = s; e = gsub(lead4, "", t)
+        return length(s) - n + e
+    }
+    function corta(s, w,   i, l, c, bl, cw, n, out) {
+        if (w <= 0) return ""
+        if (cols(s) <= w) return s
+        out = ""; n = 0; i = 1; l = length(s)
+        while (i <= l) {
+            c = substr(s, i, 1)
+            if (c ~ lead4)      { bl = 4; cw = 2 }
+            else if (c ~ lead3) { bl = 3; cw = 1 }
+            else if (c ~ lead2) { bl = 2; cw = 1 }
+            else                { bl = 1; cw = 1 }
+            if (n + cw > w - 1) break
+            out = out substr(s, i, bl); n += cw; i += bl
+        }
+        return out ret
+    }
+    function rep(ch, n,   s) { s = ""; while (n-- > 0) s = s ch; return s }
+    function esq(s, w) { s = corta(s, w); return s rep(" ", w - cols(s)) }
+    function dir(s, w) { s = corta(s, w); return rep(" ", w - cols(s)) s }
+    function cen(s, w,   l) { s = corta(s, w); l = int((w - cols(s)) / 2); return rep(" ", l) s rep(" ", w - cols(s) - l) }
+    function pinta(c, s) { return cor[c] s fim }
+    function barra() { return " " pinta("linha", tv) " " }
+
+    $1 == "R" {
+        nr++
+        st[nr] = $2; sy[nr] = $3; nm[nr] = $4; ab[nr] = $5
+        v[nr, 2] = $8; v[nr, 3] = $9; v[nr, 4] = $10; v[nr, 5] = $11
+        av[nr] = $12; ak[nr] = $13
+        # HP em percentual quando o maximo e conhecido; sem ele, o numero.
+        if ($6 ~ /^[0-9]+$/ && $7 ~ /^[0-9]+$/ && $7 > 0) {
+            p = int($6 * 100 / $7 + 0.5); if (p > 100) p = 100
+            v[nr, 1] = p "%"
+            vc[nr] = (p >= 70) ? "verde" : (p >= 30) ? "amarelo" : "vermelho"
+        } else {
+            v[nr, 1] = ($6 == "") ? "-" : $6; vc[nr] = "prata"
+        }
+        next
+    }
+    $1 == "L" { print pinta("linha", rep(($2 == "tracejada") ? td : th, larg)); next }
+    $1 == "T" { print pinta($2, corta($3, larg)); next }
+    $1 == "C" {
+        a = son " " $2 " online"; b = sup " " $3 " subindo"; c = soff " " $4 " paradas"
+        if (cols(a b c) + 6 > larg) { a = son " " $2; b = sup " " $3; c = soff " " $4 }
+        print pinta("verde", a) barra() pinta(($3 > 0) ? "amarelo" : "cinza", b) \
+              barra() pinta(($4 > 0) ? "vermelho" : "cinza", c)
+        next
+    }
+    END { if (nr > 0) tabela() }
+
+    function tabela(   i, k, D, nmax, nmin, ind, nw, fmt, x, xe, xd, ln, sep, bind, n2, r, sw, fd) {
+        W[1] = 2; W[2] = 7; W[3] = 2; W[4] = 4; W[5] = 5
+        nmax = 5
+        for (i = 1; i <= nr; i++) {
+            for (k = 1; k <= 5; k++) if (cols(v[i, k]) > W[k]) W[k] = cols(v[i, k])
+            if (cols(nm[i]) > nmax) nmax = cols(nm[i])
+        }
+        D = W[1] + W[2] + W[3] + W[4] + W[5]
+        nmin = (nmax < 10) ? nmax : 10
+        ind = scol + 1
+        x = 0
+        # A barra da direita do cabecalho sai primeiro: com ela as barras
+        # pedem 2 colunas a mais, e no celular isso decide se cabem.
+        fd = 2
+        nw = larg - ind - D - 15 - fd
+        if (nw < nmin && nw + 2 >= nmin) { fd = 0; nw += 2 }
+        if (nw >= nmin) {
+            fmt = "barras"
+            # A sobra alarga as colunas de numeros (ate 10 cada) e o resto
+            # fica com o nome: a tabela ocupa a tela toda.
+            if (nw > nmax) { x = int((nw - nmax) / 6); if (x > 10) x = 10 }
+            nw -= 5 * x
+        } else {
+            nw = larg - ind - D - 5
+            fmt = (nw >= nmin) ? "espacos" : "empilha"
+        }
+        xe = int(x / 2); xd = x - xe
+
+        if (fmt == "barras") {
+            ln = pinta("linha", tv) rep(" ", ind - 1) pinta("rotulo", esq("CONTA", nw))
+            for (k = 1; k <= 5; k++) ln = ln barra() pinta("rotulo", cen(rot[k], W[k] + x))
+            print ln ((fd) ? " " pinta("linha", tv) : "")
+            ln = tb rep(th, ind - 1 + nw)
+            for (k = 1; k <= 5; k++) ln = ln th tx rep(th, 1 + W[k] + x)
+            print pinta("linha", ln ((fd) ? th tb : ""))
+        } else if (fmt == "espacos") {
+            ln = rep(" ", ind) pinta("rotulo", esq("CONTA", nw))
+            for (k = 1; k <= 5; k++) ln = ln " " pinta("rotulo", dir(rot[k], W[k]))
+            print ln
+            print pinta("linha", rep(th, ind + nw + 5 + D))
+        } else {
+            # Empilhado: so os numeros tem cabecalho; o nome vai na linha
+            # de cima. Barras se couberem, senao espacos.
+            sep = (ind + D + 12 <= larg) ? barra() : " "
+            sw = (sep == " ") ? 1 : 3
+            bind = larg - D - 4 * sw; if (bind > ind) bind = ind; if (bind < 0) bind = 0
+            ln = rep(" ", bind); r = rep(" ", bind)
+            for (k = 1; k <= 5; k++) {
+                if (k > 1) { ln = ln sep; r = r ((sw == 3) ? th tx th : th) }
+                ln = ln pinta("rotulo", dir(rot[k], W[k])); r = r rep(th, W[k])
+            }
+            print ln
+            print pinta("linha", r)
+        }
+
+        for (i = 1; i <= nr; i++) {
+            ln = pinta(est[st[i]], sy[i] rep(" ", scol - cols(sy[i]))) " "
+            if (fmt == "empilha") {
+                n2 = larg - ind - cols(seta) - 2 - 6
+                if (n2 < 4) n2 = larg - ind
+                ln = ln pinta("nome", corta(nm[i], n2))
+                n2 = larg - ind - cols(corta(nm[i], n2)) - cols(seta) - 2
+                if (n2 >= 4) ln = ln " " pinta("linha", seta) " " pinta("cinza", corta(ab[i], n2))
+                print ln
+                ln = rep(" ", bind)
+                for (k = 1; k <= 5; k++) {
+                    if (k > 1) ln = ln sep
+                    ln = ln pinta((k == 1) ? vc[i] : ck(k), dir(v[i, k], W[k]))
+                }
+                print ln
+                if (av[i] != "") print rep(" ", ind) pinta(ak[i], corta(av[i], larg - ind))
+                continue
+            }
+            ln = ln pinta("nome", esq(nm[i], nw))
+            for (k = 1; k <= 5; k++) {
+                if (fmt == "barras") ln = ln barra() rep(" ", xe)
+                else                 ln = ln " "
+                ln = ln pinta((k == 1) ? vc[i] : ck(k), dir(v[i, k], W[k]))
+                if (fmt == "barras") ln = ln rep(" ", xd)
+            }
+            print ln
+            # Atividade embaixo do nome; o aviso da conta vai no fim dela.
+            n2 = larg - ind - 2 - cols(seta) - 1
+            ln = rep(" ", ind + 2) pinta("linha", seta) " "
+            if (av[i] != "" && n2 - cols(av[i]) - 2 >= 6) {
+                print ln pinta("cinza", corta(ab[i], n2 - cols(av[i]) - 2)) "  " pinta(ak[i], av[i])
+            } else {
+                print ln pinta("cinza", corta(ab[i], n2))
+                if (av[i] != "") print rep(" ", ind + 2) pinta(ak[i], corta(av[i], larg - ind - 2))
+            }
+        }
+    }
+    function ck(k) { return (k == 2) ? "ciano" : (k == 3) ? "lilas" : (k == 4) ? "amarelo" : "prata" }
+    '
 }
 
 # Agenda de eventos, extraida do case de horarios do run.sh.
@@ -664,7 +861,7 @@ proximo_evento() {
         else                         _pe_fim=$(( _pe_fnow_t + _pe_jan ))
         fi
         _pe_fim=$(( _pe_fim % 1440 ))
-        printf "AGORA: %s  (ate %02d:%02d)" "${_pe_anow:-$_pe_fnow}" \
+        printf "AGORA: %s · até %02d:%02d" "${_pe_anow:-$_pe_fnow}" \
                $(( _pe_fim / 60 )) $(( _pe_fim % 60 ))
         unset _pe_fim
         unset _pe_agenda _pe_ag _pe_idade _pe_ai _pe_jan _pe_dur \
@@ -684,16 +881,16 @@ proximo_evento() {
     fi
 
     if [ -z "$_pe_t" ]; then
-        printf "Proximo: --"
+        printf "Próximo: --"
     else
         _pe_falta=$(( _pe_t - _pe_ai ))
         [ "$_pe_falta" -lt 0 ] && _pe_falta=0
         _pe_h=${_pe_hm%??}; _pe_m=${_pe_hm#??}
         if [ "$_pe_falta" -ge 60 ]; then
-            printf "Proximo: %s  %s:%s BRT  (em %dh%02dm)" \
+            printf "Próximo: %s · %s:%s BRT · em %dh%02dm" \
                    "$_pe_n" "$_pe_h" "$_pe_m" $((_pe_falta/60)) $((_pe_falta%60))
         else
-            printf "Proximo: %s  %s:%s BRT  (em %dm)" \
+            printf "Próximo: %s · %s:%s BRT · em %dm" \
                    "$_pe_n" "$_pe_h" "$_pe_m" "$_pe_falta"
         fi
         unset _pe_falta _pe_h _pe_m
@@ -969,12 +1166,6 @@ combate_log() {
 
 # Quantas linhas do registro da luta aparecem por conta. 0 desliga.
 #     PANEL_LOG_LINHAS=4 ./status.sh
-# Quantas contas existem, para o painel decidir se cabe respiro entre elas.
-# Lido uma vez aqui; a cada desenho o proprio laco atualiza com o que contou,
-# sem custar processo nenhum.
-PANEL_TOTAL=$(grep -c -E '^[0-9]+\|' "$ACCOUNTS_FILE" 2>/dev/null)
-case "$PANEL_TOTAL" in ''|*[!0-9]*) PANEL_TOTAL=0 ;; esac
-
 PANEL_LOG_LINHAS="${PANEL_LOG_LINHAS:-2}"
 case "$PANEL_LOG_LINHAS" in ''|*[!0-9]*) PANEL_LOG_LINHAS=2 ;; esac
 
@@ -1049,10 +1240,10 @@ while true; do
         esac
         idx=$((idx + 1))
 
-        nome="$user"; hp="-"; mp="-"; ene="-"; lvl="-"; ouro="-"; prata="-"
+        nome="$user"; hp="-"; mp="-"; ene="-"; lvl="-"; ouro="-"; prata="-"; _hpmax=""
         _velho=""
         if [ -s "$acc_dir/stats" ]; then
-            IFS='|' read -r nome hp mp ene lvl ouro prata _ts < "$acc_dir/stats"
+            IFS='|' read -r nome hp mp ene lvl ouro prata _ts _hpmax < "$acc_dir/stats"
             [ -z "$nome" ] && nome="$user"
 
             # NUMEROS PARADOS: avisa em vez de mentir.
@@ -1134,13 +1325,13 @@ while true; do
         # Atribuicao direta no lugar de "cor=$(estado_cor ...)": a
         # substituicao de comando forka mesmo para uma funcao de uma linha.
         case "$status" in
-            running)     cor="$C_GREEN";  sim="$S_ON" ;;
-            paused)      cor="$C_CYAN";   sim="$S_PAUSE" ;;
+            running)     _st=on;    sim="$S_ON" ;;
+            paused)      _st=pause; sim="$S_PAUSE" ;;
             starting|loading|login_retry|restarting)
-                         cor="$C_YELLOW"; sim="$S_WAIT" ;;
-            dead)        cor="$C_RED";    sim="$S_ERR" ;;
-            stopped)     cor="$C_GRAY";   sim="$S_OFF" ;;
-            *)           cor="$C_GRAY";   sim="$S_UNK" ;;
+                         _st=wait;  sim="$S_WAIT" ;;
+            dead)        _st=err;   sim="$S_ERR" ;;
+            stopped)     _st=off;   sim="$S_OFF" ;;
+            *)           _st=unk;   sim="$S_UNK" ;;
         esac
 
         # Aba atual + relatorio de combate (HP ao vivo, dano, morte)
@@ -1244,104 +1435,20 @@ while true; do
             fi
         fi
 
-        if [ "$ESTREITO" = 1 ]; then
-            # TELA ESTREITA (celular): duas linhas por conta. A primeira traz
-            # o INDICADOR DE ATIVIDADE (a aba atual) junto do nome — e como se
-            # sabe, num relance, o que cada conta esta fazendo e que o bot
-            # continua vivo. Nome com largura util; o resto do espaco vai para
-            # a atividade, que e a informacao que muda.
-            _nw=$((LARG - 32))
-            [ "$_nw" -gt 18 ] && _nw=18
-            [ "$_nw" -lt 8 ]  && _nw=8
-            _aw=$((LARG - _nw - 13))
-            [ "$_aw" -lt 6 ] && _aw=6
-            LISTA="${LISTA}$(printf "%b%2s %b%-*s %b%-*.*s %b%s %b%-.*s%b" \
-                "$C_DIM" "$idx" "$cor" "$S_W" "$sim" \
-                "$C_LARANJA" "$_nw" "$_nw" "$nome" \
-                "$C_DIM" "$I_ARROW" \
-                "$C_CYAN" "$_aw" "$_aba" "$C_RESET")
-"
-            # NUMEROS EM COLUNAS, QUANDO CABE.
-            #
-            # Com os valores separados por um espaco so, cada conta ficava
-            # com os campos em posicao diferente e a leitura entre linhas
-            # nao acontecia: o ouro de uma ficava sobre a energia da outra.
-            # Aqui cada valor ganha largura fixa, entao HP, En, Nv, Ou e Pr
-            # caem sempre na mesma coluna, conta a conta.
-            #
-            #   4 de recuo + HP 9 + En 12 + Nv 6 + Ou 9 + Pr ate 9 + 4
-            #   separadores = 53 colunas. Abaixo disso nao cabe, e a linha
-            #   vira o formato compacto, cortado na largura.
-            #
-            # Rotulos em texto, sem emoji, em qualquer modo de icone.
-            if [ "$LARG" -ge 53 ]; then
-                LISTA="${LISTA}$(printf "    %bHP %-6s %bEn %-9s %bNv %-3s %bOu %-6s %bPr %s%b" \
-                    "$C_RED" "$hp" "$C_VERDE" "$ene" "$C_LIMAO" "$lvl" \
-                    "$C_YELLOW" "$ouro" "$C_WHITE" "$prata" "$C_RESET")
-"
-            else
-                LISTA="${LISTA}$(printf "    %b%.*s%b" "$C_GRAY" "$((LARG - 4))" \
-                    "HP $hp En $ene Nv $lvl Ou $ouro Pr $prata" "$C_RESET")
-"
-            fi
-            if [ -n "$_sessao" ]; then
-                LISTA="${LISTA}$(printf "    %b%s%b" "$_cor_s" "$_sessao" "$C_RESET")
-"
-            elif [ -n "$_velho" ]; then
-                LISTA="${LISTA}$(printf "    %bnumeros parados ha %s%b" \
-                    "$C_YELLOW" "$_velho" "$C_RESET")
-"
-            fi
-            # UMA LINHA EM BRANCO ENTRE AS CONTAS.
-            #
-            # Sao duas linhas por conta e, sem separacao, os blocos ficam
-            # colados: no celular a leitura vira um paredao. A linha vazia
-            # so entra quando ha poucas contas — com muitas, o espaco na tela
-            # vale mais que o respiro.
-            [ "$PANEL_TOTAL" -le 8 ] && LISTA="${LISTA}
-"
-            # O combate ao vivo (dano/morte) aparece no overlay de batalhas,
-            # nao aqui — evita uma terceira linha por conta no celular.
-        else
-            # CORRECAO: o simbolo ia embutido no %b, sem largura, entao
-            # "[on]" (4 colunas) e "[off]" (5) empurravam o nome para
-            # posicoes diferentes e a coluna inteira ficava torta. Agora o
-            # simbolo tem campo proprio de largura fixa.
-            LISTA="${LISTA}$(printf "%b%2s %b%-*s %b%-18.18s %bHP %-7s %bEn %-10s %bNv %-4s %bOu %-8s %bPr %s%b" \
-                "$C_DIM" "$idx" "$cor" "$S_W" "$sim" \
-                "$C_LARANJA" "$nome" \
-                "$C_RED" "$hp" "$C_VERDE" "$ene" "$C_LIMAO" "$lvl" \
-                "$C_YELLOW" "$ouro" "$C_WHITE" "$prata" "$C_RESET")
-"
-            # INDICADOR DE ATIVIDADE por conta: uma linha compacta e recuada,
-            # logo abaixo dos numeros, mostrando a aba atual (o que a conta
-            # esta fazendo agora). Substitui a antiga secao "ATIVIDADE EM
-            # CONJUNTO" — mesma confirmacao, sem repetir os nomes nem gastar
-            # cabecalho e reguas. O combate ao vivo continua no overlay.
-            _aw=$((LARG - 8)); [ "$_aw" -lt 6 ] && _aw=6
-            if [ -n "$_sessao" ]; then
-                _aw=$((_aw - 18)); [ "$_aw" -lt 6 ] && _aw=6
-                LISTA="${LISTA}$(printf "     %b%s %b%-*.*s  %b%s%b" \
-                    "$C_DIM" "$I_ARROW" "$C_CYAN" "$_aw" "$_aw" "$_aba" \
-                    "$_cor_s" "$_sessao" "$C_RESET")
-"
-            elif [ -n "$_velho" ]; then
-                _aw=$((_aw - 24)); [ "$_aw" -lt 6 ] && _aw=6
-                LISTA="${LISTA}$(printf "     %b%s %b%-*.*s  %bnumeros parados ha %s%b" \
-                    "$C_DIM" "$I_ARROW" "$C_CYAN" "$_aw" "$_aw" "$_aba" \
-                    "$C_YELLOW" "$_velho" "$C_RESET")
-"
-            else
-                LISTA="${LISTA}$(printf "     %b%s %b%-.*s%b" \
-                    "$C_DIM" "$I_ARROW" "$C_CYAN" "$_aw" "$_aba" "$C_RESET")
-"
-            fi
+        # Uma linha por conta para o painel_render, que desenha a tabela.
+        # O aviso (sessao caida, numeros parados) vai ao lado da atividade.
+        _av=""; _avk=""
+        if [ -n "$_sessao" ]; then
+            _av="$_sessao"; _avk=vermelho
+            [ "$_cor_s" = "$C_YELLOW" ] && _avk=amarelo
+        elif [ -n "$_velho" ]; then
+            _av="numeros parados ha $_velho"; _avk=amarelo
         fi
+        LISTA="${LISTA}R$_US$_st$_US$sim$_US$nome$_US$_aba$_US$hp$_US$_hpmax$_US$ene$_US$lvl$_US$ouro$_US$prata$_US$_av$_US$_avk
+"
     done 3< "$ACCOUNTS_FILE"
 
     if [ "${PANEL_DRAW:-$HAS_TTY}" = 1 ]; then
-        painel_regua "$LARG"
-        PANEL_TOTAL=$idx
         # TITULO CENTRALIZADO, NUMA LINHA SO: "Painel SLS · BR · 19:37:40".
         #
         # Largura em COLUNAS, nao em bytes: o "·" ocupa 2 bytes e 1 coluna,
@@ -1353,8 +1460,8 @@ while true; do
                "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET" \
                "$C_WHITE" "$C_RESET" "$C_DIM" "$agora" "$C_RESET"
         painel_regua "$LARG"
-        printf "%b" "$LISTA"
-        painel_regua "$LARG"
+        printf '%s' "$LISTA" | painel_render
+        painel_regua "$LARG" tracejada
 
         # AO VIVO DAS BATALHAS — sobrepoe o painel.
         #
@@ -1365,75 +1472,55 @@ while true; do
             printf "  %b%sAO VIVO — BATALHAS (%s)%b\n" \
                 "$C_RED$C_BOLD" "$I_LIVE" "$n_fight" "$C_RESET"
             printf "%b" "$BATALHAS"
-            painel_regua "$LARG"
+            painel_regua "$LARG" tracejada
         fi
 
-        # O contador e o proximo evento so cabem na MESMA linha a partir de
-        # 100 colunas. Abaixo disso vao em duas — a versao anterior somava
-        # 100 caracteres fixos e quebrava em qualquer tela menor.
-        if [ "$LARG" -ge 100 ]; then
-            printf "  %b%s %s online%b  %b%s %s subindo%b  %b%s %s parada(s)%b   %b%s%s%b\n" \
-                   "$C_GREEN" "$S_ON" "$n_on" "$C_RESET" \
-                   "$C_YELLOW" "$S_WAIT" "$n_up" "$C_RESET" \
-                   "$C_RED" "$S_ERR" "$n_off" "$C_RESET" \
-                   "$C_YELLOW" "$I_EVT" "$(proximo_evento)" "$C_RESET"
-        else
-            if [ "$ESTREITO" = 1 ]; then
-                printf "  %b%s %s%b  %b%s %s%b  %b%s %s%b\n" \
-                       "$C_GREEN" "$S_ON" "$n_on" "$C_RESET" \
-                       "$C_YELLOW" "$S_WAIT" "$n_up" "$C_RESET" \
-                       "$C_RED" "$S_ERR" "$n_off" "$C_RESET"
-            else
-                printf "  %b%s %s online%b  %b%s %s subindo%b  %b%s %s parada(s)%b\n" \
-                       "$C_GREEN" "$S_ON" "$n_on" "$C_RESET" \
-                       "$C_YELLOW" "$S_WAIT" "$n_up" "$C_RESET" \
-                       "$C_RED" "$S_ERR" "$n_off" "$C_RESET"
-            fi
-            # Truncado na largura: numa tela muito estreita o nome do evento
-            # sozinho ja passa da borda.
-            # 2 de recuo + as colunas do icone; o resto e o texto.
-            printf "  %b%s%.*s%b\n" "$C_YELLOW" "$I_EVT" \
-                   "$((LARG - 2 - T_COLS))" "$(proximo_evento)" "$C_RESET"
-        fi
+        # RODAPE: contadores, proximo evento e avisos, cortados na largura
+        # pelo painel_render (o texto tem acento e "·").
+        {
+            printf 'C%s%s%s%s%s%s\n' "$_US" "$n_on" "$_US" "$n_up" "$_US" "$n_off"
+            printf 'L%stracejada\n' "$_US"
+            printf 'T%samarelo%s%s\n' "$_US" "$_US" "$(proximo_evento)"
 
-        # Aviso curto no celular; a frase longa quebrava em duas linhas.
-        if [ "${PANEL_SUPERVISE:-0}" != "1" ]; then
-            if [ "$LARG" -lt 44 ]; then
-                _msg="somente leitura"
-            elif [ "$ESTREITO" = 1 ]; then
-                _msg="somente leitura — ctrl+c nao para nada"
-            else
-                _msg="somente leitura — nao interfere nas contas; ctrl+c sai sem parar nada"
+            # Aviso curto no celular; a frase longa seria cortada.
+            if [ "${PANEL_SUPERVISE:-0}" != "1" ]; then
+                if [ "$LARG" -lt 44 ]; then
+                    _msg="somente leitura"
+                elif [ "$ESTREITO" = 1 ]; then
+                    _msg="somente leitura — ctrl+c nao para nada"
+                else
+                    _msg="somente leitura — nao interfere nas contas; ctrl+c sai sem parar nada"
+                fi
+                printf 'T%scinza%s%s\n' "$_US" "$_US" "$_msg"
             fi
-            printf "  %b%.*s%b\n" "$C_DIM" "$((LARG - 2))" "$_msg" "$C_RESET"
-        fi
 
-        # PAINEL RODANDO CODIGO ANTIGO.
-        #
-        # Sem este aviso a atualizacao parece nao ter funcionado: os arquivos
-        # sao novos, o bot ja subiu com eles, mas a tela continua igual —
-        # porque quem desenha e um processo que subiu antes do git pull.
-        if painel_desatualizado; then
-            if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
-                _msg="codigo atualizado — reinicie: ./stop.sh && ./play.sh"
-            elif [ "$LARG" -lt 50 ]; then
-                _msg="codigo novo — ctrl+c e ./status.sh"
-            else
-                _msg="codigo atualizado — feche e abra o painel: ctrl+c e ./status.sh"
+            # PAINEL RODANDO CODIGO ANTIGO.
+            #
+            # Sem este aviso a atualizacao parece nao ter funcionado: os
+            # arquivos sao novos, o bot ja subiu com eles, mas a tela continua
+            # igual — porque quem desenha e um processo que subiu antes do
+            # git pull.
+            if painel_desatualizado; then
+                if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
+                    _msg="codigo atualizado — reinicie: ./stop.sh && ./play.sh"
+                elif [ "$LARG" -lt 50 ]; then
+                    _msg="codigo novo — ctrl+c e ./status.sh"
+                else
+                    _msg="codigo atualizado — feche e abra o painel: ctrl+c e ./status.sh"
+                fi
+                printf 'T%samarelo%s%s\n' "$_US" "$_US" "$_msg"
             fi
-            printf "  %b%.*s%b\n" "$C_YELLOW" "$((LARG - 2))" "$_msg" "$C_RESET"
-        fi
 
-        # Quantas contas precisam de atencao, e o que fazer.
-        if [ "$n_off" -gt 0 ] && [ "${PANEL_SUPERVISE:-0}" != "1" ]; then
-            if [ "$LARG" -lt 50 ]; then
-                _msg="$n_off fora do ar - rode ./play.sh"
-            else
-                _msg="$n_off conta(s) fora do ar — suba com: ./play.sh"
+            # Quantas contas precisam de atencao, e o que fazer.
+            if [ "$n_off" -gt 0 ] && [ "${PANEL_SUPERVISE:-0}" != "1" ]; then
+                if [ "$LARG" -lt 50 ]; then
+                    _msg="$n_off fora do ar - rode ./play.sh"
+                else
+                    _msg="$n_off conta(s) fora do ar — suba com: ./play.sh"
+                fi
+                printf 'T%svermelho%s%s\n' "$_US" "$_US" "$_msg"
             fi
-            printf "  %b%.*s%b\n" "$C_RED" "$((LARG - 2))" "$_msg" "$C_RESET"
-        fi
-        painel_regua "$LARG"
+        } | painel_render
     fi
 
     # CORRECAO: eram 20 chamadas de "sleep 1" a cada volta do painel, ou

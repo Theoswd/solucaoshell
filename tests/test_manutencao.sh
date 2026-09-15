@@ -1006,12 +1006,13 @@ if mkdir -p "$_td/home/.sls/status" 2>/dev/null; then
             _n=$(( ${_n:-0} + ${_w:-0} ))
             [ "$_n" -gt "$_c" ] && _estouros=$((_estouros + 1))
         done < "$_td/limpa.txt"
-        # Celular (56) e PC (100): titulo de uma linha, sem autor, e numeros
-        # em texto (sem emoji) em qualquer modo.
+        # Celular (56) e PC (100): titulo de uma linha, sem autor, e a conta
+        # numa linha da tabela (HP, energia, nivel, ouro, prata) em qualquer modo.
         case "$_c" in 56|100)
             grep -q 'Painel SLS · BR · [0-9][0-9]:' "$_td/limpa.txt" \
                 && ! grep -q 'Mod Author' "$_td/limpa.txt" \
-                && grep -q 'HP 900 .*En 5 .*Nv 7 .*Ou 12 .*Pr 3,4K' "$_td/limpa.txt" \
+                && grep -q 'CONTA .*HP .*ENERGIA .*NV .*OURO .*PRATA' "$_td/limpa.txt" \
+                && grep -Eq 'Ze +(│|\|)? *900 +(│|\|)? *5 +(│|\|)? *7 +(│|\|)? *12 +(│|\|)? *3,4K' "$_td/limpa.txt" \
                 || { _estouros=$((_estouros + 1)); printf '  [INFO] modo %s, %s colunas: titulo ou numeros fora do formato\n' "$_modo" "$_c"; }
         esac
     done
@@ -2962,6 +2963,46 @@ _r=$( TMP="$_td10/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
 check "config.cfg salvo no Windows: valores valem" "n 4" "$_r"
 
 rm -rf "$_td10"; unset _td10 _b
+
+printf "\n=== 46. painel em tabela: HP em percentual e barras alinhadas ===\n"
+# =============================================================================
+_td11=`mktemp -d`
+mkdir -p "$_td11/.sls/status"
+_ag=`date +%s`
+for _c in "u1|Alfa|65312|71000" "u2|Beta Clã|12000|57000" "u3|Gama|900|"; do
+    IFS='|' read -r _u _n _h _m <<EOF
+$_c
+EOF
+    printf '1|%s|x\n' "$_u" >> "$_td11/acc.conf"
+    mkdir -p "$_td11/.sls/BR_$_u"
+    printf '%s|%s|10|320/980|42|1.564|95,8M|%s|%s\n' "$_n" "$_h" "$_ag" "$_m" > "$_td11/.sls/BR_$_u/stats"
+    echo running > "$_td11/.sls/status/BR_$_u.status"; echo $$ > "$_td11/.sls/status/BR_$_u.pid"
+    echo "$_ag" > "$_td11/.sls/BR_$_u/last_ok"
+done
+_ESC=$(printf '\033')
+for _modo in 1 2; do
+    for _c in 56 100; do
+        ( HOME="$_td11"; SLSDIR="$ROOT"; STATUS_DIR="$_td11/.sls/status"; ACCOUNTS_FILE="$_td11/acc.conf"
+          worker_vivo() { kill -0 "$1"; }
+          PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=1; SLS_EMOJI="$_modo"; SLS_COLS="$_c"
+          export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+          . "$LIB/panel.sh"; painel_loop ) 2>/dev/null | sed "s/${_ESC}\[[0-9;]*m//g" > "$_td11/p.txt"
+        # Coluna (nao byte) de cada barra nas linhas das contas: uma so
+        # posicao para todas, com acento e emoji no nome.
+        _pos=`grep -E 'Alfa|Beta|Gama' "$_td11/p.txt" | LC_ALL=C awk '{
+            s = ""; col = 0; n = length($0)
+            for (i = 1; i <= n; i++) {
+                c = substr($0, i, 1)
+                if (substr($0, i, 3) == "\342\224\202") s = s col ","
+                if (c >= "\200" && c < "\300") continue
+                col += (c >= "\360" && c < "\370") ? 2 : 1
+            }
+            if (s != "") print s }' | sort -u | wc -l | tr -d ' '`
+        _hp=`grep -E 'Alfa|Beta|Gama' "$_td11/p.txt" | grep -oE '(92%|21%|900)' | tr '\n' ' '`
+        check "painel (modo $_modo, $_c col): barras na mesma coluna e HP em %" "1 92% 21% 900 " "$_pos $_hp"
+    done
+done
+rm -rf "$_td11"; unset _td11 _ag _c _u _n _h _m _modo _pos _hp
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

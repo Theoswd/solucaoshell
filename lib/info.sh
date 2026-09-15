@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.50"
+versionNum="3.9.51"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -1099,10 +1099,11 @@ parse_status() {
         _ene_campo="$ACC_ENE"
     fi
 
-    printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    # O ultimo campo e o HP maximo: o painel mostra o HP em percentual.
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "${ACC:-$SLS_USER}" "${ACC_HP:--}" "${ACC_MP:--}" "$_ene_campo" \
         "${ACC_LVL:--}" "${ACC_GOLD:--}" "${ACC_SILVER:--}" "$(date +%s)" \
-        > "$TMP/stats" 2>/dev/null
+        "$FIXHP" > "$TMP/stats" 2>/dev/null
     unset _ene_campo
 
     unset _pg
