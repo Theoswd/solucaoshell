@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.51"
+versionNum="3.9.52"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -239,7 +239,8 @@ fetch_page() {
     # Link vazio pedia a Home e o chamador seguia como se tivesse clicado.
     if [ -z "$relative_url" ]; then
         : > "$output_file"
-        printf "fetch_page sem link\n" >> "${TMP:-.}/ERROR_DEBUG"
+        # A ultima pagina pedida aponta o modulo que chamou.
+        printf "fetch_page sem link (depois de %s)\n" "`cat "${TMP:-.}/pagina" 2>/dev/null`" >> "${TMP:-.}/ERROR_DEBUG"
         return 1
     fi
 
@@ -987,7 +988,7 @@ hpmp() {
             run_curl_exec "$URL/train" > "$TMP/TRAIN"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 20
-        FIXHP=`grep -o -E '\(([0-9]+)\)' "$TMP/TRAIN" | sed 's/[()]//g'`
+        FIXHP=`grep -o -E '\(([0-9]+)\)' "$TMP/TRAIN" | head -n1 | sed 's/[()]//g'`
         FIXMP=`grep -o -E ': [0-9]+' "$TMP/TRAIN" | sed -n '5s/: //p'`
     fi
 

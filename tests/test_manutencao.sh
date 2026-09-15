@@ -2910,8 +2910,9 @@ _liga45() { # pocao(sim|nao) -> "lutas=N alvos=A,B pocao=N POTION=S|N"
               /league/fight/*)
                   [ "$_n" -gt 0 ] && echo $((_n - 1)) > "$TMP/sim_lutas"
                   _p="resultado"
-                  [ "`cat "$TMP/sim_pocao"`" = sim ] && _p="$_p <a href='/league/potion/?r=5'>pocao</a>"
+                  [ "`cat "$TMP/sim_pocao"`" != nao ] && _p="$_p <a href='/league/potion/?r=5'>pocao</a>"
                   printf '%s\n' "$_p" > "$_d" ;;
+              /league/potion/*) : > "$_d"; [ "`cat "$TMP/sim_pocao"`" != rede ] ;;
               *) : > "$_d" ;;
           esac
       }
@@ -2923,15 +2924,25 @@ _liga45() { # pocao(sim|nao) -> "lutas=N alvos=A,B pocao=N POTION=S|N"
 }
 check "Liga sem pocao: ataca o ultimo e sai, sem luta forcada" "lutas=1 alvos=332 pocao=0 POTION=N" "`_liga45 nao`"
 check "Liga com pocao: usa e ataca o 1o" "lutas=2 alvos=332,302 pocao=1 POTION=N" "`_liga45 sim`"
+check "Liga: pocao sem resposta avisa rede e sai" "lutas=1 alvos=332 pocao=1 POTION=N rede" \
+    "`_liga45 rede; grep -q 'A pocao nao respondeu' "$_td10/crede/saida" && printf ' rede'`"
 unset -f _liga45
 
 _r=$( TMP="$_td10/fp"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
       run_curl_exec() { echo "$1" >> "$TMP/curl"; echo home; }
-      SLS_PACING=0; echo velho > "$TMP/SRC"
+      SLS_PACING=0; echo velho > "$TMP/SRC"; echo /arena/ > "$TMP/pagina"
       fetch_page "" && printf 'ok ' || printf 'falhou '
       [ -s "$TMP/SRC" ] && printf 'sujo ' || printf 'vazio '
-      [ -f "$TMP/curl" ] && printf 'pediu' || printf 'nao_pediu' )
-check "fetch_page sem link: nao pede a Home e esvazia a pagina" "falhou vazio nao_pediu" "$_r"
+      [ -f "$TMP/curl" ] && printf 'pediu' || printf 'nao_pediu'
+      grep -q 'sem link (depois de /arena/)' "$TMP/ERROR_DEBUG" && printf ' origem' )
+check "fetch_page sem link: nao pede a Home, esvazia a pagina e diz a origem" "falhou vazio nao_pediu origem" "$_r"
+
+# Nenhum modulo guarda um link de "grep -o" sem pegar a primeira linha.
+_soltos=$(grep -nE '^[^#]*=`grep -o [^|`]*`[[:space:]]*$' "$LIB"/*.sh | wc -l | tr -d ' ')
+check "links de grep -o sempre com a primeira linha so" 0 "$_soltos"
+grep -q 'access_link:-/coliseum/' "$LIB/coliseum.sh" \
+    && ok "coliseu: espera com link vazio pede o coliseu, nao a Home" \
+    || bad "coliseu: espera com link vazio ainda pede a Home"
 
 # Link repetido na pagina: um clique com uma URL so; apply_event sem eco.
 _r=$( TMP="$_td10/ck"; mkdir -p "$TMP"; . "$LIB/check.sh" > /dev/null 2>&1

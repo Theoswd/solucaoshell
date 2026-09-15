@@ -300,7 +300,10 @@ league_play() {
                         # Sem pocao o POTION nao pode nascer: com ele a
                         # volta seguinte ataca o 1o adversario sem olhar a
                         # forca e perde uma luta.
-                        if [ -n "$potion_click" ] && fetch_page "$potion_click"; then
+                        if [ -z "$potion_click" ]; then
+                            printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta na proxima passagem.\n"
+                            action="exit_loops"
+                        elif fetch_page "$potion_click"; then
                             printf "Used a potion\n"
                             echo "potion used" > "$TMP/POTION"
                             E_STRENGTH=50
@@ -308,7 +311,7 @@ league_play() {
                             j=1
                             action="check_fights"
                         else
-                            printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta na proxima passagem.\n"
+                            printf "[LIGA] A pocao nao respondeu (rede) - volta na proxima passagem.\n"
                             action="exit_loops"
                         fi
                     else

@@ -41,7 +41,9 @@ coliseum_fight() {
     fi
 
     access_link=`grep -o -E '/coliseum(/[A-Za-z]+/[?]r[=][0-9]+|/)' "$src_ram" | sed -n '1p'`
-    go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram"`
+    # "sed -n 1p" em todo link: repetido na pagina, viraria duas linhas e o
+    # curl recusaria a URL.
+    go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
     # LUTA JA EM ANDAMENTO: o worker relancado no meio de uma luta do coliseu
     # (batalha_retomar) encontra a pagina de combate, sem link de inscricao.
@@ -63,8 +65,10 @@ coliseum_fight() {
 
         first_time=`date +%s`
         until grep -q -o 'coliseum/dodge/' "$src_ram" || awk -v ltime="$(($(date +%s) - first_time))" 'BEGIN { exit !(ltime > 30) }'; do
+            # Resposta vazia (rede) deixa o link vazio: sem o padrao, a
+            # espera pedia a Home a cada 3s em vez da pagina do coliseu.
             (
-                run_curl_exec "${URL}${access_link}" > "$src_ram"
+                run_curl_exec "${URL}${access_link:-/coliseum/}" > "$src_ram"
             ) </dev/null > /dev/null 2>&1 &
             time_exit 17
             access_link=`grep -o -E '/(coliseum/[A-Za-z]+/[?]r[=][0-9]+|coliseum)' "$src_ram" | grep -v 'dodge' | sed -n 1p`
@@ -86,9 +90,9 @@ coliseum_fight() {
             USER=`grep -o -E '([[:upper:]][[:lower:]]{0,15}( [[:upper:]][[:lower:]]{0,13})?)[[:space:]][^[:alnum:]]s' "$src_ram" | sed -n 's,\ [<]s,,;s,\ ,_,;2p'`
 
             ATK=`grep -o -E '/coliseum/atk/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
-            ATKRND=`grep -o -E '/coliseum/atkrnd/[?]r[=][0-9]+' "$src_ram"`
-            DODGE=`grep -o -E '/coliseum/dodge/[?]r[=][0-9]+' "$src_ram"`
-            HEAL=`grep -o -E '/coliseum/heal/[?]r[=][0-9]+' "$src_ram"`
+            ATKRND=`grep -o -E '/coliseum/atkrnd/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
+            DODGE=`grep -o -E '/coliseum/dodge/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
+            HEAL=`grep -o -E '/coliseum/heal/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
             RHP=`awk -v ush="$USH" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }'`
             HLHP=`awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }'`
@@ -285,7 +289,7 @@ coliseum_start() {
                 ) </dev/null > /dev/null 2>&1 &
                 time_exit 20
 
-                ENDQUEST=`grep -o -E '/quest/end/11[?]r[=][A-Za-z0-9]+' "$TMP/SRC"`
+                ENDQUEST=`grep -o -E '/quest/end/11[?]r[=][A-Za-z0-9]+' "$TMP/SRC" | sed -n 1p`
                 if [ -n "$ENDQUEST" ]; then
                     (
                         run_curl_exec "${URL}${ENDQUEST}" > "$TMP/SRC"
