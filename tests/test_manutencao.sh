@@ -2612,6 +2612,7 @@ _r=`( TMP=\`mktemp -d\`; CLD=1; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono
       for _f in atualiza_agenda use_elixir cq_concluir career_func check_missions specialEvent \
                 clanQuests func_trade allies_refresh liga_do_dia; do eval "$_f() { printf '%s ' $_f; }"; done
       stats_liberado() { return 1; }; masmorra_liberada() { return 1; }; arena_liberada() { return 1; }
+      liga_fora_da_inscricao() { return 0; }
       campanha_liberada() { return 1; }; caverna_liberada() { return 1; }; check_rewards() { :; }
       echo 190001010000 > "$TMP/last_start"; start; printf '| '
       echo 190001010000 > "$TMP/last_start"; start; rm -rf "$TMP" ) | sed 's/Checklist do cla//' | tr -d '\n'`
@@ -3173,7 +3174,7 @@ _tl48() { # last_rede last_ok -> atividades chamadas
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       [ -n "$1" ] && echo "$1" > "$TMP/last_rede"
       [ -n "$2" ] && echo "$2" > "$TMP/last_ok"
-      stats_liberado() { return 1; }
+      stats_liberado() { return 1; }; liga_fora_da_inscricao() { return ${_TL_JANELA:-0}; }
       for _f in cq_liberado masmorra_liberada arena_liberada campanha_liberada caverna_liberada; do eval "$_f() { return 0; }"; done
       for _f in cq_concluir cq_ajudar cq_elixir cq_mercador cq_marcar clanDungeon masmorra_marcar masmorra_adiar \
                 cq_antes arena_duel career_func campaign_func cave_routine check_missions check_rewards \
@@ -3183,6 +3184,7 @@ _tl48() { # last_rede last_ok -> atividades chamadas
 _ag=`date +%s`
 check "servidor mudo agora: nenhuma atividade na volta" "Servidor sem resposta" "`_tl48 "$_ag" $((_ag - 100))`"
 check "servidor respondeu depois da falha: varredura normal" "arena_duel" "`_tl48 $((_ag - 100)) "$_ag"`"
+check "minuto de inscricao de evento: a varredura para antes da arena" "" "`_TL_JANELA=1 _tl48 $((_ag - 100)) "$_ag"`"
 check "falha de mais de 10 min nao trava a varredura" "arena_duel" "`_tl48 $((_ag - 900)) $((_ag - 1000))`"
 
 # Painel: "sem resposta" com o codigo do curl.
@@ -3361,6 +3363,64 @@ check "sem trava de outra conta: pega e solta"                 "trava_saiu espac
 check "estourou a espera: nao apaga a trava do dono, espaca"   "trava_ficou espacou " "`_trava52 s`"
 rm -rf "$_td18"; unset _td18
 unset -f _trava52
+
+printf "\n=== 53. sessao anonima na luta, chaves desligadas, FIXHP, config, inscricao ===\n"
+# =============================================================================
+_td19=`mktemp -d`
+
+# Pagina anonima sem formulario de login: o rodape user=0 e sessao caida.
+printf '%s' "<div>Error 404</div><script>jsInterface.event(\"user=0;level=0\")</script>" > "$_td19/anonima"
+printf '%s' "<a href='/clanfight/attack/?r=1'>x</a><script>jsInterface.event(\"user=10;level=9\")</script>" > "$_td19/logada"
+_r=$( TMP="$_td19"; . "$LIB/info.sh" > /dev/null 2>&1
+      printf '%s %s' "`estado_luta "$_td19/anonima" clanfight`" "`estado_luta "$_td19/logada" clanfight`" )
+check "estado_luta: pagina anonima (user=0) = deslogado; user=10 segue na luta" "deslogado luta" "$_r"
+
+# Chave desligada: nenhum pedido, e o Torneio devolve a conta para a rotina.
+_r=$( TMP="$_td19/ch"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      . "$LIB/coliseum.sh"; . "$LIB/clanfight.sh"; . "$LIB/specialevent.sh"
+      run_curl_exec() { printf 'pediu '; }; fetch_page() { printf 'pediu '; }; full_atualizar() { printf 'pediu '; }
+      FUNC_coliseum=n; FUNC_clan_fight=n; FUNC_auto_events=n
+      date +%s > "$TMP/em_evento"
+      coliseum_fight; specialEvent; clanfight_start
+      [ -f "$TMP/em_evento" ] && printf 'parada' || printf 'livre' )
+check "chaves desligadas: Coliseu e evento especial nao pedem nada; Torneio cancela a dedicacao" "livre" "$_r"
+
+# Retomada do Coliseu sem resposta: a anotacao fica para depois.
+_r=$( TMP="$_td19/col"; mkdir -p "$TMP"; URL=http://jogo
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      fetch_page() { : > "${2:-$TMP/SRC}"; }; run_curl() { :; }; coliseum_fight() { echo ENTROU; }
+      batalha_marcar coliseum; batalha_retomar > /dev/null
+      batalha_pendente && printf 'pendente' || printf 'limpa' )
+check "retomada do coliseu sem resposta: mantem a anotacao" "pendente" "$_r"
+
+# /train com pagina de erro nao apaga o HP maximo.
+_r=$( TMP="$_td19"; URL=http://jogo; . "$LIB/info.sh" > /dev/null 2>&1
+      FIXHP=5000; run_curl() { echo "<html>Error 502</html>"; }; fetch_train_stats; printf '%s ' "$FIXHP"
+      run_curl() { echo "HP (6100)"; }; fetch_train_stats; printf '%s' "$FIXHP" )
+check "fetch_train_stats: pagina de erro mantem o FIXHP, pagina boa atualiza" "5000 6100" "$_r"
+
+# Config: zero a esquerda vira numero; chave com ";" nao executa.
+_r=$( TMP="$_td19/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
+      printf 'FUNC_masmorra_min=08\nFUNC_cq_min=00\nFUNC_arena_min=010\nFUNC_x;printf PWNED=1\n' > "$TMP/config.cfg"
+      load_config
+      printf '%s %s %s' "$(( FUNC_masmorra_min * 60 ))" "$FUNC_cq_min" "$FUNC_arena_min" )
+check "config: 08/00/010 viram 8/0/10 e chave com ';' nao executa" "480 0 10" "$_r"
+
+# Minuto de inscricao: a varredura para antes dos blocos pesados (a parte
+# em execucao esta na secao 48).
+_r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'liga_fora_da_inscricao || return 0'`
+check "varredura: relogio conferido entre os blocos pesados" 5 "$_r"
+
+# Erva paga em ouro fica de fora no Torneio e no Duelo.
+printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva</span></a>" > "$_td19/erva"
+printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva <img src='/images/icon/gold.png'/> 5</span></a>" > "$_td19/erva_ouro"
+_r=$( TMP="$_td19"; . "$LIB/info.sh" > /dev/null 2>&1
+      printf '%s|%s' "`erva_gratis clanfight "$_td19/erva"`" "`erva_gratis clanfight "$_td19/erva_ouro"`" )
+check "erva_gratis: gratis passa, paga em ouro fica de fora" "/clanfight/grass/?r=3|" "$_r"
+_r=`grep -c 'erva_gratis' "$LIB/clanfight.sh" "$LIB/clandmg.sh" | grep -c ':1$'`
+check "Torneio e Duelo usam a erva_gratis" 2 "$_r"
+rm -rf "$_td19"; unset _td19
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

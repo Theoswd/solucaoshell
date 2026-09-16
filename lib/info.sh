@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.61"
+versionNum="3.9.62"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -421,6 +421,21 @@ combate_ler() {
     ' "$4" 2>/dev/null
 }
 
+# Link da erva so quando o botao nao cobra ouro — a mesma regra do
+# combate_ler, para os modulos que nao o usam (Torneio e Duelo dos Clas).
+erva_gratis() { # SECAO ARQUIVO
+    awk -v sec="$1" '
+        { t = t $0 " " }
+        END {
+            if (!match(t, "/" sec "/grass/[?]r[=][0-9]+")) exit
+            l = substr(t, RSTART, RLENGTH)
+            r = substr(t, RSTART + RLENGTH, 300)
+            c = index(r, "</a>")
+            if (c && tolower(substr(r, 1, c)) ~ /gold|ouro/) exit
+            print l
+        }' "$2" 2>/dev/null
+}
+
 # A sessao esta viva: carimba a hora da ultima confirmacao.
 #
 # POR QUE ISTO EXISTE
@@ -637,6 +652,9 @@ estado_luta() {
     awk -v sec="$2" -v q="'" '
         { t = t $0 "\n" }
         END {
+            # Pagina anonima pode vir sem formulario de login (ver
+            # sessao_estado): o rodape user=0 ja prova a sessao caida.
+            if (t ~ /jsInterface\.event\("user=0[^0-9]/) { print "deslogado"; exit }
             if (t ~ ("name=[" q "\"]?pass|action=[^>]*sign_in")) { print "deslogado"; exit }
 
             hpic = "health.png" q " alt=" q "hp" q "/>"
@@ -1068,7 +1086,8 @@ hpmp() {
             run_curl_exec "$URL/train" > "$TMP/TRAIN"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 20
-        FIXHP=`grep -o -E '\(([0-9]+)\)' "$TMP/TRAIN" | head -n1 | sed 's/[()]//g'`
+        _fx=`grep -o -E '\(([0-9]+)\)' "$TMP/TRAIN" | head -n1 | sed 's/[()]//g'`
+        [ -n "$_fx" ] && FIXHP=$_fx
         FIXMP=`grep -o -E ': [0-9]+' "$TMP/TRAIN" | sed -n '5s/: //p'`
     fi
 
@@ -1215,7 +1234,11 @@ fetch_train_stats() {
 
     _t=`run_curl "${URL}/train" 2>/dev/null`
     [ -n "$_t" ] || return 1
-    FIXHP=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
+    # Pagina de erro ou de login nao traz o HP maximo: mantem o ultimo lido
+    # (as lutas usam o FIXHP; vazio zerava o limiar de cura).
+    _fx=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
+    [ -n "$_fx" ] && FIXHP=$_fx
+    unset _fx
     # CORRECAO (energia sempre vazia): o sed era `s@.*:? ?@@`. Como `:?` e ` ?`
     # sao ambos opcionais, o `.*` guloso casava a string INTEIRA ("Energia:
     # 2125") e a substituicao apagava tudo, devolvendo vazio. Sobrava so o

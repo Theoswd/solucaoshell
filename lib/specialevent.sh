@@ -1,5 +1,7 @@
 #!/bin/sh
 specialEvent() {
+    # A chave vale aqui: o horario das 09:25 e 21:25 (run.sh) chama direto.
+    [ "${FUNC_auto_events:-y}" = "y" ] || return 0
     # O worker nao reinicia: sem isto, com a Home ja sem evento, o ramo e o
     # link do ultimo evento eram repetidos.
     unset EVENT event_link

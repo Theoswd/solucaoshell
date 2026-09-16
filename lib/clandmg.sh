@@ -18,7 +18,7 @@ clandmgfight_fight() {
     grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > ATKRND 2>/dev/null
     grep -o -E '(/clandmgfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > DODGE 2>/dev/null
     grep -o -E '(/clandmgfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > HEAL 2>/dev/null
-    grep -o -E '(/clandmgfight/grass/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" > GRASS 2>/dev/null
+    erva_gratis clandmgfight "$TMP/SRC" > GRASS
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
     grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$TMP/SRC" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > HP2 2>/dev/null

@@ -455,11 +455,18 @@ tarefas_livres() {
     #
     # Sem hora marcada: a pagina diz se ha golpe. Deu certo, so volta na
     # proxima leva de 8h; nao deu, volta em minutos.
+    #
+    # ENTRE OS BLOCOS PESADOS, O RELOGIO. Masmorra (ate 180s), Liga (ate
+    # 300s), caverna e campanha somadas passavam dos 5 min de inscricao, e o
+    # run.sh ja nao pegava o evento. No minuto de inscricao, o resto fica para
+    # a proxima volta.
+    liga_fora_da_inscricao || return 0
     if [ -n "$CLD" ] && masmorra_liberada; then
         if clanDungeon; then masmorra_marcar; else masmorra_adiar; fi
     fi
 
     # --- Arena, sempre tomando antes a missao do cla que ela completa
+    liga_fora_da_inscricao || return 0
     if arena_liberada; then
         cq_antes arena 2>/dev/null
         arena_duel
@@ -477,10 +484,12 @@ tarefas_livres() {
         ativ_marcar carreira
     fi
 
+    liga_fora_da_inscricao || return 0
     if campanha_liberada; then
         campaign_func
     fi
 
+    liga_fora_da_inscricao || return 0
     if caverna_liberada; then
         cq_antes caverna 2>/dev/null
         cave_routine
@@ -503,6 +512,7 @@ tarefas_livres() {
     #
     # UMA VISITA POR DIA, AS 00:30 (liga_do_dia, em league.sh). Aqui ela so
     # volta antes disso quando uma luta nao contou e ainda ha lutas no dia.
+    liga_fora_da_inscricao || return 0
     if ativ_liberada liga 30; then
         liga_do_dia
     fi
@@ -736,8 +746,10 @@ batalha_retomar() {
             fetch_page "/coliseum" "$TMP/col_src"
             case "`estado_luta "$TMP/col_src" coliseum`" in
                 luta)      coliseum_fight ;;
-                # Sem sessao nao da para saber: fica para depois de reconectar.
-                deslogado) LUTA_SESSAO_CAIU=1 ;;
+                # Sem sessao ou sem resposta nao da para saber: fica para
+                # depois. Apagar aqui fazia o descanso confirmar a fuga quando
+                # a rede voltasse. A anotacao ainda expira no teto (30 min).
+                deslogado|invalida) LUTA_SESSAO_CAIU=1 ;;
             esac
             ;;
         *)            : ;;

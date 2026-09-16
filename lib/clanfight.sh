@@ -18,7 +18,7 @@ clanfight_fight() {
     grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > ATKRND 2>/dev/null
     grep -o -E '(/clanfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > DODGE 2>/dev/null
     grep -o -E '(/clanfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > HEAL 2>/dev/null
-    grep -o -E '(/clanfight/grass/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" > GRASS 2>/dev/null
+    erva_gratis clanfight "$TMP/SRC" > GRASS
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
     grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$TMP/SRC" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > HP2 2>/dev/null
@@ -199,7 +199,9 @@ clanfight_start() {
   # nenhum arquivo do projeto procurava por esse nome — nem pelo certo. Quem
   # desligasse o Torneio dos Clas no config continuava entrando no evento.
   # O nome foi corrigido e passa a ser respeitado aqui.
-  [ "${FUNC_clan_fight:-y}" = "y" ] || return 0
+  # Desligado depois do evento_dedicar (run.sh): sem o cancelar, a conta
+  # ficava ~15 min parada no evento_espera.
+  [ "${FUNC_clan_fight:-y}" = "y" ] || { evento_cancelar; return 0; }
   cd "$TMP" || return 1
   case `date +%H:%M` in
   10:5[5-9]|18:5[5-9])

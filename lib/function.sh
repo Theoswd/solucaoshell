@@ -55,6 +55,8 @@ load_config() {
     while IFS='=' read -r _ck _cv; do
         # Salvo no Windows (CRLF): o \r reprovava o valor e valia o padrao.
         _cv=${_cv%"$_cr"}
+        # Chave vai para o eval: "FUNC_x;comando" nao pode passar.
+        case "$_ck" in *[!A-Za-z0-9_]*) continue ;; esac
         case "$_ck" in
             FUNC_*|ALLIES|CAVE_SILVER_LIMIT) ;;
             *) continue ;;
@@ -62,6 +64,8 @@ load_config() {
         case "$_cv" in
             *[!A-Za-z0-9_.:/-]*) continue ;;
         esac
+        # Zero a esquerda: no dash $((08 * 60)) e erro fatal e 010 vira 8.
+        case "$_cv" in 0[0-9]*) case "$_cv" in *[!0-9]*) ;; *) _cv=${_cv#"${_cv%%[!0]*}"}; _cv=${_cv:-0} ;; esac ;; esac
         eval "${_ck}=\"\$_cv\""
     done < "$CONFIG_FILE"
 

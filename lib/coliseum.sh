@@ -1,5 +1,8 @@
 # shellcheck disable=SC2155
 coliseum_fight() {
+    # A chave vale aqui, e nao so no coliseum_start: o horario da madrugada
+    # (run.sh) chama esta funcao direto.
+    [ "$FUNC_coliseum" = "n" ] && return 0
     # Arquivos de batalha gravados no diretorio da conta (sem mktemp)
     src_ram="$TMP/col_src"
     full_ram="$TMP/col_full"
