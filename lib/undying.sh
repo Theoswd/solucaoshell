@@ -56,8 +56,7 @@ undying_fight() {
       run_curl_exec "${URL}/undying" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
-    # MORREMOS? Ressuscitar devolve a luta — entao nao e fim.
-    ressuscitar undying "$TMP/SRC" && return 1
+    # O Vale nao ressuscita: morreu, o luta_acabou encerra.
     luta_acabou "$TMP/SRC" undying
   }
 

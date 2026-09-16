@@ -1849,12 +1849,16 @@ printf "\n=== 33. morrer nao e sair do evento ===\n"
 # voltar antes de encerrar.
 for _m in altars:altars flagfight:flagfight clanfight:clanfight \
           clandmg:clandmgfight clancoliseum:clancoliseum coliseum:coliseum \
-          undying:undying king:king; do
+          king:king; do
     _arq="${_m%%:*}"; _sec="${_m##*:}"
     grep -q "ressuscitar $_sec" "$LIB/$_arq.sh" \
         && ok "$_arq.sh: tenta voltar antes de encerrar (ressuscitar $_sec)" \
         || bad "$_arq.sh: morre e sai do evento sem tentar o unrip"
 done
+# O Vale nao ressuscita (regra do dono do bot, 16/09).
+grep -q "ressuscitar" "$LIB/undying.sh" \
+    && bad "undying.sh: o Vale nao deve ressuscitar" \
+    || ok "undying.sh: sem ressurreicao no Vale"
 
 # Uma implementacao, nao duas: o king.sh nao pode ter a copia colada de volta.
 [ "`grep -c '/king/unrip/' "$LIB/king.sh"`" = 0 ] \
