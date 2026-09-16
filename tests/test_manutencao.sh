@@ -116,11 +116,11 @@ fetch_page() {  # stub: simula o servidor
             SIM_CALLS=$((SIM_CALLS + 1))
             if [ "$SIM_CLICKED" = 1 ]; then
                 # apos coletar, o botao some (coleta confirmada)
-                printf 'league page sem botao\n' > "$TMP/SRC"
+                printf 'league page sem botao\n' > "${2:-$TMP/SRC}"
             elif [ "$SIM_CALLS" -ge "$SIM_REWARD_APPEARS_AT" ]; then
-                printf '<a href="/league/takeReward/?r=12345">coletar</a>\n' > "$TMP/SRC"
+                printf '<a href="/league/takeReward/?r=12345">coletar</a>\n' > "${2:-$TMP/SRC}"
             else
-                printf 'league page sem recompensa ainda\n' > "$TMP/SRC"
+                printf 'league page sem recompensa ainda\n' > "${2:-$TMP/SRC}"
             fi
             ;;
         /league/takeReward/*)
@@ -160,7 +160,7 @@ SIM_CLICKED=0; SIM_CALLS=0; SIM_REWARD_APPEARS_AT=1
 # forca o botao a persistir mesmo apos o clique:
 fetch_page() {
     case "$1" in
-        /league/) printf '<a href="/league/takeReward/?r=999">coletar</a>\n' > "$TMP/SRC" ;;
+        /league/) printf '<a href="/league/takeReward/?r=999">coletar</a>\n' > "${2:-$TMP/SRC}" ;;
         /league/takeReward/*) printf 'sem efeito\n' > "$TMP/SRC" ;;
         *) printf '' > "$TMP/SRC" ;;
     esac
@@ -812,7 +812,7 @@ grep -q 'FUNC_evento_min=10' "$LIB/function.sh" \
     || bad "function.sh: FUNC_evento_min sem padrao"
 # A ID do cla e carregada na variavel, nao so no arquivo (senao o primeiro
 # ciclo de cada worker pula os eventos de cla).
-if grep -q 'read -r CLD < "\$TMP/CLD"' "$R"; then
+if grep -q '\[ -n "\$CLD" \] || clan_id' "$R" && grep -q 'read -r CLD < "\$TMP/CLD"' "$LIB/clanid.sh"; then
     ok "run.sh: carrega o CLD do arquivo no inicio do ciclo"
 else
     bad "run.sh: CLD pode ficar vazio e derrubar os eventos de cla"
@@ -1800,7 +1800,7 @@ _r=$( . "$LIB/info.sh"; luta_inicio; luta_hp "4363
 check "luta_hp: le so o primeiro numero (linha dupla, espaco)" "morto" "$_r"
 
 for _p in "king.sh _hpat" "altars.sh HP" "clanfight.sh HP" "clandmg.sh HP" \
-          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh _col_hp"; do
+          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh USH"; do
     set -- $_p
     grep -q "luta_hp \"[^\"]*$2" "$LIB/$1" \
         && ok "$1: reconhece a morte com botao na tela" \
@@ -1825,9 +1825,9 @@ _r=$(
     && ok "king.sh: unrip no maximo uma vez por morte" \
     || bad "trava do unrip: $_r"
 unset _r
-# Coliseu: o USH exige 2 a 5 digitos; para a morte a leitura aceita 1 a 6
-# (HP entre 1 e 9 e vida, nao morte).
-grep -q '\[0-9\]{1,6}" "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
+# Coliseu: o USH aceita 1 a 6 digitos, a primeira ocorrencia (HP entre 1 e 9
+# e vida, nao morte; 123456 nao vira 12345).
+grep -q '\[0-9\]{1,6}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: HP de 1 digito nao passa por morte" \
     || bad "coliseum.sh: HP entre 1 e 9 seria lido como morte"
 # Espera sem luta nas Bandeiras / Coliseu do Cla: sem batalha a retomar.
@@ -2417,7 +2417,7 @@ _r=`( TMP="$_td9/d"; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
       cq_antes() { printf 'cq:%s,' "$1"; }; league_play() { printf 'liga,'; }; ativ_marcar() { printf 'marca:%s' "$1"; }
       echo $(( \`date +%s\` + 600 )) > "$TMP/league_restauro"; liga_do_dia; printf '|rc=%s|' "$?"
       rm -f "$TMP/league_restauro"; liga_do_dia )`
-check "liga_do_dia: fechada nao faz nada; aberta faz a visita inteira" "|rc=1|cq:liga,liga,marca:liga" "$_r"
+check "liga_do_dia: fechada nao faz nada; aberta faz a visita inteira" "|rc=1|liga,marca:liga" "$_r"
 _r=`( . "$LIB/league.sh" > /dev/null 2>&1; for _m in 05 12 27 40 57; do
       date() { echo "$_m"; }; liga_fora_da_inscricao && printf '%s=livre ' "$_m" || printf '%s=evento ' "$_m"; done )`
 check "entrada: minutos de inscricao de evento deixam a Liga para depois" "05=livre 12=evento 27=evento 40=livre 57=evento " "$_r"
@@ -2502,8 +2502,8 @@ _perto "caverna: depois de mexer, 20 min ate o menu ser relido" 1200 "$_td10/k/n
 
 # --- campanha
 _camp() { # cenario -> "req=N"
-    ( TMP="$_td10/p"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/campaign.sh" > /dev/null 2>&1
-      : > "$TMP/req"; CENA="$1"
+    ( TMP="$_td10/p"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/campaign.sh" > /dev/null 2>&1
+      : > "$TMP/req"; CENA="$1"; VIVA="<script>jsInterface.event(\"user=5;level=40\")</script>"
       fetch_page() {
           echo "$1" >> "$TMP/req"; _n=`grep -c '^/campaign/$' "$TMP/req"`
           case "$1:$CENA" in
@@ -2516,10 +2516,14 @@ _camp() { # cenario -> "req=N"
               /campaign/end/*:feita)  echo "<div>Recompensa recebida</div>" > "$TMP/SRC" ;;
               /campaign/end/*:fim)    echo "<img src='/images/icon/2hit.png' alt=''/> Nova campanha em 7 h 59 min<br/>" > "$TMP/SRC" ;;
               /campaign/:espera)      echo "<div class='center'><img src='/images/icon/2hit.png' alt=''/> Nova campanha em 7 h 38 min<br/><a class='btn'>Atualizar</a></div>" > "$TMP/SRC" ;;
-              /campaign/:mudo)        : > "$TMP/SRC" ;;
+              /campaign/:mudo)        echo "<div>nada</div>$VIVA" > "$TMP/SRC" ;;
+              /campaign/:caiu)
+                  if [ "$_n" = 1 ]; then echo "<a href='/campaign/end/?r=1'>x</a>" > "$TMP/SRC"
+                  else echo "<form action='/?sign_in=1'><input name='pass'/></form>" > "$TMP/SRC"; fi ;;
+              /campaign/end/*:caiu)   echo "<div>ok</div>" > "$TMP/SRC" ;;
               /campaign/:semrel)
                   if [ "$_n" = 1 ]; then echo "<a href='/campaign/end/?r=1'>x</a>" > "$TMP/SRC"
-                  else echo "<div>outra coisa</div>" > "$TMP/SRC"; fi ;;
+                  else echo "<div>outra coisa</div>$VIVA" > "$TMP/SRC"; fi ;;
               /campaign/end/*:semrel) echo "<div>ok</div>" > "$TMP/SRC" ;;
           esac
       }
@@ -2536,6 +2540,7 @@ _camp semrel > /dev/null; _perto "campanha: feita sem relogio legivel, as 8h do 
 _camp mudo > /dev/null;   _perto "campanha: pagina sem nada volta em 1h" 3600 "$_td10/p/next_campanha"
 [ -f "$_td10/p/campanha_sem_relogio.html" ] && ok "campanha: pagina sem relogio guardada" \
                                               || bad "campanha: pagina sem relogio nao foi guardada"
+_camp caiu > /dev/null;   _perto "campanha: sessao caiu na releitura volta em 15 min, nao 8h" 900 "$_td10/p/next_campanha"
 _r=`( TMP="$_td10/q"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
       _agora_mais 600 > "$TMP/next_campanha"; campanha_liberada && printf 'futuro=sim ' || printf 'futuro=nao '
       rm -f "$TMP/next_campanha"; campanha_liberada && printf 'sem_leitura=sim' || printf 'sem_leitura=nao' )`
@@ -3085,8 +3090,8 @@ check "masmorra: rede caiu com golpe disponivel -> adiada, nao 8h" "adiada" "$_r
 # Liga: releitura sem resposta nao confirma a coleta.
 _r=$( TMP="$_td12/lg"; export TMP; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
       fetch_page() { case "$1" in
-          /league/) if [ -f "$TMP/clicou" ]; then : > "$TMP/SRC"; return 1; fi
-                    echo "<a href='/league/takeReward/?r=7'>Pegar</a>" > "$TMP/SRC" ;;
+          /league/) if [ -f "$TMP/clicou" ]; then : > "${2:-$TMP/SRC}"; return 1; fi
+                    echo "<a href='/league/takeReward/?r=7'>Pegar</a>" > "${2:-$TMP/SRC}" ;;
           *) : > "$TMP/clicou"; echo ok > "$TMP/SRC" ;;
           esac; }
       league_collect_reward > /dev/null 2>&1 && printf 'confirmada' || printf 'pendente' )
@@ -3329,24 +3334,6 @@ check "last_atk lido uma vez por volta nos cinco modulos" 5 "$_r"
 rm -rf "$_td16"; unset _td16 _r
 unset -f _full51
 
-# DIAGNOSTICO TEMPORARIO: pagina de missao do cla cheia sem link de concluir.
-_td17=`mktemp -d`
-_cq51() { # progresso -> "cheia|nenhuma guardou|nao"
-    ( TMP="$_td17/c"; export TMP; rm -rf "$TMP"; mkdir -p "$TMP"
-      . "$LIB/clanquest.sh" > /dev/null 2>&1
-      printf '<div>Progresso: %s</div>\n' "$1" > "$TMP/CQUEST"
-      cq_tem_completa && printf 'cheia ' || printf 'nenhuma '
-      cq_guardar_completa > /dev/null 2>&1
-      [ -f "$TMP/cq_completa.html" ] && printf 'guardou' || printf 'nao' )
-}
-check "missao em andamento: nada a guardar"          "nenhuma nao"    "`_cq51 '6 de 15'`"
-check "missao cheia: pagina guardada para diagnostico" "cheia guardou" "`_cq51 '15 de 15'`"
-check "cheia com separador de milhar"                  "cheia guardou" "`_cq51 \"150'000 de 150'000\"`"
-check "diagnostico so no checklist (nao no cq_antes)" "1 0" \
-    "$(grep -c '|| cq_guardar_completa' "$LIB/crono.sh") $(grep -c '|| cq_guardar_completa' "$LIB/clanquest.sh")"
-rm -rf "$_td17"; unset _td17
-unset -f _cq51
-
 printf "\n=== 52. trava de login: so o dono apaga ===\n"
 # =============================================================================
 _td18=`mktemp -d`
@@ -3425,6 +3412,188 @@ check "erva_gratis: gratis passa, paga em ouro fica de fora" "/clanfight/grass/?
 _r=`grep -c 'erva_gratis' "$LIB/clanfight.sh" "$LIB/clandmg.sh" | grep -c ':1$'`
 check "Torneio e Duelo usam a erva_gratis" 2 "$_r"
 rm -rf "$_td19"; unset _td19
+
+printf "\n=== 54. pedidos a toa e acoes perdidas (revisao de 16/09) ===\n"
+# =============================================================================
+_td20=`mktemp -d`
+VIVA53="<script>jsInterface.event(\"user=5;level=40\")</script>"
+LOGIN53="<form action='/?sign_in=1'><input name='pass'/></form>"
+
+# ID do cla: uma consulta por hora, com ou sem cla; rede fora nao apaga o ID.
+_cld53() { # semcla|rede -> "pedidos=N CLD=variavel/arquivo rc=N"
+    ( TMP="$_td20/cld$1"; export TMP; rm -rf "$TMP"; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      CENA="$1"; CLD=""
+      fetch_page() { echo "$1" >> "$TMP/req"
+          if [ "$CENA" = rede ]; then : > "$2"; return 1; fi
+          echo "<a href='/clan/create/'>Criar</a>$VIVA53" > "$2"; }
+      if [ "$CENA" = rede ]; then
+          echo 4242 > "$TMP/CLD"
+          clan_id > /dev/null; _rc=$?; clan_id > /dev/null
+      else
+          clan_id > /dev/null; clan_id > /dev/null; _rc=$?
+          CLD=""; clan_id > /dev/null
+      fi
+      printf 'pedidos=%s CLD=%s/%s rc=%s' "$(wc -l < "$TMP/req" | tr -d ' ')" "$CLD" "$(cat "$TMP/CLD")" "$_rc" )
+}
+check "sem cla: tres chamadas, um pedido de /clan" "pedidos=1 CLD=/ rc=1" "`_cld53 semcla`"
+check "rede fora: o ID conhecido fica e a nova tentativa espera" "pedidos=1 CLD=4242/4242 rc=0" "`_cld53 rede`"
+
+# Missao ja ativa. Estrutura da pagina real (16/09), nomes e ids trocados.
+_cqpg53() {
+    cat > "$1" <<'EOF'
+<div>Use 150K de energia <span>Progresso: 23'700 de 150K</span> <a href='/arena/'>Para a arena</a></div>
+<div><b>Gladiador Lendário</b> Vença 15 vezes na Liga<br/>Progresso: 12 de 15<br/>Troféu: 1 516<br/>Interpretada por: <a href='/user/1/'>Outro</a> Ajudante: <a href='/user/2/'>Mais</a><br/><a href='/clan/777/quest/delete/2/?r=9'>Cancelar missão</a></div>
+<div><b>Alquimista</b> Faça 2 Elixires<br/>Progresso: <span>0</span> de 2<br/>Troféu: 1 645<br/>Interpretada por: <a href='/user/3/'>Eu</a><br/><a class='btn' href='/lab/alchemy/'>Vá lá</a><a href='/clan/777/quest/delete/7/?r=9'>Cancelar missão</a><a href='/clan/777/quest/deleteHelp/7/?r=9'>Cancelar ajudando</a></div>
+<div><b>Velho Lojista</b> Obtenha 3 pedras<br/>Progresso: concluída!<br/>Troféu: 1 645<br/><a class='btn' href='/clan/777/quest/end/8/?r=9'>Concluir</a><a href='/clan/777/quest/delete/8/?r=9'>Cancelar missão</a></div>
+<div><b>Procura por Recursos</b> Faça 8 pesquisas<br/>Progresso: 3 de 8<br/>Troféu: 1 344<br/>Ajudante: <a href='/user/3/'>Eu</a><br/><a class='btn' href='/cave/'>Vá lá</a><a href='/clan/777/quest/delete/5/?r=9'>Cancelar missão</a></div>
+EOF
+}
+_r=$( TMP="$_td20/cq"; CLD=777; export TMP CLD; mkdir -p "$TMP"; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      _cqpg53 "$TMP/CQUEST"; cq_pagina() { :; }
+      for _m in 2 7 8 5 3; do printf '%s=%s ' "$_m" "$(cq_falta $_m || echo nao)"; done )
+check "cq_falta: so a missao com 'Va la' e por concluir" "2=nao 7=2 8=nao 5=5 3=nao " "$_r"
+grep -q 'checkQuest 5 apply || cq_ativa 5' "$LIB/cave.sh" \
+    && ok "caverna: missao 5 ja ativa tambem acelera" \
+    || bad "caverna: missao 5 tomada antes nunca acelera"
+_r=$( TMP="$_td20/el"; CLD=777; export TMP CLD; mkdir -p "$TMP"
+      . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      _cqpg53 "$TMP/CQUEST"; cq_pagina() { :; }; cq_tomar() { return 1; }; cq_concluir() { :; }; cq_sorteia() { echo 2; }
+      fetch_page() { echo "$1" >> "$TMP/req"; echo "<a href='/lab/alchemy/2/makePotion?r=5'>Fazer</a>" > "$TMP/SRC"; }
+      cq_elixir > /dev/null 2>&1; cq_elixir > /dev/null 2>&1
+      grep -c makePotion "$TMP/req" )
+check "elixir: missao ja ativa produz o que falta (2), uma leva por hora" 2 "$_r"
+
+# Sessao caida no meio da masmorra nao vale como golpes gastos (8h).
+_r=$( TMP="$_td20/ms"; CLD=999; export TMP CLD; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1; sleep() { :; }
+      fetch_page() { case "$1" in
+          /clandungeon/?close) echo "<a href='/clandungeon/attack/?r=1'>Golpe</a>$VIVA53" > "$2" ;;
+          /clandungeon/attack/*) echo "$LOGIN53" > "$2" ;;
+          esac; }
+      clanDungeon > /dev/null 2>&1 && printf 'feita' || printf 'adiada' )
+check "masmorra: sessao caiu depois do golpe -> adiada" "adiada" "$_r"
+
+check "login_logoff: os dois caminhos felizes marcam os numeros do painel" 2 \
+    "$(grep -c 'last_stats' "$LIB/loginlogoff.sh")"
+
+# Dia 1: a missao 11 do coliseu no maximo a cada 15 min.
+_r=$( TMP="$_td20/d1"; export TMP; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { case "$1" in +%d) echo 01 ;; *) command date "$@" ;; esac; }
+      HOUR=3; coliseum_start() { echo x >> "$TMP/col"; }; func_cat() { :; }
+      func_sleep; func_sleep; func_sleep; wc -l < "$TMP/col" | tr -d ' ' )
+check "dia 1 de madrugada: coliseum_start uma vez em tres voltas" 1 "$_r"
+
+# Liga: sem luta, uma leitura so; com luta, missao e /train antes de lutar.
+_liga53() { # lutas -> pedidos
+    ( TMP="$_td20/lg$1"; URL="http://jogo"; export TMP URL; rm -rf "$TMP"; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/league.sh" > /dev/null 2>&1
+      load_config() { :; }; sleep() { :; }
+      checkQuest() { echo "cq$1$2" >> "$TMP/req"; return 1; }
+      cq_antes() { echo cq_antes >> "$TMP/req"; }
+      player_stats() { echo /train >> "$TMP/req"; printf /train > "$TMP/.ult_req"; echo 9999; }
+      N="$1"
+      fetch_page() { echo "$1" >> "$TMP/req"; printf '%s' "$1" > "$TMP/.ult_req"; _d="${2:-$TMP/SRC}"
+          case "$1" in
+              /league/) _p="Lutas disponiveis: <b>$N</b><br/>"
+                  [ "$N" -eq 0 ] && _p="$_p Tempo restante para restauro: 05:29:02"
+                  for _e in 302 312; do _p="$_p<a href='/league/fight/$_e/?r=7'></a>Força: 50<br/>Saúde: 50<br/>Agilidade: 50<br/>Proteção: 50<br/>"; done
+                  echo "$_p" > "$_d" ;;
+              /league/fight/*) N=$((N - 1)); echo "resultado" > "$_d" ;;
+              *) : > "$_d" ;;
+          esac; }
+      league_play > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/req" )
+}
+check "liga sem luta: uma leitura, sem missao do cla e sem /train" "/league/ " "`_liga53 0`"
+check "liga com uma luta: a leitura da contagem serve para escolher e coletar" \
+    "/league/ cq_antes /train /league/ /league/fight/302/?r=7 /league/ cq2end cq1end " "`_liga53 1`"
+
+grep -q 'find "$HOME/.sls/agenda" -mmin -25' "$LIB/crono.sh" \
+    && ok "agenda: baixada por uma conta vale para as outras" \
+    || bad "agenda: cada conta pede a sua"
+
+# Caverna -cv: preco do botao, nao o saldo do cabecalho.
+_r=$( TMP="$_td20/cv"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      echo "<img src='/images/icon/silver.png' alt='s'/> 98'765 <a class='btn' href='/cave/speedUp/?r=4'>Acelerar <img src='/images/icon/silver.png' alt=''/> 250</a>" > "$TMP/SRC"
+      read_speedup_silver_cost; printf '%s' "$SPEEDUP_SILVER_COST" )
+check "caverna -cv: custo do speedUp e o do botao" 250 "$_r"
+
+# Esperas escalonadas (vao de 10s a partir de :x9:50), sem inscricao apos a luta.
+_r=$( . "$LIB/info.sh" > /dev/null 2>&1; _a=`janela_alvo 2950 10`
+      [ "$_a" -ge 2950 ] && [ "$_a" -le 2959 ] && printf ok || printf '%s' "$_a" )
+check "janela_alvo com vao: alvo entre :29:50 e :29:59" ok "$_r"
+check "Rei, Altares, Coliseu do Cla (2) e Vale: espera escalonada" 5 \
+    "$(cat "$LIB/king.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/undying.sh" | grep -c 'janela_alvo [25]950 10')"
+check "Rei: a espera nao clica no primeiro link /king/" 0 "$(grep -c "sed 's/href=/" "$LIB/king.sh")"
+check "sem apply_event depois das lutas (so a inscricao do Vale)" 1 \
+    "$(cat "$LIB/king.sh" "$LIB/altars.sh" "$LIB/flagfight.sh" "$LIB/clandmg.sh" "$LIB/undying.sh" | grep -c '^[^#]*apply_event')"
+check "Duelo: rodadas em laco, sem se chamar de novo" 0 "$(grep -c '^ *clandmgfight_start$' "$LIB/clandmg.sh")"
+
+# Vale: HP e mana maximos conhecidos dispensam o /train; um arena_fullmana.
+_r=$( TMP="$_td20/hm"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"; : > "$TMP/SRC"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { echo x >> "$TMP/req"; }; time_exit() { wait "$!" 2>/dev/null; }
+      FIXHP=5000; FIXMP=900; hpmp -fix; wc -l < "$TMP/req" | tr -d ' ' )
+check "Vale: hpmp -fix sem /train com os maximos ja lidos" 0 "$_r"
+check "Vale: um arena_fullmana so, antes da hora cheia" 1 "$(grep -c '^ *arena_fullmana$' "$LIB/undying.sh")"
+
+check "fim da luta: 'Vitoria!' sem depender do byte do acento" 1 "$(grep -c 'Vit\[^ <\]{1,8}ria!' "$LIB/info.sh")"
+
+# Arena: sem ataque nao abre a mochila; energy arena sem nonce para.
+_r=$( TMP="$_td20/ar"; export TMP; mkdir -p "$TMP"; . "$LIB/arena.sh" > /dev/null 2>&1
+      checkQuest() { return 1; }; sleep() { :; }
+      fetch_page() { echo "$1" >> "$TMP/req"; echo "<a href='/lab/wizard/'>x</a>" > "$TMP/SRC"; }
+      arena_duel > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+check "arena sem ataque: nao abre a mochila" "/arena/ " "$_r"
+_r=$( TMP="$_td20/fm"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/arena.sh" > /dev/null 2>&1
+      run_curl_exec() { echo "$1" >> "$TMP/req"; echo "sem link"; }; time_exit() { wait "$!" 2>/dev/null; }
+      arena_fullmana > /dev/null 2>&1; printf 'rc=%s pedidos=%s' "$?" "$(wc -l < "$TMP/req" | tr -d ' ')" )
+check "energy arena sem nonce: para no primeiro pedido" "rc=1 pedidos=1" "$_r"
+
+# Evento especial: a Home do descanso ainda fresca serve.
+_r=$( TMP="$_td20/se"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"; . "$LIB/specialevent.sh" > /dev/null 2>&1
+      fetch_page() { echo "$1" >> "$TMP/req"; : > "$TMP/SRC"; }
+      echo "<div class='shb_text'><a href='/marathon/'>Maratona</a></div>" > "$TMP/REST"; date +%s > "$TMP/.home_ok"
+      specialEvent > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+check "evento especial: usa a Home do descanso, sem pedir /" "/marathon/ " "$_r"
+
+check "releitura com alvo cinza: pausa sempre (seis modulos)" 0 \
+    "$(cat "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/clandmg.sh" "$LIB/clanfight.sh" "$LIB/flagfight.sh" "$LIB/coliseum.sh" | grep -c '|| sleep 1$')"
+
+# HP maximo: /train sem resposta mantem o que havia.
+_r=$( TMP="$_td20/fa"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      FIXHP=""; echo 4000 > "$TMP/FULL"
+      run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; }
+      full_atualizar "$TMP/FULL"; printf '%s %s' "$(cat "$TMP/FULL")" "$(ls "$TMP" | grep -c tmp)" )
+check "/train sem resposta nao zera o HP maximo" "4000 0" "$_r"
+grep -q 'full_atualizar "\$_br_full"' "$LIB/crono.sh" \
+    && ok "retomada de batalha: mesmo HP maximo protegido" \
+    || bad "retomada de batalha: /train sem resposta zera o HP maximo"
+
+# /train a cada 15 min, e de novo quando o nivel muda.
+_r=$( TMP="$_td20/tr"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo x >> "$TMP/req"; echo "(5000) Energia: 2100"; }
+      FIXHP=""; ACC_ENE=""
+      fetch_train_stats; fetch_train_stats; printf '%s ' "$(wc -l < "$TMP/req" | tr -d ' ')"
+      ACC_LVL=40; parse_status "icon/level.png' alt=''/> 41"; fetch_train_stats
+      printf '%s %s' "$(wc -l < "$TMP/req" | tr -d ' ')" "$FIXHP" )
+check "/train: uma leitura por 15 min, e outra ao subir de nivel" "1 2 5000" "$_r"
+
+# Troca: resposta de login nao gasta o dia.
+_r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+      FUNC_trade_dias=1
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 2'000'000 <a href='/trade/exchange/gold/100?r=3'>x</a>$VIVA53" > "$TMP/SRC" ;;
+          *) echo "$LOGIN53" > "$TMP/SRC" ;;
+          esac; }
+      func_trade > /dev/null 2>&1; [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
+check "troca com resposta de login: o dia fica em aberto" "em_aberto" "$_r"
+
+rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
+unset -f _cld53 _cqpg53 _liga53
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

@@ -10,16 +10,9 @@ sls_play() {
     # Coliseu do Cla, Torneio e Altares — e um restart perto da janela fazia
     # a conta perder o evento inteiro.
     #
-    # Agora a variavel e carregada do arquivo (leitura embutida, sem
-    # processo). Se o que estiver la nao for um numero — o clan_id usa o
-    # mesmo arquivo como rascunho da pagina /clan quando falha — refaz a
-    # consulta.
-    if [ ! -s "$TMP/CLD" ]; then
-        clan_id
-    elif [ -z "$CLD" ]; then
-        read -r CLD < "$TMP/CLD" 2>/dev/null
-        case "$CLD" in ''|*[!0-9]*) clan_id ;; esac
-    fi
+    # O clan_id carrega a variavel do arquivo e so vai a rede no intervalo
+    # dele (uma hora), com ou sem cla.
+    [ -n "$CLD" ] || clan_id
 
     # BATALHA PENDENTE VEM ANTES DE TUDO.
     #

@@ -124,44 +124,42 @@ cq_tomar() {
     return $_tomou
 }
 
-# DIAGNOSTICO TEMPORARIO — COMO O JOGO ESCREVE O LINK DE CONCLUIR.
+# cq_falta <id>: quanto falta na missao que esta com ESTA conta.
 #
-# Nos logs de 15/09 nenhuma das 17 contas registrou "Missao do cla concluida",
-# e nas paginas salvas nao havia nenhum link take/end/help: so "delete"
-# (cancelar) e o progresso em andamento ("6 de 15"). Ou seja, ate agora
-# ninguem viu a pagina de uma missao CHEIA — e sem ela nao da para saber se o
-# link de concluir tem mesmo a forma que o bot procura.
+# A missao tomada numa volta anterior (ou pelo cq_antes, logo antes) nao tem
+# mais link de tomar, e a caverna, o elixir e o mercador achavam que nao havia
+# missao: a caverna nao acelerava e a producao nunca andava.
 #
-# Entao: a primeira vez que houver missao com o progresso cheio e o bot nao
-# achar link de concluir, a pagina fica guardada em $TMP/cq_completa.html. Uma
-# copia so, e o teste do arquivo vem antes de qualquer processo — depois de
-# capturada, isto nao custa nada. Sai do codigo quando a duvida for resolvida.
-cq_tem_completa() {
-    [ -s "$TMP/CQUEST" ] || return 1
-    sed 's/<[^>]*>/ /g' "$TMP/CQUEST" 2>/dev/null | awk -v ap="'" '
-        { todo = todo " " $0 }
-        END {
-            # Separador de milhar do jogo ("44150 de 150000" vem como
-            # "44'"'"'150 de 150'"'"'000").
-            gsub("[.," ap "]", "", todo)
-            n = split(todo, p, /[Pp]rogresso:/)
-            for (i = 2; i <= n; i++) {
-                if (!match(p[i], /^[^0-9]*[0-9]+[^0-9]+de[^0-9]+[0-9]+/)) continue
-                t = substr(p[i], RSTART, RLENGTH)
-                feito = t; sub(/^[^0-9]*/, "", feito); sub(/[^0-9].*$/, "", feito)
-                alvo = t;  sub(/.*de[^0-9]+/, "", alvo); sub(/[^0-9].*$/, "", alvo)
-                if (alvo + 0 > 0 && feito + 0 >= alvo + 0) { print "cheia"; exit }
+# O "Cancelar missao" (/quest/delete/N/) nao prova nada: conta com cargo o ve
+# nas missoes de todo o cla. So quem executa ou ajuda tem o botao "Va la", com
+# o caminho da atividade (/league/, /arena/, /lab/alchemy/...), entre o
+# "Trofeu" e o cancelar; concluida, ele vira o link de concluir. Conferido nas
+# paginas das 17 contas em 16/09 (inclusive uma missao concluida):
+#
+#   Alquimista Faça 2 Elixires Progresso: 0 de 2 Troféu: 1 645
+#   Interpretada por: ... Ajudante: ... <a href='/lab/alchemy/'>Vá lá</a>
+#   <a href='/clan/ID/quest/delete/7/?r=N'>Cancelar missão</a>
+#
+# Devolve 1 (e nada imprime) quando a missao nao esta com a conta ou acabou.
+cq_falta() {
+    cq_pagina || return 1
+    tr '<' '\n' < "$TMP/CQUEST" | awk -v id="$1" '
+        /^a [^>]*\/quest\/delete\/[0-9]+\// {
+            n = $0; sub(/.*\/quest\/delete\//, "", n); sub(/\/.*/, "", n)
+            if (n == id) {
+                p = txt; sub(/.*Progresso: */, "", p)
+                feito = p + 0; sub(/^[0-9]+ *de */, "", p); alvo = p + 0
+                if (vai && alvo > feito) { print alvo - feito; ok = 1 }
+                exit
             }
-        }' | grep -q cheia
+            txt = ""; vai = 0; next
+        }
+        /Trof/ { vai = 0 }
+        /^a / && !/\/user\/|\/clan\// { vai = 1 }
+        { l = $0; sub(/^[^>]*>/, " ", l); gsub(/[ \t\r]+/, " ", l); txt = txt l }
+        END { exit !ok }'
 }
-
-cq_guardar_completa() {
-    [ -f "$TMP/cq_completa.html" ] && return 0
-    cq_tem_completa || return 0
-    cp "$TMP/CQUEST" "$TMP/cq_completa.html" 2>/dev/null
-    printf "Missao do cla com progresso cheio e sem link de concluir - pagina guardada em %s\n" \
-        "$TMP/cq_completa.html"
-}
+cq_ativa() { cq_falta "$1" > /dev/null; }
 
 # cq_concluir
 # Recolhe as missoes ja concluidas.
@@ -237,7 +235,13 @@ cq_sorteia() {
 # encerra. Sem missao ativa nao produz nada.
 cq_elixir() {
     [ -n "$CLD" ] || return 1
-    cq_tomar elixir || return 1
+    # Tomada agora ou numa volta anterior: produz o que falta (ver cq_falta).
+    # Ja ativa, no maximo uma leva por hora: uma producao que nao contou nao
+    # vira gasto a cada checklist.
+    cq_tomar elixir || ativ_liberada cq_elixir 60 || return 1
+    _max=`cq_falta 7` || { unset _max; return 1; }
+    [ "$_max" -le 3 ] 2>/dev/null || _max=3
+    ativ_marcar cq_elixir
 
     fetch_page "/lab/alchemy/" || return 1
     _i=`cq_sorteia 4`
@@ -253,27 +257,21 @@ cq_elixir() {
         4) printf "Elixir de protecao\n" ;;
     esac
 
-    # TRES POCOES, NAO DUAS.
+    # O QUE FALTA NA MISSAO, NAO UM NUMERO FIXO.
     #
-    # CORRECAO: a missao pede TRES elixires e a funcao clicava duas vezes —
-    # produzia, rebuscava o link e produzia de novo. Faltando o terceiro, a
-    # missao nunca fechava e o slot do cla ficava ocupado ate expirar.
-    # E o mesmo defeito que o cq_mercador ja teve e que foi corrigido la;
-    # aqui passou batido. Agora os dois usam o mesmo laco, e cada volta
-    # rebusca o link porque o nonce ?r= muda a cada producao.
-    #
-    # O custo e o minimo da missao, que e para ser pago: sem produzir, a
-    # missao nao conclui.
+    # Eram tres cliques sempre; a pagina real (16/09) pede "Faça 2 Elixires":
+    # um elixir a mais por missao. Cada volta rebusca o link porque o nonce ?r=
+    # muda a cada producao. O custo e o minimo da missao, que e para ser pago.
     _n=1
-    while [ "$_n" -le 3 ]; do
+    while [ "$_n" -le "$_max" ]; do
         [ -n "$_cl" ] || break
         fetch_page "$_cl"
-        printf "Elixir %s de 3\n" "$_n"
+        printf "Elixir %s de %s\n" "$_n" "$_max"
         _n=$((_n + 1))
-        [ "$_n" -le 3 ] || break
+        [ "$_n" -le "$_max" ] || break
         _cl=`grep -o -E "/lab/alchemy/${_i}/makePotion[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     done
-    unset _n
+    unset _n _max
 
     cq_concluir 2>/dev/null
     unset _i _cl
@@ -285,7 +283,11 @@ cq_elixir() {
 # troca de prata: e /coliseum/merchant/.
 cq_mercador() {
     [ -n "$CLD" ] || return 1
-    cq_tomar mercador || return 1
+    # Mesma regra do cq_elixir: tomada agora, ou ja ativa (uma leva por hora).
+    cq_tomar mercador || ativ_liberada cq_mercador 60 || return 1
+    _max=`cq_falta 8` || { unset _max; return 1; }
+    [ "$_max" -le 3 ] 2>/dev/null || _max=3
+    ativ_marcar cq_mercador
 
     fetch_page "/coliseum/merchant/" || return 1
     _i=`cq_sorteia 2`
@@ -297,20 +299,18 @@ cq_mercador() {
         2) printf "Produzindo ervas\n" ;;
     esac
 
-    # ALINHADO AO ORIGINAL: TRES producoes, nao duas.
-    #
-    # A missao do mercador pede tres itens; a nossa versao clicava duas vezes
-    # e a missao nunca fechava. Cada volta rebusca o link, porque o nonce ?r=
-    # muda a cada producao.
+    # O que falta na missao ("Obtenha 3 pedras ou ervas" na pagina real).
+    # Cada volta rebusca o link, porque o nonce ?r= muda a cada producao.
     _n=1
-    while [ "$_n" -le 3 ]; do
+    while [ "$_n" -le "$_max" ]; do
         [ -n "$_cl" ] || break
         fetch_page "$_cl"
-        printf "Producao %s de 3\n" "$_n"
+        printf "Producao %s de %s\n" "$_n" "$_max"
         _n=$((_n + 1))
-        [ "$_n" -le 3 ] || break
+        [ "$_n" -le "$_max" ] || break
         _cl=`grep -o -E "/coliseum/merchant/${_i}/startMaking[?]r=[0-9]+&ref=lab" "$TMP/SRC" | sed -n 1p`
     done
+    unset _max
     unset _n
 
     cq_concluir 2>/dev/null

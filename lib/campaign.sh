@@ -42,6 +42,10 @@ campaign_func() {
                 _cp_ok=0
             fi
         fi
+        # Sem relogio numa pagina que nao e do jogo com a conta logada (sessao
+        # caida, erro do servidor): nao diz se a campanha acabou. Sem isto a de
+        # login virava as 8h de campanha feita.
+        [ -n "$_cp" ] || [ "`sessao_estado "$TMP/SRC"`" = viva ] || _cp_ok=0
         if [ -n "$_cp" ]; then
             relogio_anotar campanha $(( _cp + 60 ))
             printf "Campanha: a proxima em %s min\n" $(( _cp / 60 ))

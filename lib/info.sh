@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.63"
+versionNum="3.9.64"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -949,7 +949,7 @@ luta_acabou() {
             # resultado da batalha ANTERIOR. Sem estes textos, a saida esperava
             # os 15s relendo a pagina.
             if [ "${_lt_lutou:-0}" = 1 ] && \
-               grep -q -F -e 'Batalha finalizada!' -e 'Vitória!' -e 'Luta acabou!' "$1" 2>/dev/null; then
+               grep -q -E 'Batalha finalizada!|Vit[^ <]{1,8}ria!|Luta acabou!' "$1" 2>/dev/null; then
                 LUTA_MOTIVO="o jogo declarou o fim da batalha"
                 batalha_limpar
                 unset _lz_e; return 0
@@ -1006,14 +1006,18 @@ full_atualizar() { # arquivo_do_HP_maximo
         ''|0|*[!0-9]*) ;;
         *) printf '%s\n' "$FIXHP" > "$1" 2>/dev/null; return 0 ;;
     esac
+    # Num temporario: o /train sem resposta deixava o arquivo VAZIO, e com HP
+    # maximo zero a conta nao cura na luta. Assim fica o que havia.
     (
-        run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$1"
+        run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$1.tmp"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
+    if [ -s "$1.tmp" ]; then mv -f "$1.tmp" "$1"; else rm -f "$1.tmp"; fi
     return 0
 }
 
-# Alvo da inscricao, escalonado por conta: MMSS base mais 0 a 29 segundos.
+# Alvo da inscricao, escalonado por conta: MMSS base mais 0 a VAO-1 segundos
+# (VAO padrao 30).
 #
 # Todas as contas do aparelho acordavam no MESMO segundo (:59:30) e pediam o
 # enterFight juntas — N inscricoes do mesmo IP no mesmo instante, o padrao de
@@ -1021,8 +1025,12 @@ full_atualizar() { # arquivo_do_HP_maximo
 # por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
 # :59:30 de antes: a base e o inicio do minuto. Conferido no Torneio de
 # 16/09 11:00: as contas inscritas entre :59:00 e :59:29 lutaram todas.
-janela_alvo() { # MMSS_base -> MMSS
-    printf '%s' $(( $1 + $$ % 30 ))
+#
+# O Rei, os Altares, o Coliseu do Cla e o Vale usam VAO 10 a partir de :x9:50:
+# a espera deles pela luta rele a pagina a cada 2-3s, e 30s adiantados eram
+# mais pedidos do que a rajada que o escalonamento evita.
+janela_alvo() { # MMSS_base [VAO] -> MMSS
+    printf '%s' $(( $1 + $$ % ${2:-30} ))
 }
 
 # ESPERA ATE UMA HORA DO RELOGIO — NUNCA A DA HORA SEGUINTE.
@@ -1081,7 +1089,8 @@ ressuscitar() {
 }
 
 hpmp() {
-    if echo "$@" | grep -q '\-fix'; then
+    # HP e mana maximos ja lidos neste processo: sem outro /train.
+    if echo "$@" | grep -q '\-fix' && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
         (
             run_curl_exec "$URL/train" > "$TMP/TRAIN"
         ) </dev/null > /dev/null 2>&1 &
@@ -1158,7 +1167,12 @@ parse_status() {
     # folga nao deixa o seletor pular para um numero vizinho.
     ACC_HP=`printf '%s' "$_pg" | grep -o -E "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
     ACC_MP=`printf '%s' "$_pg" | grep -o -E "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
+    _lvl_ant="$ACC_LVL"
     ACC_LVL=`printf '%s' "$_pg" | grep -o -E "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" | grep -o -E '[0-9]{1,4}$' | head -n1`
+    # Subiu de nivel: HP maximo e teto de energia mudaram (ver fetch_train_stats).
+    [ -n "$_lvl_ant" ] && [ -n "$ACC_LVL" ] && [ "$_lvl_ant" != "$ACC_LVL" ] && \
+        rm -f "$TMP/last_train" 2>/dev/null
+    unset _lvl_ant
 
     # Ouro e prata: guarda o texto como o jogo mostra (pode vir "408,1M").
     ACC_GOLD=`printf '%s' "$_pg" | grep -o -E "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
@@ -1230,14 +1244,25 @@ fetch_train_stats() {
     # valido, entao mante-lo nao mente — e evita perder o percentual de HP a
     # cada oscilacao de rede. Os dois usos dele ja sao protegidos por
     # [ -n "$FIXHP" ].
+    #
+    # A CADA 15 MIN, NAO A CADA 3. O /train so traz o HP maximo e o teto de
+    # energia, que so mudam ao subir de nivel: eram 480 pedidos por dia por
+    # conta. O parse_status apaga o last_train quando o nivel muda, e a leitura
+    # seguinte ja sai. Sem HP maximo conhecido (entrada do bot), le sempre.
+    if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train 15; then
+        return 0
+    fi
     ACC_ENE=""
 
     _t=`run_curl "${URL}/train" 2>/dev/null`
     [ -n "$_t" ] || return 1
     # Pagina de erro ou de login nao traz o HP maximo: mantem o ultimo lido
-    # (as lutas usam o FIXHP; vazio zerava o limiar de cura).
+    # (as lutas usam o FIXHP; vazio zerava o limiar de cura). So a leitura
+    # que trouxe o HP maximo conta para os 15 min.
     _fx=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
-    [ -n "$_fx" ] && FIXHP=$_fx
+    [ -n "$_fx" ] && FIXHP=$_fx && date +%s > "$TMP/last_train" 2>/dev/null
+    _fx=`printf '%s' "$_t" | grep -o -E ': [0-9]+' | sed -n '5s/: //p'`
+    [ -n "$_fx" ] && FIXMP=$_fx
     unset _fx
     # CORRECAO (energia sempre vazia): o sed era `s@.*:? ?@@`. Como `:?` e ` ?`
     # sao ambos opcionais, o `.*` guloso casava a string INTEIRA ("Energia:

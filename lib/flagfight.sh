@@ -148,7 +148,8 @@ flagfight_fight() {
       if alvo_grey "$src_ram" || [ ! -s ATK ]; then
         fetch_page "/flagfight" "$src_ram"
         cf_access
-        [ -s ATK ] || sleep 1
+        # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+        sleep 1
       else
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
@@ -159,8 +160,8 @@ flagfight_fight() {
   rm -f "$src_ram" "$full_ram"
   unset src_ram full_ram ACCESS cf_access
   printf "Flagfight ok\n"
+  # Sem apply_event: inscrevia nas Bandeiras seguintes (ver king.sh).
   sleep 10s
-  apply_event flagfight
   [ -t 1 ] && clear
 }
 

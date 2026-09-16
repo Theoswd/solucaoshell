@@ -85,9 +85,11 @@ coliseum_fight() {
             # baixa, a cura era tentada quase a cada volta. Sairam para antes
             # do laco, onde sao iniciados uma vez so.
 
-            USH=`grep -o -E '(hp)[^A-z0-9]{1,4}[0-9]{2,5}' "$src_ram" | grep -o -E '[0-9]{2,5}' | sed 's,\ ,,g'`
+            # Mesmo padrao dos outros modulos: 1 a 6 digitos (o {2,5} lia
+            # 123456 como 12345) e a primeira ocorrencia so. O USER que vinha
+            # aqui nao era usado por ninguem.
+            USH=`grep -o -E '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}' "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
             ENH=`grep -o -E '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}' "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p'`
-            USER=`grep -o -E '([[:upper:]][[:lower:]]{0,15}( [[:upper:]][[:lower:]]{0,13})?)[[:space:]][^[:alnum:]]s' "$src_ram" | sed -n 's,\ [<]s,,;s,\ ,_,;2p'`
 
             ATK=`grep -o -E '/coliseum/atk/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
             ATKRND=`grep -o -E '/coliseum/atkrnd/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
@@ -103,11 +105,7 @@ coliseum_fight() {
                 sessao_marcar
                 printf "Em batalha - HP: %s\n" "$USH"
                 # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-                # O USH daqui exige 2 a 5 digitos: com a vida entre 1 e 9 ele
-                # viria vazio e contaria como zero — a conta VIVA seria dada
-                # por morta. Para a morte, a leitura aceita de 1 a 6 digitos.
-                _col_hp=`grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
-                if luta_hp "$_col_hp"; then
+                if luta_hp "$USH"; then
                   # ANTES DE ENCERRAR, TENTA VOLTAR.
                   #
                   # Morrer nao e o mesmo que sair do evento: havendo unrip na
@@ -236,7 +234,8 @@ coliseum_fight() {
                     ) </dev/null > /dev/null 2>&1 &
                     time_exit 17
                     cl_access
-                    [ -n "$ATK" ] || sleep 1
+                    # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+                    sleep 1
                 else
                     _resta=$(( LA - time_since_last_atk ))
                     [ "$_resta" -gt 0 ] && sleep "$_resta"

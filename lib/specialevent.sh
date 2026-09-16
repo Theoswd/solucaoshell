@@ -5,10 +5,19 @@ specialEvent() {
     # O worker nao reinicia: sem isto, com a Home ja sem evento, o ramo e o
     # link do ultimo evento eram repetidos.
     unset EVENT event_link
-    fetch_page "/"
+    # A Home que o descanso gravou ha menos de 5 min (com a sessao viva) ja
+    # traz o banner do evento: sem pedir de novo.
+    _se_pg="$TMP/REST"
+    _se_ok=0; { read -r _se_ok < "$TMP/.home_ok"; } 2>/dev/null
+    case "$_se_ok" in ''|*[!0-9]*) _se_ok=0 ;; esac
+    _se_ok=$(( `date +%s` - _se_ok ))
+    if [ ! -s "$_se_pg" ] || [ "$_se_ok" -lt 0 ] || [ "$_se_ok" -ge 300 ]; then
+        fetch_page "/"
+        _se_pg="$TMP/SRC"
+    fi
 
-    if grep -q "shb_text" "$TMP/SRC"; then
-        event_link=`grep -o -E "<div class='shb_text'><a href='[^']+'" "$TMP/SRC" | sed -E "s/^.*href='([^']+)'.*$/\1/" | sed -n '1p'`
+    if grep -q "shb_text" "$_se_pg"; then
+        event_link=`grep -o -E "<div class='shb_text'><a href='[^']+'" "$_se_pg" | sed -E "s/^.*href='([^']+)'.*$/\1/" | sed -n '1p'`
 
         if [ -n "$event_link" ]; then
             EVENT=`echo "$event_link" | cut -d'/' -f2`

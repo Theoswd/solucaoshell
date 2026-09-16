@@ -164,7 +164,8 @@ clandmgfight_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cf_access
-        [ -s ATK ] || sleep 1
+        # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+        sleep 1
       else
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
@@ -178,9 +179,14 @@ clandmgfight_fight() {
   [ -t 1 ] && clear
 }
 
+# RODADAS EM LACO, UMA INSCRICAO POR RODADA.
+#
+# Depois de cada luta a funcao se chamava de novo com fetch_page enterFight +
+# apply_event (outro GET e outro enterFight) + o enterFight do ramo: tres
+# inscricoes por rodada. O apply_event do inicio repetia a do ramo das :25.
 clandmgfight_start() {
   cd "$TMP" || return 1
-  apply_event clandmgfight
+  while :; do
   case `date +%H:%M` in
   09:2[5-9]|21:2[5-9])
     full_atualizar "$TMP/FULL"
@@ -221,8 +227,6 @@ clandmgfight_start() {
     done
     clandmgfight_fight
     sleep 10s
-    fetch_page /clandmgfight/enterFight
-    clandmgfight_start
     ;;
   09:[3-4][0-9]|21:[3-4][0-9])
     printf "The clan duel will be started...\n"
@@ -246,8 +250,8 @@ clandmgfight_start() {
     done
     clandmgfight_fight
     sleep 10s
-    fetch_page /clandmgfight/enterFight
-    clandmgfight_start
     ;;
+  *) break ;;
   esac
+  done
 }

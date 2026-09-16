@@ -115,8 +115,9 @@ undying_fight() {
 
   unset cf_access luta_confirmada_fim
   printf "Undying ok\n"
+  # Sem apply_event: inscrevia no Vale seguinte (ver king.sh). A inscricao e
+  # a do undying_start.
   sleep 15s
-  apply_event undying
 }
 
 undying_start() {
@@ -131,9 +132,9 @@ undying_start() {
     apply_event undying
     printf "Valley of the Immortals will be started... %s\n" "`date +%Hh:%Mm`"
 
-    until (case `date +%M` in (5[5-9]) exit 1;; esac); do
-      sleep 2
-    done
+    # Ate :59:50-:59:59, escalonado por conta (janela_alvo, em info.sh). O
+    # laco abaixo ainda espera a hora virar antes do primeiro golpe.
+    espera_janela 5500 `janela_alvo 5950 10`
 
     hpmp -now
 
@@ -174,7 +175,8 @@ undying_start() {
       sleep 0.3s
     done
 
-    arena_fullmana
+    # O arena_fullmana ja saiu antes da hora cheia (acima). Repetido aqui eram
+    # tres pedidos depois do inicio do Vale, atrasando o primeiro golpe.
     undying_fight
     ;;
   esac

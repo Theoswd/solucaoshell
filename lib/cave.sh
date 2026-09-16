@@ -11,17 +11,16 @@ SILVER_SPENT_TOTAL=0
 # gasto e o limite de ouro foram REMOVIDOS — nao ha mais caminho de codigo
 # que chegue a essa compra. O monstro continua sendo evitado, como ja era.
 
+# Preco do speedUp: o icone de prata logo DEPOIS do link. O segundo grep
+# recebia o arquivo inteiro e ignorava o pipe: lia o saldo do cabecalho, e
+# "98'765" cortado no apostrofo virava custo 98. Sem preco perto do link, 0.
+# ponytail: formato do botao nao conferido em pagina real; so o modo -cv usa.
 read_speedup_silver_cost() {
-    SPEEDUP_SILVER_COST=`
-        grep -o -E '/cave/speedUp/[^ ]+' "$TMP/SRC" \
-        | head -n1 \
-        | grep -o -E "silver.png[^0-9]*[0-9][0-9,]*[KMB]?" "$TMP/SRC" \
-        | grep -v -E '[KMB]' \
-        | head -n1 \
-        | sed -E 's/.*silver.png[^0-9]*([0-9][0-9,]*).*/\1/' \
-        | tr -d ','
-    `
-    SPEEDUP_SILVER_COST=${SPEEDUP_SILVER_COST:-0}
+    _sc=`grep -o -E "/cave/speedUp/[^<]*(<[^>]*>[^<]*){0,4}<[^>]*silver\.png[^>]*>[^0-9<]{0,40}[0-9][0-9.,']*[KMBkmb]?" "$TMP/SRC" \
+         | head -n1 | grep -o -E "[0-9][0-9.,']*[KMBkmb]?$"`
+    SPEEDUP_SILVER_COST=`valor_num "$_sc"`
+    case "$SPEEDUP_SILVER_COST" in ''|*[!0-9]*) SPEEDUP_SILVER_COST=0 ;; esac
+    unset _sc
 }
 
 check_cave_limits() {
@@ -124,7 +123,8 @@ cave_start() {
 cave_routine() {
     printf "Cave\n"
 
-    if checkQuest 5 apply; then
+    # Tomada agora ou antes (o cq_antes caverna ja a toma): ver cq_falta.
+    if checkQuest 5 apply || cq_ativa 5; then
         count=0
         printf "Quests available speeding up mine to complete!\n"
     else

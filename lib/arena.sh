@@ -34,6 +34,14 @@ arena_duel() {
         sleep 0.6s
     done
 
+    # Sem ataque nao ha item novo na mochila: 48 aberturas por dia a toa.
+    if [ "$count" -eq 0 ]; then
+        checkQuest 3 end
+        checkQuest 4 end
+        printf "Arena ok\n"
+        return 0
+    fi
+
     fetch_page "/inv/bag/"
     SELL=`grep -o -E '(/inv/bag/sellAll/1/[?]r[=][0-9]+)' "$TMP/SRC" | sed -n '1p'`
     # CORRECAO: sem nada a vender o SELL fica vazio e o fetch_page ""
@@ -59,11 +67,15 @@ arena_fullmana() {
         run_curl_exec "${URL}/arena/quit" | sed "s/href='/\n/g" | grep 'attack/1' | head -n1 | awk -F/ '{ print $5 }' | tr -cd '[:digit:]' > "$TMP/ARENA"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
+    # Sem o nonce da pagina, "attack/1/?r=" e "lastPlayer/?r=" sao pedidos
+    # invalidos: para aqui.
+    [ -s "$TMP/ARENA" ] || { printf "Energy arena: sem ataque na pagina\n"; return 1; }
     printf " - 1 Attack...\n"
     (
         run_curl_exec "${URL}/arena/attack/1/?r=`cat "$TMP/ARENA"`" | sed "s/href='/\n/g" | grep 'arena/lastPlayer' | head -n1 | awk -F\' '{ print $1 }' | tr -cd '[:digit:]' > "$TMP/ATK1"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
+    [ -s "$TMP/ATK1" ] || { printf "Energy arena: sem ataque cheio na pagina\n"; return 1; }
     printf " - Full Attack...\n"
     (
         run_curl_exec "${URL}/arena/lastPlayer/?r=`cat "$TMP/ATK1"`&fullmana=true" > /dev/null

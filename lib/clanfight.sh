@@ -177,7 +177,8 @@ clanfight_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cf_access
-        [ -s ATK ] || sleep 1
+        # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+        sleep 1
       else
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"

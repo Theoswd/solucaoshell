@@ -1,6 +1,21 @@
 # shellcheck disable=SC2034
-fetch_available_fights() {
+
+# PAGINA DA LIGA EM $TMP/LEAGUE_SRC, LIDA SO QUANDO PRECISA.
+#
+# A contagem de lutas, a recompensa e a escolha do adversario pediam /league/
+# cada uma: sem luta, tres leituras seguidas; em cada luta ou pulo, duas. A
+# leitura guardada vale enquanto nada sair depois dela — o nonce (?r=) dos
+# links morre com a requisicao seguinte (ver cq_ultima_foi_ela). Toda leitura
+# da Liga passa por aqui, entao o arquivo e sempre a mais nova.
+liga_ler() {
+    _ll=""; { read -r _ll < "$TMP/.ult_req"; } 2>/dev/null
+    if [ "$_ll" = "/league/" ] && [ -s "$TMP/LEAGUE_SRC" ]; then unset _ll; return 0; fi
+    unset _ll
     fetch_page "/league/" "$TMP/LEAGUE_SRC"
+}
+
+fetch_available_fights() {
+    liga_ler
 
     if [ -f "$TMP/LEAGUE_SRC" ]; then
         printf "Looking for available fights...\n"
@@ -129,7 +144,6 @@ league_restauro_pendente() {
 # nem toma a missao do cla (lutas que nao vao acontecer) nem marca o intervalo.
 liga_do_dia() {
     league_restauro_pendente && return 1
-    cq_antes liga 2>/dev/null
     league_play 2>/dev/null
     ativ_marcar liga
 }
@@ -148,7 +162,8 @@ liga_fora_da_inscricao() {
 #   retorno 0 = coleta confirmada (o botao sumiu)
 #   retorno 1 = recompensa ainda indisponivel ou coleta nao confirmada
 league_collect_reward() {
-    fetch_page "/league/"
+    liga_ler
+    cp "$TMP/LEAGUE_SRC" "$TMP/SRC" 2>/dev/null
     _lr_click=`grep -o -E "/league/takeReward/\?r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -z "$_lr_click" ]; then
         unset _lr_click
@@ -162,12 +177,12 @@ league_collect_reward() {
     # aceitou a coleta. So entao a recompensa e dada como recebida.
     # Releitura sem resposta nao confirma nada: a pagina vazia tambem "nao
     # tem o botao".
-    if ! fetch_page "/league/" || [ ! -s "$TMP/SRC" ]; then
+    if ! fetch_page "/league/" "$TMP/LEAGUE_SRC" || [ ! -s "$TMP/LEAGUE_SRC" ]; then
         printf "[LIGA] Sem resposta ao conferir a coleta. Fica pendente.\n"
         unset _lr_click
         return 1
     fi
-    if grep -q -o -E "/league/takeReward/\?r=[0-9]+" "$TMP/SRC"; then
+    if grep -q -o -E "/league/takeReward/\?r=[0-9]+" "$TMP/LEAGUE_SRC"; then
         printf "[LIGA] Falha ao coletar recompensa. Nova tentativa sera programada.\n"
         unset _lr_click
         return 1
@@ -186,11 +201,15 @@ league_play() {
     fi
     printf "League\n"
     load_config
-    checkQuest 2 apply
-    checkQuest 1 apply
 
-    PLAYER_STRENGTH=`player_stats`
+    # LUTAS PRIMEIRO. Sem luta no dia, as missoes 1 e 2 do cla ocupariam vaga
+    # a toa e o /train seria lido para nada (o mesmo cuidado do career.sh). O
+    # cq_antes recolhe as concluidas e toma as duas.
     fetch_available_fights
+    if [ "${AVAILABLE_FIGHTS:-0}" -gt 0 ]; then
+        cq_antes liga 2>/dev/null
+        PLAYER_STRENGTH=`player_stats`
+    fi
 
     # Sem lutas na entrada = ciclo de cinco ja concluido numa passagem
     # anterior: ha (ou havera) recompensa. Marca como pendente para a coleta
@@ -230,14 +249,16 @@ league_play() {
     case "$PLAYER_STRENGTH" in
         ''|*[!0-9]*)
             PLAYER_STRENGTH=""
-            printf "[LIGA] Forca do personagem nao lida - lutas na proxima passagem.\n" ;;
+            [ "${AVAILABLE_FIGHTS:-0}" -gt 0 ] && \
+                printf "[LIGA] Forca do personagem nao lida - lutas na proxima passagem.\n" ;;
     esac
     while [ -n "$PLAYER_STRENGTH" ] && [ "$AVAILABLE_FIGHTS" -gt 0 ] && [ "$_lg_voltas" -lt 40 ] && \
           [ "`date +%s`" -lt "$_lg_fim" ]; do
         _lg_voltas=$((_lg_voltas + 1))
         case "$action" in
             check_fights)
-                fetch_page "/league/"
+                liga_ler
+                cp "$TMP/LEAGUE_SRC" "$TMP/SRC" 2>/dev/null
                 click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
 
                 if [ -n "$click" ]; then
@@ -307,7 +328,7 @@ league_play() {
                     j=$((j + 2))
                     last_click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
                     ENEMY_NUMBER=`echo "$last_click" | grep -o -E '[0-9]+' | head -n 1`
-                    fetch_available_fights
+                    # Pular nao muda o contador: a pagina lida continua valendo.
                     if [ -z "$last_click" ] && [ "$AVAILABLE_FIGHTS" -gt 1 ]; then
                         printf "Reached the last enemy. Attacking and using a potion...\n"
                         j=$((j - 2))
@@ -388,10 +409,12 @@ league_play() {
         unset LEAGUE_RESTAURO_MIN
     fi
 
+    # Missoes da Liga so tem o que encerrar se houve luta nesta passagem.
+    if [ "${fights_done:-0}" -gt 0 ]; then
+        checkQuest 2 end
+        checkQuest 1 end
+    fi
     unset click ENEMY_NUMBER PLAYER_STRENGTH E_STRENGTH AVAILABLE_FIGHTS fights_done enemy_index j
-
-    checkQuest 2 end
-    checkQuest 1 end
 
     printf "League Routine Completed ok\n"
 }

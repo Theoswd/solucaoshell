@@ -145,7 +145,8 @@ clancoliseum_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cf_access
-        [ -s ATK ] || sleep 1
+        # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+        sleep 1
       else
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
@@ -207,17 +208,11 @@ clancoliseum_start() {
     time_exit 17
     printf "Clan coliseum will be started...\n"
 
+    # Ate :x9:50-:x9:59, escalonado por conta (janela_alvo, em info.sh):
+    # todas acordavam no mesmo segundo da hora cheia.
     case `date +%H:%M` in
-    10:2[5-9])
-      while [ "`date +%M`" -gt "24" ] && [ "`date +%M`" -lt "30" ]; do
-        sleep 3s
-      done
-      ;;
-    14:5[5-9])
-      while awk -v minute="`date +%M`" 'BEGIN { exit !(minute != 00) }' && [ "`date +%M`" -gt "54" ]; do
-        sleep 3s
-      done
-      ;;
+    10:2[5-9]) espera_janela 2500 `janela_alvo 2950 10` ;;
+    14:5[5-9]) espera_janela 5500 `janela_alvo 5950 10` ;;
     esac
 
     (

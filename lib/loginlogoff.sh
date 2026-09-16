@@ -19,6 +19,9 @@ login_logoff() {
         parse_status "$PAGE"
         unset _acc PAGE
         messages_info
+        # Painel ja atualizado com esta leitura: o atualiza_stats da varredura
+        # logo depois pedia /user e /train de novo.
+        date +%s > "$TMP/last_stats" 2>/dev/null
         clan_id
         return 0
     fi
@@ -100,6 +103,7 @@ login_logoff() {
         parse_status "$PAGE"
         unset _acc
         messages_info
+        date +%s > "$TMP/last_stats" 2>/dev/null
         clan_id
         return 0
     fi

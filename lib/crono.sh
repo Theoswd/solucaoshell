@@ -126,7 +126,12 @@ func_sleep() {
 
     if [ "`date +%d`" -eq 01 ] 2>/dev/null; then
         if [ "${HOUR:-99}" -lt 9 ] 2>/dev/null; then
-            coliseum_start
+            # Missao 11 do dia 1: o coliseum_start pede /quest/ mesmo sem ela.
+            # A cada volta eram ~500 pedidos na madrugada; 15 min bastam.
+            if ativ_liberada missao11 15; then
+                coliseum_start
+                ativ_marcar missao11
+            fi
             i=60
             func_cat
             return 0
@@ -440,9 +445,7 @@ tarefas_livres() {
     # --- Checklist das missoes do cla
     if [ -n "$CLD" ] && cq_liberado; then
         printf "Checklist do cla\n"
-        # Nada recolhido: e onde a duvida aparece (cq_guardar_completa). So
-        # aqui, a cada 15 min, e nao no cq_antes de cada atividade.
-        cq_concluir    2>/dev/null || cq_guardar_completa 2>/dev/null
+        cq_concluir    2>/dev/null
         cq_ajudar      2>/dev/null
         # Missoes 7 e 8 tem atividade propria: alquimia e mercador do
         # Coliseu. Sem missao ativa, cq_tomar falha e nada e produzido.
@@ -723,10 +726,7 @@ batalha_retomar() {
         *)            _br_full="" ;;
     esac
     if [ -n "$_br_full" ] && [ ! -s "$_br_full" ]; then
-        SLS_MAXTIME=17
-        run_curl "$URL/train" 2>/dev/null | grep -o -E '\(([0-9]+)\)' \
-            | head -n 1 | tr -d '()' > "$_br_full"
-        unset SLS_MAXTIME
+        full_atualizar "$_br_full"
     fi
 
     LUTA_SESSAO_CAIU=0
@@ -937,8 +937,10 @@ start() {
 
     # Agenda oficial do jogo (painel) e elixir das batalhas: so aqui, uma vez
     # por varredura das :00/:30. 25 min deixa passar as duas.
+    # A agenda e uma so para o aparelho (~/.sls/agenda): outra conta que a
+    # baixou ha menos de 25 min ja serve.
     if ativ_liberada agenda 25; then
-        atualiza_agenda 2>/dev/null
+        [ -n "`find "$HOME/.sls/agenda" -mmin -25 2>/dev/null`" ] || atualiza_agenda 2>/dev/null
         ativ_marcar agenda
     fi
     if ativ_liberada elixir 25; then

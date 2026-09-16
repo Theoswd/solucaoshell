@@ -1,16 +1,46 @@
+# ID DO CLA: UMA CONSULTA POR HORA, COM OU SEM CLA.
+#
+# Sem cla, o /clan nao traz ID e cada chamador (sls_play a cada volta, a
+# varredura, o start) pedia de novo: ~2 por minuto o dia inteiro. E a pagina
+# era gravada no proprio $TMP/CLD, entao uma falha de rede apagava o ID de
+# uma conta com cla (arquivo e variavel).
+#
+# Agora a pagina vai para um rascunho e so a resposta do jogo com a conta
+# logada decide: ID achado grava, sem ID e conta sem cla. Decidido, a proxima
+# consulta sai em CLAN_ID_MIN (60) minutos; sem resposta, em 5, e o ID que ja
+# se conhecia fica.
 clan_id() {
     cd "$TMP" || return 1
-
-    fetch_page "/clan" "$TMP/CLD"
-
-    CLD=`grep -o -E '/clan/[0-9]+/' "$TMP/CLD" | head -n 1 | awk -F'/' '{ print $3 }'`
-
-    if [ -z "$CLD" ]; then
-        printf "CLAN ID not found!\n"
-        return 1
-    else
-        echo "$CLD" > "$TMP/CLD"
+    if [ -z "$CLD" ] && [ -s "$TMP/CLD" ]; then
+        read -r CLD < "$TMP/CLD" 2>/dev/null
+        case "$CLD" in ''|*[!0-9]*) CLD="" ;; esac
     fi
+    _ci_min=${CLAN_ID_MIN:-60}
+    case "$_ci_min" in ''|*[!0-9]*) _ci_min=60 ;; esac
+    if ! ativ_liberada clan_id "$_ci_min"; then
+        unset _ci_min
+        [ -n "$CLD" ]
+        return
+    fi
+
+    fetch_page "/clan" "$TMP/CLANID"
+    if [ "`sessao_estado "$TMP/CLANID"`" != viva ]; then
+        echo $(( `date +%s` - (_ci_min - 5) * 60 )) > "$TMP/last_clan_id" 2>/dev/null
+        unset _ci_min
+        [ -n "$CLD" ]
+        return
+    fi
+    ativ_marcar clan_id
+
+    CLD=`grep -o -E '/clan/[0-9]+/' "$TMP/CLANID" | head -n 1 | awk -F'/' '{ print $3 }'`
+    if [ -z "$CLD" ]; then
+        : > "$TMP/CLD"
+        printf "Conta sem cla (nova consulta em %s min)\n" "$_ci_min"
+        unset _ci_min
+        return 1
+    fi
+    echo "$CLD" > "$TMP/CLD"
+    unset _ci_min
 }
 
 checkQuest() {
@@ -230,8 +260,9 @@ clanDungeon() {
     unset _golpes _br _max
     # Feita so quando o link de golpe SUMIU. Com a rede caindo no meio ou um
     # dos tetos cortando o laco, ainda ha golpe: o 0 levaria a masmorra_marcar,
-    # que sem relogio na pagina espera as 8h.
-    if [ "$_n" -gt 0 ] && [ -z "$_cl" ]; then
+    # que sem relogio na pagina espera as 8h. E sumiu NUMA PAGINA DO JOGO: a de
+    # login (sessao caida) tambem nao tem o link.
+    if [ "$_n" -gt 0 ] && [ -z "$_cl" ] && [ "`sessao_estado "$TMP/DUNGEON"`" = viva ]; then
         printf "Masmorra do cla ok (%s golpes)\n" "$_n"
         unset _n _cl
         return 0

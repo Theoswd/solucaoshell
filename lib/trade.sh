@@ -71,7 +71,8 @@ func_trade() {
     fi
 
     # Clique sem resposta nao gasta a troca do dia: tenta na proxima passagem.
-    if ! fetch_page "$_cl"; then
+    # Resposta que nao e pagina do jogo com a conta logada (login, erro) tambem.
+    if ! fetch_page "$_cl" || [ "`sessao_estado "$TMP/SRC"`" != viva ]; then
         printf "Trade: sem resposta na troca - tenta de novo depois\n"
         unset _hoje _ult _dias _pr _prata _lote _cl
         return 0

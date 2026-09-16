@@ -1,9 +1,8 @@
 altars_fight() {
   cd "$TMP" || return 1
-  # CORRECAO: sem o argumento, o apply_event monta "/${1}/" com $1
-  # vazio e pede "//" — um request invalido que ainda gravava "//"
-  # como atividade da conta no painel.
-  apply_event altars
+  # Sem apply_event aqui nem no fim: a inscricao e do altars_start. No inicio
+  # ele reinscrevia (e o batalha_retomar tambem passa por aqui); no fim,
+  # inscrevia no Altar seguinte e o descanso confirmava a fuga (ver king.sh).
   LA=4
   echo "48" > HPER
   echo "15" > RPER
@@ -149,7 +148,8 @@ altars_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cf_access
-        [ -s ATK ] || sleep 1
+        # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
+        sleep 1
       else
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] && sleep "$_resta"
@@ -159,10 +159,6 @@ altars_fight() {
 
   unset cf_access _random
   func_unset
-  # CORRECAO: sem o argumento, o apply_event monta "/${1}/" com $1
-  # vazio e pede "//" — um request invalido que ainda gravava "//"
-  # como atividade da conta no painel.
-  apply_event altars
   printf "Altars ok\n"
   sleep 10s
   [ -t 1 ] && clear
@@ -179,9 +175,8 @@ altars_start() {
     fetch_page "/altars/enterFight" "$TMP/src.html"
     printf "Ancient Altars will be started...\n"
 
-    until (case `date +%M` in (55|56|57|58|59) exit 1;; esac); do
-      sleep 2
-    done
+    # Ate :59:50-:59:59, escalonado por conta (janela_alvo, em info.sh).
+    espera_janela 5500 `janela_alvo 5950 10`
 
     fetch_page "/altars/enterFight" "$TMP/src.html"
     printf "Altars will be started...\n"

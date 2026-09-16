@@ -383,10 +383,10 @@ king_fight() {
   unset _rei_morto _sem_rei _reconf _reviveu _full HPER_REI HPER_POS
   unset _last_dodge _last_grass _last_stone LD LC LG LS
   func_unset
-  # CORRECAO: sem o argumento, o apply_event monta "/${1}/" com $1
-  # vazio e pede "//" — um request invalido que ainda gravava "//"
-  # como atividade da conta no painel.
-  apply_event king
+  # SEM INSCRICAO DEPOIS DA LUTA. Aqui havia um apply_event: um GET e, com o
+  # link na pagina, a inscricao no Rei SEGUINTE, horas antes. O descanso logo
+  # depois achava o "Fuja da batalha" e, sem batalha anotada, confirmava a fuga.
+  # A inscricao de cada Rei e feita pelo king_start.
   printf "King ok\n"
   sleep 10s
   [ -t 1 ] && clear
@@ -404,9 +404,9 @@ king_start() {
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
     printf "King of the Immortals will be started...\n"
-    until (case `date +%M` in (2[5-9]) exit 1;; esac); do
-      sleep 3
-    done
+    # Ate :29:50-:29:59, escalonado por conta (janela_alvo, em info.sh): todas
+    # acordavam no mesmo segundo de :30:00.
+    espera_janela 2500 `janela_alvo 2950 10`
     (
       run_curl_exec "$URL/king/enterGame" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
@@ -422,11 +422,14 @@ king_start() {
     until [ -s "$TMP/EXIT" ] || [ "`estado_luta "$TMP/SRC" king`" = luta ] || \
           [ "$(date +%s)" -gt "$BREAK" ]; do
       printf " ...\n%s\n" "`cat "$TMP/ACCESS"`"
+      # Rele a pagina do Rei, sem clicar: "o primeiro link /king/ da pagina"
+      # podia ser o de sair da fila, clicado a cada 2s. Mesma espera dos
+      # outros eventos.
       (
-        run_curl_exec "${URL}$(cat "$TMP/ACCESS")" > "$TMP/SRC"
+        run_curl_exec "${URL}/king/" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
-      cat "$TMP/SRC" | sed 's/href=/\n/g' | grep '/king/' | head -n 1 | awk -F"[']" '{ print $2 }' > "$TMP/ACCESS" 2>/dev/null
+      link_acao "$TMP/SRC" king > "$TMP/ACCESS" 2>/dev/null
       cat "$TMP/SRC" | grep -o 'king/kingatk/' > "$TMP/EXIT" 2>/dev/null
       sleep 2
     done
