@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.60"
+versionNum="3.9.61"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -970,6 +970,43 @@ luta_acabou() {
     esac
 }
 
+# HP MAXIMO PARA A LUTA, SEM PEDIR /train A CADA EVENTO.
+#
+# O fetch_train_stats ja le o /train (no login e a cada 3 min, no
+# atualiza_stats) e guarda o HP maximo no FIXHP. Os modulos de batalha pediam
+# a mesma pagina de novo so para gravar o arquivo deles — uma requisicao a
+# mais por entrada de evento, no minuto em que todas as contas do aparelho
+# estao pedindo. Agora gravam o FIXHP; o /train so sai quando ele ainda nao
+# foi lido.
+#
+# A 3.9.59 guardava a leitura por 30 min com UM carimbo para os quatro
+# arquivos (FULL, flag_full, ccol_full, col_full): o evento que carimbava
+# fazia os outros seguirem com o arquivo antigo deles — de outro dia, com o
+# HP de antes de subir de nivel, e a cura saia tarde.
+full_atualizar() { # arquivo_do_HP_maximo
+    case "$FIXHP" in
+        ''|0|*[!0-9]*) ;;
+        *) printf '%s\n' "$FIXHP" > "$1" 2>/dev/null; return 0 ;;
+    esac
+    (
+        run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$1"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    return 0
+}
+
+# Alvo da inscricao, escalonado por conta: MMSS base mais 0 a 29 segundos.
+#
+# Todas as contas do aparelho acordavam no MESMO segundo (:59:30) e pediam o
+# enterFight juntas — N inscricoes do mesmo IP no mesmo instante, o padrao de
+# rajada que o servidor estrangula. O deslocamento sai do PID, entao e fixo
+# por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
+# :59:30 de antes: a base e o inicio do minuto. Conferido no Torneio de
+# 16/09 11:00: as contas inscritas entre :59:00 e :59:29 lutaram todas.
+janela_alvo() { # MMSS_base -> MMSS
+    printf '%s' $(( $1 + $$ % 30 ))
+}
+
 # ESPERA ATE UMA HORA DO RELOGIO — NUNCA A DA HORA SEGUINTE.
 #
 #   espera_janela DE ATE      (MMSS: espera_janela 5500 5930)
@@ -983,44 +1020,6 @@ luta_acabou() {
 # tinha passado de 59:59 e a proxima vez que mostraria 59:30 era UMA HORA
 # depois. A conta ficava presa ate la, perdendo o evento e os da hora
 # seguinte (das Bandeiras de 10:10, o Coliseu do Cla e o Torneio).
-# Alvo da inscricao, escalonado por conta: MMSS base mais 0 a 29 segundos.
-#
-# Todas as contas do aparelho acordavam no MESMO segundo (:59:30) e pediam o
-# enterFight juntas — N inscricoes do mesmo IP no mesmo instante, o padrao de
-# rajada que o servidor estrangula. O deslocamento sai do PID, entao e fixo
-# por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
-# :59:30 de antes: a base e o inicio do minuto.
-# HP MAXIMO PARA A LUTA, SEM PEDIR /train A CADA EVENTO.
-#
-# O fetch_train_stats ja le o /train a cada ciclo; os modulos de batalha
-# pediam a mesma pagina de novo so para gravar o FULL — uma requisicao a mais
-# por entrada de evento, no minuto em que todas as contas do aparelho estao
-# pedindo. O HP maximo so muda ao subir de nivel, entao a leitura vale por
-# FULL_MAX_IDADE (30 min). Carimbo comum em $TMP/.full_ts.
-FULL_MAX_IDADE=${FULL_MAX_IDADE:-1800}
-full_atualizar() { # arquivo_do_HP_maximo
-    _fa_u=0
-    { read -r _fa_u < "$TMP/.full_ts"; } 2>/dev/null
-    case "$_fa_u" in ''|*[!0-9]*) _fa_u=0 ;; esac
-    _fa_u=$(( `date +%s` - _fa_u ))
-    # Carimbo no futuro (relogio voltou) vale como vencido.
-    if [ -s "$1" ] && [ "$_fa_u" -ge 0 ] && [ "$_fa_u" -lt "$FULL_MAX_IDADE" ]; then
-        unset _fa_u
-        return 0
-    fi
-    (
-        run_curl_exec "$URL/train" | grep -o -E '\(([0-9]+)\)' | head -n1 | sed 's/[()]//g' > "$1"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
-    [ -s "$1" ] && date +%s > "$TMP/.full_ts" 2>/dev/null
-    unset _fa_u
-    return 0
-}
-
-janela_alvo() { # MMSS_base -> MMSS
-    printf '%s' $(( $1 + $$ % 30 ))
-}
-
 espera_janela() {
     while :; do
         _ej=`date +%M%S`

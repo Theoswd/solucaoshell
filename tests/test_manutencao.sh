@@ -3294,24 +3294,24 @@ check "espera da luta cobre a entrada adiantada (95s)" 3 "$_r"
 rm -rf "$_td15"; unset _td15 _r
 unset -f _esp50
 
-printf "\n=== 51. HP maximo em cache e leitura unica do last_atk ===\n"
+printf "\n=== 51. HP maximo do FIXHP e leitura unica do last_atk ===\n"
 # =============================================================================
 _td16=`mktemp -d`
-_full51() { # idade_do_carimbo(ou "sem") conteudo_do_arquivo -> pediu|usou_cache
-    ( TMP="$_td16/f$1$2"; URL="http://jogo"; export TMP URL; rm -rf "$TMP"; mkdir -p "$TMP"
+_full51() { # FIXHP -> "pediu|sem_pedido conteudo_gravado"
+    ( TMP="$_td16/f$1"; URL="http://jogo"; export TMP URL; rm -rf "$TMP"; mkdir -p "$TMP"
       . "$LIB/info.sh" > /dev/null 2>&1
-      [ "$1" != sem ] && echo $(( `date +%s` - $1 )) > "$TMP/.full_ts"
-      [ -n "$2" ] && echo "$2" > "$TMP/FULL"
+      FIXHP="$1"
+      # Arquivo antigo de outro evento (antes de subir de nivel).
+      echo 1800 > "$TMP/flag_full"
       run_curl_exec() { echo pediu >> "$TMP/req"; echo "(65312)"; }
       time_exit() { wait "$!" 2>/dev/null; }
-      full_atualizar "$TMP/FULL" > /dev/null 2>&1
-      [ -f "$TMP/req" ] && printf 'pediu' || printf 'cache' )
+      full_atualizar "$TMP/flag_full" > /dev/null 2>&1
+      [ -f "$TMP/req" ] && printf 'pediu ' || printf 'sem_pedido '
+      cat "$TMP/flag_full" )
 }
-check "HP maximo lido ha pouco: nao pede /train de novo" "cache" "`_full51 60 65312`"
-check "HP maximo vencido (35 min): pede de novo"         "pediu" "`_full51 2100 65312`"
-check "sem arquivo de HP maximo: pede"                   "pediu" "`_full51 60 ''`"
-check "sem carimbo: pede"                                "pediu" "`_full51 sem 65312`"
-check "carimbo no futuro: pede"                          "pediu" "`_full51 -300 65312`"
+check "HP maximo ja lido: grava o atual sem pedir /train" "sem_pedido 2500" "`_full51 2500`"
+check "HP maximo ainda nao lido: pede /train"             "pediu 65312"     "`_full51 ''`"
+check "HP maximo ilegivel: pede /train"                   "pediu 65312"     "`_full51 abc`"
 _r=$(grep -c 'URL/train' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/clancoliseum.sh" \
      "$LIB/flagfight.sh" "$LIB/king.sh" "$LIB/coliseum.sh" | grep -c ':0$')
 check "nenhum modulo de batalha pede /train direto" 7 "$_r"
@@ -3336,8 +3336,31 @@ _cq51() { # progresso -> "cheia|nenhuma guardou|nao"
 check "missao em andamento: nada a guardar"          "nenhuma nao"    "`_cq51 '6 de 15'`"
 check "missao cheia: pagina guardada para diagnostico" "cheia guardou" "`_cq51 '15 de 15'`"
 check "cheia com separador de milhar"                  "cheia guardou" "`_cq51 \"150'000 de 150'000\"`"
+check "diagnostico so no checklist (nao no cq_antes)" "1 0" \
+    "$(grep -c '|| cq_guardar_completa' "$LIB/crono.sh") $(grep -c '|| cq_guardar_completa' "$LIB/clanquest.sh")"
 rm -rf "$_td17"; unset _td17
 unset -f _cq51
+
+printf "\n=== 52. trava de login: so o dono apaga ===\n"
+# =============================================================================
+_td18=`mktemp -d`
+sed -n '/^login_lock() {/,/^}/p;/^login_unlock() {/,/^}/p' "$LIB/sls.sh" > "$_td18/trava.sh"
+_trava52() { # outra_conta_segura(s|n) -> "trava_ficou|trava_saiu espacou?"
+    ( HOME="$_td18/h$1"; mkdir -p "$HOME/.sls"; LOCKDIR="$HOME/.sls/.login.lock"
+      . "$_td18/trava.sh"
+      sleep() { :; }
+      login_espacar() { printf 'espacou ' >> "$HOME/log"; }
+      login_espacar_marcar() { :; }
+      # Dono vivo (o proprio shell do teste): a espera estoura os 3 minutos.
+      [ "$1" = s ] && { mkdir "$LOCKDIR"; echo $$ > "$LOCKDIR/pid"; }
+      login_lock; login_unlock
+      [ -d "$LOCKDIR" ] && printf 'trava_ficou ' || printf 'trava_saiu '
+      cat "$HOME/log" 2>/dev/null )
+}
+check "sem trava de outra conta: pega e solta"                 "trava_saiu espacou " "`_trava52 n`"
+check "estourou a espera: nao apaga a trava do dono, espaca"   "trava_ficou espacou " "`_trava52 s`"
+rm -rf "$_td18"; unset _td18
+unset -f _trava52
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

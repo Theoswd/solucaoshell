@@ -178,8 +178,6 @@ cq_concluir() {
             _n=$((_n + 1))
         fi
     done
-    # Nada recolhido: e o caso em que a duvida aparece (ver cq_guardar_completa).
-    [ "$_n" -gt 0 ] || cq_guardar_completa
     unset _id _cl
     [ "$_n" -gt 0 ]
 }

@@ -115,8 +115,10 @@ LOCKDIR="$HOME/.sls/.login.lock"
 
 login_lock() {
     _n=0
+    _lk_meu=0
     while [ "$_n" -lt 180 ]; do
         if mkdir "$LOCKDIR" 2>/dev/null; then
+            _lk_meu=1
             echo $$ > "$LOCKDIR/pid" 2>/dev/null
             # Dentro da trava: espaca este login do anterior (info.sh).
             type login_espacar > /dev/null 2>&1 && login_espacar
@@ -134,13 +136,20 @@ login_lock() {
         _n=$((_n + 1))
     done
     # Nao conseguiu em 3 minutos: segue assim mesmo, para uma trava
-    # presa nunca impedir a conta de tentar.
+    # presa nunca impedir a conta de tentar. Sem a trava, mantem ao menos o
+    # intervalo do ultimo login. Com 10s de espacamento mais tres pedidos
+    # dentro da trava, uma queda que derruba muitas contas juntas chega aqui.
+    type login_espacar > /dev/null 2>&1 && login_espacar
     return 0
 }
 
+# So apaga a trava quem a criou. A conta que seguiu sem trava (3 min de
+# espera) apagava a de quem estava autenticando, e o proximo da fila entrava
+# junto: logins colados de novo.
 login_unlock() {
     type login_espacar_marcar > /dev/null 2>&1 && login_espacar_marcar
-    rm -rf "$LOCKDIR" 2>/dev/null
+    [ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null
+    _lk_meu=0
 }
 
 do_login() {

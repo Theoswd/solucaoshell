@@ -440,7 +440,9 @@ tarefas_livres() {
     # --- Checklist das missoes do cla
     if [ -n "$CLD" ] && cq_liberado; then
         printf "Checklist do cla\n"
-        cq_concluir    2>/dev/null
+        # Nada recolhido: e onde a duvida aparece (cq_guardar_completa). So
+        # aqui, a cada 15 min, e nao no cq_antes de cada atividade.
+        cq_concluir    2>/dev/null || cq_guardar_completa 2>/dev/null
         cq_ajudar      2>/dev/null
         # Missoes 7 e 8 tem atividade propria: alquimia e mercador do
         # Coliseu. Sem missao ativa, cq_tomar falha e nada e produzido.
