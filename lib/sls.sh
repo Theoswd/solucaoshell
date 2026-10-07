@@ -67,7 +67,7 @@ for _lib in \
     requeriments.sh loginlogoff.sh \
     flagfight.sh clanid.sh crono.sh arena.sh coliseum.sh \
     campaign.sh run.sh altars.sh clandmg.sh clanfight.sh \
-    clancoliseum.sh king.sh undying.sh trade.sh career.sh \
+    clancoliseum.sh clancommand.sh king.sh undying.sh trade.sh career.sh \
     cave.sh allies.sh check.sh league.sh clanquest.sh \
     specialevent.sh function.sh \
     blessing.sh

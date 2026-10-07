@@ -75,6 +75,26 @@ sls_play() {
             start
             ;;
 
+        # --- 1b. Torneio de Equipe
+        #
+        # Duas batalhas por dia, 11:30 e 18:00 (agenda /fights/: "Torneio de
+        # equipe"). Cinco minutos de antecedencia como os demais eventos.
+        #
+        # A inscricao abre HORAS antes, mas nao e aqui que ela e antecipada: o
+        # clancommand_start le o contador da pagina e, se o inicio ainda esta
+        # longe, inscreve e devolve a conta para a rotina em vez de segurar o
+        # worker. Chamado nesta janela ele cai direto no ramo de luta.
+        #
+        # Exige cla: a equipe e de 3 titas do MESMO cla.
+        (11:2[5-9]|17:5[5-9])
+            if [ -n "$CLD" ]; then
+                evento_dedicar
+                clancommand_start
+                evento_espera
+            fi
+            start
+            ;;
+
         # --- 2. Torneio dos Clas
         (10:5[5-9]|18:5[5-9])
             if [ -n "$CLD" ]; then
