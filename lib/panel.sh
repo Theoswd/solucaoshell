@@ -175,6 +175,7 @@ painel_icones_carregar() {
         A_CARREIRA="🎓  Carreira";          A_CAVERNA="💎  Caverna"
         A_CAMPANHA="🌍  Campanha";          A_LIGA="🥇  Liga dos Favoritos"
         A_TROCA="💱  Troca Prata/Ouro";     A_SABIO="🧙  Cabana do Sábio"
+        A_TORNEQ="⚔️  Torneio de Equipe"
         A_EVENTO="🎉  Evento Especial";     A_DESCANSO="💤  Descansando"
         A_NONE="—"
     else
@@ -193,6 +194,7 @@ painel_icones_carregar() {
         A_CARREIRA="Carreira";          A_CAVERNA="Caverna"
         A_CAMPANHA="Campanha";          A_LIGA="Liga dos Favoritos"
         A_TROCA="Troca Prata/Ouro";     A_SABIO="Cabana do Sábio"
+        A_TORNEQ="Torneio de Equipe"
         A_EVENTO="Evento Especial";     A_DESCANSO="Descansando"
         A_NONE="-"
 
@@ -656,12 +658,14 @@ EVENTOS="0030|Coliseu
 1010|Batalha de Bandeiras
 1025|Coliseu do Cla
 1055|Batalha de Clas
+1125|Torneio de Equipe
 1225|Rei dos Imortais
 1355|Altares
 1455|Coliseu do Cla
 1555|Imortais
 1610|Batalha de Bandeiras
 1625|Rei dos Imortais
+1755|Torneio de Equipe
 1855|Batalha de Clas
 2055|Altares
 2125|Evento especial
@@ -680,6 +684,7 @@ evento_da_pagina() {
         /king*)         printf '%s' "$A_REI" ;;
         /clanfight*)    printf '%s' "$A_CLANFIGHT" ;;
         /clancoliseum*) printf '%s' "$A_CLANCOL" ;;
+        /clancommand*)  printf '%s' "$A_TORNEQ" ;;
         *)              printf '' ;;
     esac
 }
