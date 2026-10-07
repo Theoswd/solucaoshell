@@ -201,7 +201,7 @@ done
 printf "\n=== 6. Uma requisicao por ciclo: recarga espera sem requisitar ===\n"
 # O ramo ocioso (else) so faz requisicao quando o alvo esta grey; fora disso
 # espera o restante da recarga com 'sleep \$_resta', sem recarregar a pagina.
-for f in clanfight.sh clandmg.sh altars.sh coliseum.sh clancoliseum.sh flagfight.sh; do
+for f in clanfight.sh clandmg.sh altars.sh coliseum.sh clancoliseum.sh flagfight.sh clancommand.sh; do
     if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk' "$LIB/$f"; then
         ok "$f: espera o restante da recarga (sleep do cooldown, sem request)"
     else
@@ -395,7 +395,7 @@ grep -q 'pkill -f "\$LIBDIR/worker.sh"' "$ROOT/stop.sh" && ok "stop.sh: rede de 
 printf "\n=== 12. Escala: isolamento por conta e serializacao do login ===\n"
 # Cada modulo de batalha grava seu estado APOS 'cd \"\$TMP\"' (TMP e por conta).
 # Sem esse cd, os arquivos bare (HP, BREAK_LOOP, ...) colidiriam entre contas.
-for f in king.sh clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh; do
+for f in king.sh clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh clancommand.sh; do
     if grep -q 'cd "\$TMP"' "$LIB/$f"; then
         ok "$f: isola estado por conta (cd \$TMP)"
     else
@@ -533,7 +533,7 @@ printf "\n=== 15. Todas as batalhas: reconfirmam o fim antes de abandonar ===\n"
 # Um unico read sem o link de luta (transicao, soluco de rede, ou link vazio
 # que baixou a home) NAO pode encerrar a luta: cada modulo rele a pagina uma
 # vez (trava _reconf contra recursao infinita) e so desiste se confirmar.
-for f in clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh coliseum.sh king.sh; do
+for f in clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh coliseum.sh king.sh clancommand.sh; do
     if grep -q '_reconf' "$LIB/$f" && grep -q '\[ "${_reconf:-0}" = 0 \]' "$LIB/$f"; then
         ok "$f: reconfirma o fim da luta antes de encerrar"
     else
@@ -1349,7 +1349,7 @@ esac
 for _p in "king.sh king" "undying.sh undying" "altars.sh altars" \
           "clanfight.sh clanfight" "clandmg.sh clandmgfight" \
           "clancoliseum.sh clancoliseum" "flagfight.sh flagfight" \
-          "coliseum.sh coliseum"; do
+          "coliseum.sh coliseum" "clancommand.sh clancommand"; do
     set -- $_p
     if grep -q "luta_inicio $2" "$LIB/$1" && grep -q "luta_acabou " "$LIB/$1"; then
         ok "$1: sai da luta so pelo luta_acabou"
@@ -1376,7 +1376,7 @@ done
 # Com a luta continuando ate o jogo declarar o fim, o ramo "sem acao" tem de
 # RELER a pagina quando nao ha link de ataque — senao o laco dormia sobre uma
 # pagina sem acao ate o teto (achado na simulacao desta correcao).
-for _m in altars.sh clanfight.sh clandmg.sh clancoliseum.sh flagfight.sh; do
+for _m in altars.sh clanfight.sh clandmg.sh clancoliseum.sh flagfight.sh clancommand.sh; do
     grep -q "alvo_grey \"[^\"]*\" || \[ ! -s ATK \]" "$LIB/$_m" \
         && ok "$_m: sem link de ataque, rele a pagina do evento" \
         || bad "$_m: sem link de ataque o laco dorme sem reler"
@@ -1800,7 +1800,8 @@ _r=$( . "$LIB/info.sh"; luta_inicio; luta_hp "4363
 check "luta_hp: le so o primeiro numero (linha dupla, espaco)" "morto" "$_r"
 
 for _p in "king.sh _hpat" "altars.sh HP" "clanfight.sh HP" "clandmg.sh HP" \
-          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh USH"; do
+          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh USH" \
+          "clancommand.sh _hpat"; do
     set -- $_p
     grep -q "luta_hp \"[^\"]*$2" "$LIB/$1" \
         && ok "$1: reconhece a morte com botao na tela" \

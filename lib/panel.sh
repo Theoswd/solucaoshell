@@ -955,6 +955,7 @@ aba_de() {
         /campaign*)       echo "Campanha" ;;
         /coliseum*)       echo "Coliseu" ;;
         /clancoliseum*)   echo "Coliseu do Clã" ;;
+        /clancommand*)   echo "Torneio de Equipe" ;;
         /clanfight*)      echo "Torneio dos Clãs" ;;
         /clandungeon*)    echo "Masmorra do Clã" ;;
         # /clandmgfight e o duelo do cla (evento de 09:25 e 21:25), outra

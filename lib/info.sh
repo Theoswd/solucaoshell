@@ -160,7 +160,7 @@ _rc_run() {
                     _rc_pp=${_rc_a#"$URL"/}
                     _rc_pp=${_rc_pp%%[/?]*}
                     case "$_rc_pp" in
-                        king|undying|altars|clanfight|clandmgfight|clancoliseum|flagfight|coliseum)
+                        king|undying|altars|clanfight|clandmgfight|clancoliseum|flagfight|coliseum|clancommand)
                             _rc_mt="${SLS_LUTA_MAXTIME:-17}" ;;
                     esac
                     break
@@ -1346,7 +1346,7 @@ atualiza_agenda() {
     # quebrar no horario de verao.
     printf '%s' "$_pg" \
         | sed 's/<br[^>]*>/\n/g; s/<\/div>/\n/g; s/<[^>]*>//g' \
-        | grep -oE "(Vale dos Imortais|Coliseu do clã|Torneio dos Clãs|Rei dos Imortais|Altares dos Deuses|Batalha de Bandeiras)|[0-9]{1,2}:[0-9]{2} [A-Z]{2,5}" \
+        | grep -oE "(Vale dos Imortais|Coliseu do clã|Torneio dos Clãs|Rei dos Imortais|Altares dos Deuses|Batalha de Bandeiras|Torneio de equipe)|[0-9]{1,2}:[0-9]{2} [A-Z]{2,5}" \
         > "$_rawf" 2>/dev/null
 
     # Um evento tem VARIOS horarios (o Vale tem tres), entao o nome vale ate
