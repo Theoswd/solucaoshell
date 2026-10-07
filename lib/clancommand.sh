@@ -51,13 +51,16 @@ _cc_restam() { # ARQUIVO -> segundos
 
 # Link de inscricao com o id do torneio, ou vazio se o jogo nao o oferece.
 #
-# ACEITA AS DUAS FORMAS, de proposito: o botao "Aplicar" aparece como
-# /clancommand/?enterFight=<id> na pagina do evento e como
-# /clancommand/myteam/?enterFight=<id> na pagina da equipe, e as duas inscrevem.
-# Ler so a primeira forma daria falso "inscrito" quando a resposta da inscricao
-# voltasse na forma do myteam — o teste de sucesso aqui e o link DESAPARECER.
-_cc_inscricao() { # ARQUIVO -> /clancommand[/myteam]/?enterFight=<id>
-    grep -o -E '/clancommand/(myteam/)?[?]enterFight=[0-9]+' "$1" 2>/dev/null | sed -n 1p
+# SO A FORMA DA PAGINA DO EVENTO. A pagina da equipe tem um botao equivalente,
+# /clancommand/myteam/?enterFight=<id>, mas /clancommand/myteam/ e a tela de
+# ver e montar a equipe, nao e por onde se entra no torneio. E as duas formas
+# nunca convivem: medido nas capturas, cada pagina traz apenas a sua, e este
+# modulo sempre pede /clancommand/.
+#
+# O id MUDA a cada torneio (medidos: 98418211, 58198404, 34500465), e e por
+# isso que ele sai daqui, do href do botao, em vez de ficar fixo no codigo.
+_cc_inscricao() { # ARQUIVO -> /clancommand/?enterFight=<id>
+    grep -o -E '/clancommand/[?]enterFight=[0-9]+' "$1" 2>/dev/null | sed -n 1p
 }
 
 clancommand_fight() {
