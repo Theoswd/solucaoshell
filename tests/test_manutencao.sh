@@ -3593,8 +3593,43 @@ _r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null
       func_trade > /dev/null 2>&1; [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
 check "troca com resposta de login: o dia fica em aberto" "em_aberto" "$_r"
 
+# Torneio de Equipe: o membro sem botao "Aplicar" (equipe ja inscrita pelo
+# lider) espera a luta e luta, em vez de voltar para a rotina.
+#   _cc69 PAGINA_INICIAL -> pedidos feitos + o que o modulo decidiu
+#   PAGINA_INICIAL: membro | membro_longe | membro_chat | lider | nada
+_cc69() {
+    ( TMP="$_td20/cc_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      PG="$1"
+      # Roda em subshell (run_curl_exec ... &): a contagem vai pelo arquivo.
+      run_curl_exec() {
+          echo "$1" | sed 's|^http://jogo||' >> "$TMP/req"; echo x >> "$TMP/n"
+          N=`wc -l < "$TMP/n"`
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          if [ "$N" -ge 3 ]; then
+              echo "$_p <a href='/clancommand/attack/?r=1'>Atacar</a>"; return
+          fi
+          case "$PG" in
+              membro)       echo "$_p <span id='time_240000'>4 min</span>" ;;
+              membro_longe) echo "$_p <span id='time_15808000'>4 h 23 min</span>" ;;
+              membro_chat)  echo "$_p <a href='/chat/changeRoom/?r=98418211'>Chat</a>" ;;
+              lider)        echo "$_p <a href='/clancommand/?enterFight=98418211'>Aplicar</a> <span id='time_240000'>4 min</span>" ;;
+              nada)         echo "$_p" ;;
+          esac; }
+      time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      full_atualizar() { :; }; batalha_marcar() { echo marcou >> "$TMP/req"; }; batalha_limpar() { :; }
+      evento_cancelar() { echo liberou >> "$TMP/req"; }; clancommand_fight() { echo lutou >> "$TMP/req"; }
+      clancommand_start > /dev/null 2>&1
+      grep -v '^/clancommand/$' "$TMP/req" | tr '\n' ' ' )
+}
+check "torneio: membro sem botao espera a luta e luta" "marcou lutou " "`_cc69 membro`"
+check "torneio: membro so com a sala da equipe tambem luta" "marcou lutou " "`_cc69 membro_chat`"
+check "torneio: membro com inicio longe e liberado sem inscrever" "liberou " "`_cc69 membro_longe`"
+check "torneio: lider inscreve e luta" "marcou /clancommand/?enterFight=98418211 lutou " "`_cc69 lider`"
+check "torneio: sem nada do torneio na pagina, pula" "liberou " "`_cc69 nada`"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53
+unset -f _cld53 _cqpg53 _liga53 _cc69
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

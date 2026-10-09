@@ -236,25 +236,49 @@ clancommand_start() {
   fi
 
   _cc_link=`_cc_inscricao "$src_ram"`
-  if [ -z "$_cc_link" ]; then
-    # DISPONIBILIDADE PELO JOGO, NAO PELO CALENDARIO: sem link de inscricao
-    # nao ha torneio a esperar. Libera a conta em vez de deixa-la dez minutos
-    # parada (mesmo criterio do clancoliseum_start).
+  _cc_seg=`_cc_restam "$src_ram"`
+  case "$_cc_seg" in *[!0-9]*) _cc_seg= ;; esac
+
+  # SEM LINK DE INSCRICAO NAO QUER DIZER SEM TORNEIO.
+  #
+  # Este teste era so "sem link? pula". Mas o link some justamente quando a
+  # equipe JA ESTA INSCRITA — e o sinal de inscricao aceita que a Fase A
+  # usa, logo abaixo. A equipe e inscrita uma vez so, por quem aperta
+  # "Aplicar" (o lider, ou a primeira conta da equipe a passar aqui); para os
+  # outros membros a pagina chega sem o botao, e o modulo os mandava de volta
+  # para a rotina. So a conta que apertava o botao lutava: por isso parecia
+  # que so os lideres jogavam o torneio.
+  #
+  # Agora "sem torneio" exige a falta das tres coisas: link de inscricao,
+  # contador de inicio e a sala de chat da equipe (changeRoom/?r=<id>, onde
+  # o 3.9.65 mediu o mesmo id do torneio). Com qualquer uma delas, a conta
+  # espera a luta como as demais. Custo do erro oposto: uma conta sem equipe
+  # espera ate o inicio (no maximo ~6 min) e sai sem luta.
+  if [ -z "$_cc_link" ] && [ -z "$_cc_seg" ] && \
+     ! grep -q -E 'changeRoom/[?]r=[0-9]+' "$src_ram" 2>/dev/null; then
+    # DISPONIBILIDADE PELO JOGO, NAO PELO CALENDARIO: nada do torneio na
+    # pagina, nao ha o que esperar. Libera a conta em vez de deixa-la dez
+    # minutos parada (mesmo criterio do clancoliseum_start).
     printf "Torneio de equipe: sem inscricao disponivel agora - pulando\n"
     evento_cancelar 2>/dev/null
-    rm -f "$src_ram"; unset src_ram _cc_link
+    rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
   fi
-
-  _cc_seg=`_cc_restam "$src_ram"`
-  case "$_cc_seg" in ''|*[!0-9]*) _cc_seg=0 ;; esac
 
   # FASE A — INSCRICAO ANTECIPADA.
   #
   # Faltando mais de 10 minutos, inscreve e devolve a conta para a rotina. Nao
   # chama batalha_marcar: nao ha batalha a retomar ainda, e o marcador faria
   # um worker relancado procurar uma luta que so comeca horas depois.
-  if [ "$_cc_seg" -gt 600 ]; then
+  if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ] && [ -z "$_cc_link" ]; then
+    # Equipe ja inscrita (pelo lider, por outro membro ou numa passada
+    # anterior): nada a fazer agora, a luta e pega na janela do inicio.
+    printf "Torneio de equipe: equipe ja inscrita, inicio em %s min\n" "$(( _cc_seg / 60 ))"
+    evento_cancelar 2>/dev/null
+    rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
+    return 0
+  fi
+  if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ]; then
     (
       run_curl_exec "${URL}${_cc_link}" > "$src_ram"
     ) </dev/null > /dev/null 2>&1 &
@@ -279,11 +303,22 @@ clancommand_start() {
   # FASE B — O INICIO ESTA PERTO: ENTRA E LUTA.
   full_atualizar "$TMP/FULL"
   batalha_marcar clancommand
-  (
-    run_curl_exec "${URL}${_cc_link}" > "$src_ram"
-  ) </dev/null > /dev/null 2>&1 &
-  time_exit 17
-  printf "Torneio de equipe: entrando...\n"
+  if [ -n "$_cc_link" ]; then
+    (
+      run_curl_exec "${URL}${_cc_link}" > "$src_ram"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    printf "Torneio de equipe: entrando...\n"
+  else
+    # Membro de equipe ja inscrita: nao ha o que apertar, so esperar a luta.
+    printf "Torneio de equipe: equipe ja inscrita - aguardando a luta\n"
+  fi
+
+  # SEM CONTADOR NA PAGINA, O PRAZO VAI ATE A PROXIMA MEIA HORA CHEIA. O
+  # torneio comeca as :00 ou :30 (11:30 e 18:00), e a janela do run.sh e de
+  # cinco minutos antes. Contar 0 aqui dava 90s de espera chamado as 11:25, e
+  # a conta desistia antes do inicio.
+  [ -n "$_cc_seg" ] || _cc_seg=$(( 1800 - $(date +%s) % 1800 ))
 
   # Espera o jogo abrir a luta: o que falta do contador mais 90s de folga, com
   # teto de 10 min para o laco nunca virar espera infinita. O clancoliseum usa
