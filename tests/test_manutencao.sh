@@ -3400,9 +3400,10 @@ _r=$( TMP="$_td19/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
 check "config: 08/00/010 viram 8/0/10 e chave com ';' nao executa" "480 0 10" "$_r"
 
 # Minuto de inscricao: a varredura para antes dos blocos pesados (a parte
-# em execucao esta na secao 48).
+# em execucao esta na secao 48). Seis desde a inscricao antecipada do
+# Torneio de Equipe (3.9.71), que entrou com a sua.
 _r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'liga_fora_da_inscricao || return 0'`
-check "varredura: relogio conferido entre os blocos pesados" 5 "$_r"
+check "varredura: relogio conferido entre os blocos pesados" 6 "$_r"
 
 # Erva paga em ouro fica de fora no Torneio e no Duelo.
 printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva</span></a>" > "$_td19/erva"
@@ -3634,8 +3635,53 @@ _r=$( . "$LIB/clancommand.sh" > /dev/null 2>&1; _f="$_td20/cc_sit"
 check "torneio: o log do membro diz se o lider ja inscreveu" \
     "lider ainda nao inscreveu a equipe|membro da equipe, sem botao de inscricao" "$_r"
 
+# Inscricao antecipada (clancommand_inscrever): o lider inscreve longe do
+# inicio; inscrito ou membro, a pagina nao e pedida de novo ate o torneio.
+#   _cc70 PAGINA -> pedidos da 1a chamada | rc | anotou? | pedidos da 2a
+#   PAGINA: lider | recusa | membro | perto | fechado
+_cc70() {
+    ( TMP="$_td20/ci_$1"; URL=http://jogo; CLD=77; export TMP URL CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      PG="$1"
+      run_curl_exec() {
+          _u=`echo "$1" | sed 's|^http://jogo||'`; echo "$_u" >> "$TMP/req"
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          _t="<span id='time_15808000'>4 h 23 min</span>"
+          _a="<a href='/clancommand/?enterFight=34500465'>Aplicar</a>"
+          case "$PG:$_u" in
+              lider:*enterFight*) echo "$_p $_t" ;;
+              lider:*|recusa:*)   echo "$_p $_a $_t" ;;
+              membro:*)           echo "$_p $_t Líder não se inscreveu para a batalha" ;;
+              perto:*)            echo "$_p $_a <span id='time_300000'>5 min</span>" ;;
+              fechado:*)          echo "$_p" ;;
+          esac; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      clancommand_inscrever > /dev/null 2>&1; _rc=$?
+      printf '%s|%s|' "$(tr '\n' ' ' < "$TMP/req")" "$_rc"
+      [ -s "$TMP/torneq_ate" ] && printf 'anotou|' || printf 'nao|'
+      : > "$TMP/req"; clancommand_inscrever > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+}
+check "inscricao antecipada: lider inscreve e para ate o inicio" \
+    "/clancommand/ /clancommand/?enterFight=34500465 |0|anotou|" "`_cc70 lider`"
+check "inscricao antecipada: recusada, tenta de novo depois" \
+    "/clancommand/ /clancommand/?enterFight=34500465 |1|nao|/clancommand/ /clancommand/?enterFight=34500465 " "`_cc70 recusa`"
+check "inscricao antecipada: membro le uma vez e para ate o inicio" \
+    "/clancommand/ |0|anotou|" "`_cc70 membro`"
+check "inscricao antecipada: perto do inicio fica com a janela do run.sh" \
+    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 perto`"
+check "inscricao antecipada: sem torneio aberto, sem inscricao" \
+    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 fechado`"
+check "torneio: inscreve o proximo depois da batalha (dois caminhos)" 2 \
+    "$(grep -A1 '^ *clancommand_fight$' "$LIB/clancommand.sh" | grep -c '^ *clancommand_inscrever$')"
+grep -q '^ *clancommand_inscrever 2>/dev/null$' "$LIB/crono.sh" \
+    && ok "torneio: repescagem da inscricao na rotina" \
+    || bad "torneio: a rotina nao tenta a inscricao antecipada"
+grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancommand_fight ;;' "$LIB/crono.sh" \
+    && ok "torneio: worker relancado volta para a luta" \
+    || bad "torneio: batalha_retomar sem o clancommand"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

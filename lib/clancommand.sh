@@ -73,6 +73,84 @@ _cc_situacao() { # ARQUIVO -> texto
     fi
 }
 
+# INSCRICAO ANTECIPADA, NUMA PAGINA /clancommand/ JA LIDA.
+#
+# So o lider tem o botao "Aplicar" e ele inscreve a equipe inteira (captura
+# de 09/10/2026, ver clancommand_start). Inscrever cedo tira do lider a
+# dependencia da janela de cinco minutos do run.sh: se o worker dele estiver
+# preso ou fora nessa hora, a equipe toda perdia o torneio.
+#
+# Inscrito, ou sem nada a fazer (membro, ou lider que ja inscreveu), anota
+# o inicio do torneio em $TMP/torneq_ate: ate la o clancommand_inscrever nao
+# pede mais a pagina. Sem a anotacao, cada conta de cla leria /clancommand/
+# a cada hora o dia inteiro; com ela, uma vez por torneio.
+#
+# Retorna 0 quando nao ha mais nada a fazer ate o inicio, 1 quando vale
+# tentar de novo depois (inscricao recusada).
+_cc_antecipar() { # ARQUIVO LINK SEGUNDOS
+    _ca_f="$1"; _ca_link="$2"; _ca_seg="$3"
+    if [ -n "$_ca_link" ]; then
+        (
+          run_curl_exec "${URL}${_ca_link}" > "$_ca_f"
+        ) </dev/null > /dev/null 2>&1 &
+        time_exit 17
+
+        # A INSCRICAO PODE TER SIDO RECUSADA, E O JOGO NAO DIZ ISSO EM TEXTO.
+        #
+        # A regra e "3 titas do mesmo cla", mas o botao "Aplicar" aparece
+        # mesmo com a equipe incompleta — medido em 05/10/2026, com 2 de 3
+        # membros o link estava na pagina. O sinal de que pegou e o link
+        # DESAPARECER da releitura. (Heuristica: falta confirmar com uma
+        # captura de inscricao aceita.)
+        if [ -n "`_cc_inscricao "$_ca_f"`" ]; then
+            printf "Torneio de equipe: inscricao nao aceita (equipe incompleta? faltam 3 titas)\n"
+            unset _ca_f _ca_link _ca_seg
+            return 1
+        fi
+        printf "Torneio de equipe: equipe inscrita, inicio em %s min\n" "$(( _ca_seg / 60 ))"
+    else
+        printf "Torneio de equipe: %s, inicio em %s min\n" \
+               "`_cc_situacao "$_ca_f"`" "$(( _ca_seg / 60 ))"
+    fi
+    echo $(( $(date +%s) + _ca_seg )) > "$TMP/torneq_ate" 2>/dev/null
+    unset _ca_f _ca_link _ca_seg
+    return 0
+}
+
+# Inscreve o lider no PROXIMO torneio: chamado logo depois da batalha e, na
+# rotina (tarefas_livres), de hora em hora ate a inscricao abrir. Fora da
+# luta e longe do inicio — perto dele quem cuida e o clancommand_start, na
+# janela do run.sh.
+clancommand_inscrever() {
+    [ -n "$CLD" ] || return 1
+    _ci_ate=; { read -r _ci_ate < "$TMP/torneq_ate"; } 2>/dev/null
+    case "$_ci_ate" in ''|*[!0-9]*) _ci_ate=0 ;; esac
+    if [ "$(date +%s)" -lt "$_ci_ate" ]; then
+        unset _ci_ate; return 0
+    fi
+
+    _ci_f="$TMP/ccmd_insc"
+    (
+      run_curl_exec "$URL/clancommand/" > "$_ci_f"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+
+    _ci_rc=1
+    if [ "`sessao_estado "$_ci_f"`" = viva ] && \
+       [ "`estado_luta "$_ci_f" clancommand`" != luta ]; then
+        _ci_seg=`_cc_restam "$_ci_f"`
+        case "$_ci_seg" in ''|*[!0-9]*) _ci_seg=0 ;; esac
+        # Sem contador: a inscricao do proximo ainda nao abriu (ou o torneio
+        # saiu de temporada). Perto do inicio: e a vez do clancommand_start.
+        if [ "$_ci_seg" -gt 600 ]; then
+            _cc_antecipar "$_ci_f" "`_cc_inscricao "$_ci_f"`" "$_ci_seg" && _ci_rc=0
+        fi
+    fi
+    rm -f "$_ci_f"
+    unset _ci_ate _ci_f _ci_seg
+    return "$_ci_rc"
+}
+
 clancommand_fight() {
   src_ram="$TMP/ccmd_src"
   cd "$TMP" || return 1
@@ -242,6 +320,7 @@ clancommand_start() {
     batalha_marcar clancommand
     full_atualizar "$TMP/FULL"
     clancommand_fight
+    clancommand_inscrever
     return 0
   fi
 
@@ -283,32 +362,8 @@ clancommand_start() {
   # Faltando mais de 10 minutos, inscreve e devolve a conta para a rotina. Nao
   # chama batalha_marcar: nao ha batalha a retomar ainda, e o marcador faria
   # um worker relancado procurar uma luta que so comeca horas depois.
-  if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ] && [ -z "$_cc_link" ]; then
-    # Membro: quem inscreve e o lider. Nada a fazer agora, a luta e pega na
-    # janela do inicio.
-    printf "Torneio de equipe: %s, inicio em %s min\n" \
-           "`_cc_situacao "$src_ram"`" "$(( _cc_seg / 60 ))"
-    evento_cancelar 2>/dev/null
-    rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
-    return 0
-  fi
   if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ]; then
-    (
-      run_curl_exec "${URL}${_cc_link}" > "$src_ram"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
-
-    # A INSCRICAO PODE TER SIDO RECUSADA, E O JOGO NAO DIZ ISSO EM TEXTO.
-    #
-    # A regra e "3 titas do mesmo cla", mas o botao "Aplicar" aparece mesmo com
-    # a equipe incompleta — medido em 05/10/2026, com 2 de 3 membros o link
-    # estava na pagina. O sinal de que pegou e o link DESAPARECER da releitura.
-    # (Heuristica: falta confirmar com uma captura de inscricao aceita.)
-    if [ -n "`_cc_inscricao "$src_ram"`" ]; then
-      printf "Torneio de equipe: inscricao nao aceita (equipe incompleta? faltam 3 titas)\n"
-    else
-      printf "Torneio de equipe: inscrito, inicio em %s min\n" "$(( _cc_seg / 60 ))"
-    fi
+    _cc_antecipar "$src_ram" "$_cc_link" "$_cc_seg"
     evento_cancelar 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
@@ -358,6 +413,7 @@ clancommand_start() {
 
   if [ -n "$ACCESS" ]; then
     clancommand_fight
+    clancommand_inscrever
   else
     # NADA DO TORNEIO NA PAGINA — E A PAGINA FICA GUARDADA.
     #
