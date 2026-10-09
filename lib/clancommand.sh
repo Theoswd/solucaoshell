@@ -63,6 +63,16 @@ _cc_inscricao() { # ARQUIVO -> /clancommand/?enterFight=<id>
     grep -o -E '/clancommand/[?]enterFight=[0-9]+' "$1" 2>/dev/null | sed -n 1p
 }
 
+# Para o log do membro (sem botao "Aplicar"): a pagina diz se o lider ja
+# inscreveu a equipe. Sem acento no teste: os bytes UTF-8 variam.
+_cc_situacao() { # ARQUIVO -> texto
+    if grep -q -E 'der n[^ ]{1,3}o se inscreveu' "$1" 2>/dev/null; then
+        printf 'lider ainda nao inscreveu a equipe'
+    else
+        printf 'membro da equipe, sem botao de inscricao'
+    fi
+}
+
 clancommand_fight() {
   src_ram="$TMP/ccmd_src"
   cd "$TMP" || return 1
@@ -241,19 +251,22 @@ clancommand_start() {
 
   # SEM LINK DE INSCRICAO NAO QUER DIZER SEM TORNEIO.
   #
-  # Este teste era so "sem link? pula". Mas o link some justamente quando a
-  # equipe JA ESTA INSCRITA — e o sinal de inscricao aceita que a Fase A
-  # usa, logo abaixo. A equipe e inscrita uma vez so, por quem aperta
-  # "Aplicar" (o lider, ou a primeira conta da equipe a passar aqui); para os
-  # outros membros a pagina chega sem o botao, e o modulo os mandava de volta
-  # para a rotina. So a conta que apertava o botao lutava: por isso parecia
-  # que so os lideres jogavam o torneio.
+  # Este teste era so "sem link? pula". Mas SO O LIDER tem o botao
+  # "Aplicar": ele inscreve a equipe inteira. Captura de 09/10/2026, pagina
+  # /clancommand/ de um membro:
+  #     Tempo restante ate o inicio 16 h 50 min
+  #     Participantes: 10 equipes
+  #     Lider nao se inscreveu para a batalha      [Atualizar]
+  #     Meu time  Abyssal X  Poder: 218597         [Mostrar]
+  # Nenhum "Aplicar". O modulo mandava todo membro de volta para a rotina, e
+  # so o lider lutava o torneio.
   #
   # Agora "sem torneio" exige a falta das tres coisas: link de inscricao,
-  # contador de inicio e a sala de chat da equipe (changeRoom/?r=<id>, onde
-  # o 3.9.65 mediu o mesmo id do torneio). Com qualquer uma delas, a conta
-  # espera a luta como as demais. Custo do erro oposto: uma conta sem equipe
-  # espera ate o inicio (no maximo ~6 min) e sai sem luta.
+  # contador de inicio (que o membro ve, como na captura) e a sala de chat da
+  # equipe (changeRoom/?r=<id>, onde o 3.9.65 mediu o mesmo id do torneio).
+  # Com qualquer uma delas, a conta espera a luta como as demais. Custo do
+  # erro oposto: uma conta sem equipe espera ate o inicio (no maximo ~6 min)
+  # e sai sem luta.
   if [ -z "$_cc_link" ] && [ -z "$_cc_seg" ] && \
      ! grep -q -E 'changeRoom/[?]r=[0-9]+' "$src_ram" 2>/dev/null; then
     # DISPONIBILIDADE PELO JOGO, NAO PELO CALENDARIO: nada do torneio na
@@ -271,9 +284,10 @@ clancommand_start() {
   # chama batalha_marcar: nao ha batalha a retomar ainda, e o marcador faria
   # um worker relancado procurar uma luta que so comeca horas depois.
   if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ] && [ -z "$_cc_link" ]; then
-    # Equipe ja inscrita (pelo lider, por outro membro ou numa passada
-    # anterior): nada a fazer agora, a luta e pega na janela do inicio.
-    printf "Torneio de equipe: equipe ja inscrita, inicio em %s min\n" "$(( _cc_seg / 60 ))"
+    # Membro: quem inscreve e o lider. Nada a fazer agora, a luta e pega na
+    # janela do inicio.
+    printf "Torneio de equipe: %s, inicio em %s min\n" \
+           "`_cc_situacao "$src_ram"`" "$(( _cc_seg / 60 ))"
     evento_cancelar 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
@@ -310,8 +324,10 @@ clancommand_start() {
     time_exit 17
     printf "Torneio de equipe: entrando...\n"
   else
-    # Membro de equipe ja inscrita: nao ha o que apertar, so esperar a luta.
-    printf "Torneio de equipe: equipe ja inscrita - aguardando a luta\n"
+    # MEMBRO: NAO HA O QUE APERTAR, SO ESPERAR A LUTA. Espera mesmo com o
+    # lider ainda sem inscrever: o worker do lider inscreve nesta mesma
+    # janela (11:25 / 17:55), e o membro que ja desistiu perde a luta.
+    printf "Torneio de equipe: %s - aguardando a luta\n" "`_cc_situacao "$src_ram"`"
   fi
 
   # SEM CONTADOR NA PAGINA, O PRAZO VAI ATE A PROXIMA MEIA HORA CHEIA. O

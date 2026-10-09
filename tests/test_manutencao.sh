@@ -3593,8 +3593,9 @@ _r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null
       func_trade > /dev/null 2>&1; [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
 check "troca com resposta de login: o dia fica em aberto" "em_aberto" "$_r"
 
-# Torneio de Equipe: o membro sem botao "Aplicar" (equipe ja inscrita pelo
-# lider) espera a luta e luta, em vez de voltar para a rotina.
+# Torneio de Equipe: so o lider tem o botao "Aplicar". O membro (pagina da
+# captura de 09/10: contador, "Lider nao se inscreveu", sem botao) espera a
+# luta e luta, em vez de voltar para a rotina.
 #   _cc69 PAGINA_INICIAL -> pedidos feitos + o que o modulo decidiu
 #   PAGINA_INICIAL: membro | membro_longe | membro_chat | lider | nada
 _cc69() {
@@ -3610,7 +3611,7 @@ _cc69() {
               echo "$_p <a href='/clancommand/attack/?r=1'>Atacar</a>"; return
           fi
           case "$PG" in
-              membro)       echo "$_p <span id='time_240000'>4 min</span>" ;;
+              membro)       echo "$_p <span id='time_240000'>4 min</span> Líder não se inscreveu para a batalha <a href='/clancommand/'>Atualizar</a>" ;;
               membro_longe) echo "$_p <span id='time_15808000'>4 h 23 min</span>" ;;
               membro_chat)  echo "$_p <a href='/chat/changeRoom/?r=98418211'>Chat</a>" ;;
               lider)        echo "$_p <a href='/clancommand/?enterFight=98418211'>Aplicar</a> <span id='time_240000'>4 min</span>" ;;
@@ -3627,6 +3628,11 @@ check "torneio: membro so com a sala da equipe tambem luta" "marcou lutou " "`_c
 check "torneio: membro com inicio longe e liberado sem inscrever" "liberou " "`_cc69 membro_longe`"
 check "torneio: lider inscreve e luta" "marcou /clancommand/?enterFight=98418211 lutou " "`_cc69 lider`"
 check "torneio: sem nada do torneio na pagina, pula" "liberou " "`_cc69 nada`"
+_r=$( . "$LIB/clancommand.sh" > /dev/null 2>&1; _f="$_td20/cc_sit"
+      echo "Líder não se inscreveu para a batalha" > "$_f"; printf '%s|' "`_cc_situacao "$_f"`"
+      echo "Participantes: 10 equipes" > "$_f"; printf '%s' "`_cc_situacao "$_f"`" )
+check "torneio: o log do membro diz se o lider ja inscreveu" \
+    "lider ainda nao inscreveu a equipe|membro da equipe, sem botao de inscricao" "$_r"
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69
