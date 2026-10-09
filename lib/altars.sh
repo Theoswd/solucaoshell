@@ -8,6 +8,11 @@ altars_fight() {
   echo "15" > RPER
 
   cf_access() {
+    # ALVO CINZA, UMA VEZ POR PAGINA. Toda pagina nova da luta passa por
+    # aqui (cada requisicao do laco, a releitura e o ressuscitar), e o
+    # laco consultava o mesmo arquivo ate tres vezes por volta, um awk
+    # cada. O resultado e o mesmo; muda so quantas vezes e calculado.
+    if alvo_grey "$TMP/src.html"; then _grey=1; else _grey=0; fi
     grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[?]r[=][0-9]+)' "$TMP/src.html" | sed -n 1p > ATK 2>/dev/null
     grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[?]r[=][0-9]+)' "$TMP/src.html" | sed -n 1p > ATKRND 2>/dev/null
     grep -o -E '(/altars/dodge/[?]r[=][0-9]+)' "$TMP/src.html" | sed -n 1p > DODGE 2>/dev/null
@@ -80,21 +85,22 @@ altars_fight() {
   # LINK VAZIO NUNCA VIRA REQUISICAO: cada ramo exige o proprio link na
   # pagina. "${URL}$(cat HEAL)" com HEAL vazio baixava a PAGINA INICIAL, e a
   # leitura seguinte — sem luta nenhuma — contava para o fim da batalha.
-  until [ -s "BREAK_LOOP" ] || [ "$(date +%s)" -gt "$FIGHT_BREAK" ]; do
+  # UM "date" POR VOLTA: o mesmo instante decide o teto e a recarga.
+  while _atk0=$(date +%s); [ ! -s "BREAK_LOOP" ] && [ "$_atk0" -le "$FIGHT_BREAK" ]; do
     # Instante do INICIO da volta: o ataque marca o last_atk com ele para o
     # tempo do request contar DENTRO da recarga (LA), e nao somar-se a ela.
-    _atk0=$(date +%s)
+    # (_atk0 vem da condicao do laco)
     # Uma leitura so do last_atk por volta: dois "cat" na mesma condicao podiam
     # devolver segundos diferentes e liberar o golpe antes da recarga.
-    _latk=$(( _atk0 - $(cat last_atk) ))
+    read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     # PRIORIDADE 1 — CURA: manter a conta viva vem antes da esquiva. Nos
     # altares a conta apanha muito; curar primeiro evita a morte por esperar
     # a releitura de HP que so viria depois da esquiva.
     if [ -s HEAL ] && \
        awk -v ush="$(cat HP)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(ush < hlhp) }' && \
-       [ "$(($(date +%s) - $(cat last_heal)))" -gt 90 ]; then
+       { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
-        run_curl_exec "${URL}$(cat HEAL)" > "$TMP/src.html"
+        read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
@@ -105,34 +111,34 @@ altars_fight() {
       date +%s > last_heal
 
     # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.
-    elif [ -s DODGE ] && ! alvo_grey "$TMP/src.html" && \
-         [ "$(($(date +%s) - $(cat last_dodge)))" -gt 20 ] && \
+    elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
+         { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          awk -v ush="$(cat HP)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(ush < oldhp) }'; then
       (
-        run_curl_exec "${URL}$(cat DODGE)" > "$TMP/src.html"
+        read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
       cat HP > old_HP; date +%s > last_dodge
 
     elif [ -s ATKRND ] && { \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
-         ! alvo_grey "$TMP/src.html" && \
+         [ "$_latk" -ne "$LA" ] && \
+         [ "$_grey" = 0 ] && \
          awk -v rhp="$(cat RHP)" -v enh="$(cat HP2)" 'BEGIN { exit !(rhp < enh) }' || \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
-         ! alvo_grey "$TMP/src.html" && \
+         [ "$_latk" -ne "$LA" ] && \
+         [ "$_grey" = 0 ] && \
          alvo_aliado USER cla; }; then
       (
-        run_curl_exec "${URL}$(cat ATKRND)" > "$TMP/src.html"
+        read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
       echo "$_atk0" > last_atk
 
     elif [ -s ATK ] && \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
+         [ "$_latk" -gt "$LA" ]; then
       (
-        run_curl_exec "${URL}$(cat ATK)" > "$TMP/src.html"
+        read -r _l < ATK; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
@@ -142,7 +148,7 @@ altars_fight() {
       # Rele tambem quando a leitura nao tem link de ataque: a luta so
       # termina pelo luta_acabou, e sem esta releitura o laco dormiria sobre
       # uma pagina sem acao (rede, sessao, transicao) ate o teto.
-      if alvo_grey "$TMP/src.html" || [ ! -s ATK ]; then
+      if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
         (
           run_curl_exec "${URL}/altars" > "$TMP/src.html"
         ) </dev/null > /dev/null 2>&1 &
@@ -151,8 +157,14 @@ altars_fight() {
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
       else
+        # FIM DO GIRO. Acorda no mesmo instante de antes (LA - _latk), mas
+        # nunca com espera zero: no segundo em que _latk == LA o golpe ainda
+        # nao sai ("-gt") e o laco girava sem dormir esse segundo inteiro
+        # (19 a 37 voltas medidas, ~170 processos por golpe). Nesse segundo a
+        # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
-        [ "$_resta" -gt 0 ] && sleep "$_resta"
+        [ "$_resta" -gt 0 ] || _resta=1
+        sleep "$_resta"
       fi
     fi
   done

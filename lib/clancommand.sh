@@ -169,6 +169,11 @@ clancommand_fight() {
   }
 
   cc_access() {
+    # ALVO CINZA, UMA VEZ POR PAGINA. Toda pagina nova da luta passa por
+    # aqui (cada requisicao do laco, a releitura e o ressuscitar), e o
+    # laco consultava o mesmo arquivo ate tres vezes por volta, um awk
+    # cada. O resultado e o mesmo; muda so quantas vezes e calculado.
+    if alvo_grey "$src_ram"; then _grey=1; else _grey=0; fi
     set -- `combate_ler clancommand "$HPER" "$RPER" "$src_ram"`
     _emluta="$1"; RHP="$2"; HLHP="$3"; _hpat="$4"; _hp2at="$5"
     alvo_nome "$src_ram" > USER 2>/dev/null
@@ -228,26 +233,27 @@ clancommand_fight() {
   FIGHT_BREAK=`luta_teto`
   # Link vazio nunca vira requisicao: cada ramo exige o proprio link na
   # pagina, senao "${URL}$(cat HEAL)" com HEAL vazio baixaria a Home.
-  until [ -s "BREAK_LOOP" ] || [ "$(date +%s)" -gt "$FIGHT_BREAK" ]; do
-    _atk0=$(date +%s)
-    _latk=$(( _atk0 - $(cat last_atk) ))
+  # UM "date" POR VOLTA: o mesmo instante decide o teto e a recarga.
+  while _atk0=$(date +%s); [ ! -s "BREAK_LOOP" ] && [ "$_atk0" -le "$FIGHT_BREAK" ]; do
+    # (_atk0 vem da condicao do laco)
+    read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
 
     if [ -s HEAL ] && \
        awk -v hp="$(cat HP)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(hp < hlhp) }' && \
-       [ "$(($(date +%s) - $(cat last_heal)))" -gt 90 ]; then
+       { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
-        run_curl_exec "${URL}$(cat HEAL)" > "$src_ram"
+        read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
       cat HP > old_HP
       date +%s > last_heal
 
-    elif [ -s DODGE ] && ! alvo_grey "$src_ram" && \
-         [ "$(($(date +%s) - $(cat last_dodge)))" -gt 20 ] && \
+    elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
+         { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          awk -v hp="$(cat HP)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(hp < oldhp) }'; then
       (
-        run_curl_exec "${URL}$(cat DODGE)" > "$src_ram"
+        read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
@@ -258,22 +264,22 @@ clancommand_fight() {
     # proprio cla, entao a protecao de aliados vale aqui como nas batalhas de
     # cla — o atkrnd sorteia outro alvo.
     elif [ -s ATKRND ] && \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk >= atktime) }' && \
-         ! alvo_grey "$src_ram" && \
+         [ "$_latk" -ge "$LA" ] && \
+         [ "$_grey" = 0 ] && \
          { awk -v rhp="$(cat RHP)" -v hp2="$(cat HP2)" 'BEGIN { exit !(rhp < hp2) }' || \
            alvo_aliado USER cla; }; then
       (
-        run_curl_exec "${URL}$(cat ATKRND)" > "$src_ram"
+        read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
       echo "$_atk0" > last_atk
 
     elif [ -s ATK ] && \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }' && \
-         ! alvo_grey "$src_ram"; then
+         [ "$_latk" -gt "$LA" ] && \
+         [ "$_grey" = 0 ]; then
       (
-        run_curl_exec "${URL}$(cat ATK)" > "$src_ram"
+        read -r _l < ATK; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
@@ -283,7 +289,7 @@ clancommand_fight() {
       # RECARGA — UMA REQUISICAO POR CICLO. O ultimo golpe ja trouxe o HP; so
       # relemos quando o alvo esta invulneravel (grey) ou quando a leitura
       # ficou sem ataque, para o laco nao dormir sobre uma pagina sem acao.
-      if alvo_grey "$src_ram" || [ ! -s ATK ]; then
+      if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
         (
           run_curl_exec "$URL/clancommand/" > "$src_ram"
         ) </dev/null > /dev/null 2>&1 &
@@ -291,8 +297,14 @@ clancommand_fight() {
         cc_access
         sleep 1
       else
+        # FIM DO GIRO. Acorda no mesmo instante de antes (LA - _latk), mas
+        # nunca com espera zero: no segundo em que _latk == LA o golpe ainda
+        # nao sai ("-gt") e o laco girava sem dormir esse segundo inteiro
+        # (19 a 37 voltas medidas, ~170 processos por golpe). Nesse segundo a
+        # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
-        [ "$_resta" -gt 0 ] && sleep "$_resta"
+        [ "$_resta" -gt 0 ] || _resta=1
+        sleep "$_resta"
       fi
     fi
   done

@@ -179,8 +179,8 @@ printf "\n=== 5. Prioridade da cura x esquiva (altars, torneio e duelo de cla) =
 # Nesses modulos a cura deve ser avaliada ANTES da esquiva, para a conta nao
 # morrer esperando a releitura de HP que so viria depois do dodge.
 for f in altars.sh clanfight.sh clandmg.sh; do
-    _heal_ln=$(grep -n 'run_curl_exec "${URL}$(cat HEAL)"' "$LIB/$f" | head -n1 | cut -d: -f1)
-    _dodge_ln=$(grep -n 'run_curl_exec "${URL}$(cat DODGE)"' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _heal_ln=$(grep -n 'read -r _l < HEAL; run_curl_exec "${URL}$_l"' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _dodge_ln=$(grep -n 'read -r _l < DODGE; run_curl_exec "${URL}$_l"' "$LIB/$f" | head -n1 | cut -d: -f1)
     if [ -n "$_heal_ln" ] && [ -n "$_dodge_ln" ] && [ "$_heal_ln" -lt "$_dodge_ln" ]; then
         ok "$f: cura (linha $_heal_ln) antes da esquiva (linha $_dodge_ln)"
     else
@@ -189,8 +189,8 @@ for f in altars.sh clanfight.sh clandmg.sh; do
 done
 # flagfight e clancoliseum ja eram cura-primeiro
 for f in flagfight.sh clancoliseum.sh; do
-    _heal_ln=$(grep -n 'cat HEAL\|cat SHIELD\|SHIELD)' "$LIB/$f" | head -n1 | cut -d: -f1)
-    _dodge_ln=$(grep -n 'cat DODGE)' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _heal_ln=$(grep -n '< HEAL;\|< SHIELD;' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _dodge_ln=$(grep -n '< DODGE;' "$LIB/$f" | head -n1 | cut -d: -f1)
     if [ -n "$_heal_ln" ] && [ -n "$_dodge_ln" ] && [ "$_heal_ln" -lt "$_dodge_ln" ]; then
         ok "$f: cura/escudo antes da esquiva"
     else
@@ -1377,11 +1377,11 @@ done
 # RELER a pagina quando nao ha link de ataque — senao o laco dormia sobre uma
 # pagina sem acao ate o teto (achado na simulacao desta correcao).
 for _m in altars.sh clanfight.sh clandmg.sh clancoliseum.sh flagfight.sh clancommand.sh; do
-    grep -q "alvo_grey \"[^\"]*\" || \[ ! -s ATK \]" "$LIB/$_m" \
+    grep -q '\[ "\$_grey" = 1 \] || \[ ! -s ATK \]' "$LIB/$_m" \
         && ok "$_m: sem link de ataque, rele a pagina do evento" \
         || bad "$_m: sem link de ataque o laco dorme sem reler"
 done
-grep -q "alvo_grey \"\$src_ram\" || \[ -z \"\$ATK\" \]" "$LIB/coliseum.sh" \
+grep -q '\[ "\$_grey" = 1 \] || \[ -z "\$ATK" \]' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: sem link de ataque, rele a pagina do evento" \
     || bad "coliseum.sh: sem link de ataque o laco dorme sem reler"
 _sem=""
@@ -3329,7 +3329,7 @@ _r=$(grep -c 'URL/train' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" 
 check "nenhum modulo de batalha pede /train direto" 7 "$_r"
 
 # last_atk lido uma vez por volta (duas leituras podiam dar segundos diferentes).
-_r=$(grep -c 'cat last_atk' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" \
+_r=$(grep -c 'read -r _latk < last_atk' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" \
      "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c ':1$')
 check "last_atk lido uma vez por volta nos cinco modulos" 5 "$_r"
 rm -rf "$_td16"; unset _td16 _r
@@ -3680,8 +3680,49 @@ grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancomma
     && ok "torneio: worker relancado volta para a luta" \
     || bad "torneio: batalha_retomar sem o clancommand"
 
+# Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
+# andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto
+# de voltas o teste o encerra, e os golpes nao chegam a seis.
+#   _giro71 MODULO SECAO FUNCAO -> "golpes=N relogio_lido=M"
+_giro71() {
+    ( TMP="$_td20/giro_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/$1.sh" > /dev/null 2>&1
+      _pg="$TMP/pagina.html"
+      { printf "<img src='/images/icon/level.png'/> <img src='/images/race/1.png' alt=''/> Eu <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 8000</span>"
+        printf "<img src='/images/race/0.png' alt=''/> Ele <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;5000</span>"
+        for _v in attack attackrandom dodge heal; do printf "<a class='nbtn' href='/%s/%s/?r=1'>x</a>" "$2" "$_v"; done
+        printf '<script>jsInterface.event("user=5")</script>\n'; } > "$_pg"
+      for _f in SRC src.html x_src; do cp "$_pg" "$TMP/$_f"; done
+      echo 10000 > "$TMP/FULL"; echo 10000 > "$TMP/x_full"; src_ram="$TMP/x_src"; full_ram="$TMP/x_full"
+      echo 100000 > "$TMP/relogio"; : > "$TMP/nrel"; : > "$TMP/req"
+      date() { echo x >> "$TMP/nrel"
+               [ "`wc -l < "$TMP/nrel"`" -gt 600 ] && echo 1 > "$TMP/BREAK_LOOP"
+               cat "$TMP/relogio"; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; cat "$_pg"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      luta_teto() { echo $(( `cat "$TMP/relogio"` + 30 )); }
+      func_unset() { :; }
+      cd "$TMP" && $3 > /dev/null 2>&1
+      printf 'golpes=%s relogio_lido=%s' "`grep -c '/attack/' "$TMP/req"`" "`wc -l < "$TMP/nrel" | tr -d ' '`" )
+}
+for _m in "clanfight clanfight clanfight_fight" "clandmg clandmgfight clandmgfight_fight" \
+          "altars altars altars_fight" "clancoliseum clancoliseum clancoliseum_fight" \
+          "flagfight flagfight flagfight_fight" "clancommand clancommand clancommand_fight"; do
+    set -- $_m
+    _r=`_giro71 "$1" "$2" "$3"`
+    _g=${_r#golpes=}; _g=${_g%% *}; _n=${_r##*=}
+    if [ "$_g" -ge 5 ] && [ "$_n" -lt 120 ]; then ok "$1: laco sem giro em 30s ($_r)"
+    else bad "$1: laco girando sem dormir ($_r)"; fi
+done
+check "fim do giro: espera nunca zero (sete modulos)" 7 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" \
+           "$LIB/flagfight.sh" "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -c '\[ "\$_resta" -gt 0 \] || _resta=1$')"
+check "alvo cinza calculado uma vez por pagina (sete modulos)" "1 1 1 1 1 1 1" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand coliseum; do grep -c 'alvo_grey' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

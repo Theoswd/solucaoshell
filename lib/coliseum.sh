@@ -80,6 +80,8 @@ coliseum_fight() {
       fi
 
         cl_access() {
+            # Alvo cinza uma vez por pagina (ver o mesmo ponto no clanfight.sh).
+            if alvo_grey "$src_ram"; then _grey=1; else _grey=0; fi
             # Os relogios de cura/esquiva/ataque eram zerados AQUI, a cada
             # leitura: a recarga de 90s da cura nunca valia e, com a vida
             # baixa, a cura era tentada quase a cada volta. Sairam para antes
@@ -167,8 +169,8 @@ coliseum_fight() {
         # LINK VAZIO NUNCA VIRA REQUISICAO: cada ramo exige o proprio link
         # na pagina; "${URL}${HEAL}" com HEAL vazio pedia a pagina inicial.
         COL_BREAK=`luta_teto`
-        until [ -n "$BREAK_LOOP" ] || [ "$(date +%s)" -gt "$COL_BREAK" ]; do
-            now=`date +%s`
+        # Um "date" por volta: o mesmo instante decide o teto e as recargas.
+        while now=`date +%s`; [ -z "$BREAK_LOOP" ] && [ "$now" -le "$COL_BREAK" ]; do
             time_since_last_heal=$((now - last_heal))
             time_since_last_dodge=$((now - last_dodge))
             time_since_last_atk=$((now - last_atk))
@@ -187,7 +189,7 @@ coliseum_fight() {
                 last_heal=$now
                 last_atk=$now
 
-            elif [ -n "$DODGE" ] && ! alvo_grey "$src_ram" && \
+            elif [ -n "$DODGE" ] && [ "$_grey" = 0 ] && \
                  [ "$time_since_last_dodge" -gt 20 ] && \
                  awk -v ush="$USH" -v oldhp="$OLDHP" 'BEGIN { exit !(ush < oldhp) }'; then
                 (
@@ -200,8 +202,8 @@ coliseum_fight() {
                 last_atk=$now
 
             elif [ -n "$ATKRND" ] && \
-                 awk -v latk="$time_since_last_atk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
-                 ! alvo_grey "$src_ram" && \
+                 [ "$time_since_last_atk" -ne "$LA" ] && \
+                 [ "$_grey" = 0 ] && \
                  awk -v rhp="$RHP" -v enh="$ENH" 'BEGIN { exit !(rhp < enh) }'; then
                 (
                     run_curl_exec "${URL}${ATKRND}" > "$src_ram"
@@ -211,7 +213,7 @@ coliseum_fight() {
                 last_atk=$now
 
             elif [ -n "$ATK" ] && \
-                 awk -v latk="$time_since_last_atk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
+                 [ "$time_since_last_atk" -gt "$LA" ]; then
                 (
                     run_curl_exec "${URL}${ATK}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
@@ -228,7 +230,7 @@ coliseum_fight() {
                 # Rele tambem quando a leitura nao tem link de ataque: a luta
                 # so termina pelo luta_acabou, e sem esta releitura o laco
                 # dormiria sobre uma pagina sem acao ate o teto.
-                if alvo_grey "$src_ram" || [ -z "$ATK" ]; then
+                if [ "$_grey" = 1 ] || [ -z "$ATK" ]; then
                     (
                         run_curl_exec "${URL}/coliseum" > "$src_ram"
                     ) </dev/null > /dev/null 2>&1 &
@@ -237,8 +239,11 @@ coliseum_fight() {
                     # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
                     sleep 1
                 else
+                    # Fim do giro: mesmo instante de antes, nunca espera zero
+                    # (ver o mesmo ponto no clanfight.sh).
                     _resta=$(( LA - time_since_last_atk ))
-                    [ "$_resta" -gt 0 ] && sleep "$_resta"
+                    [ "$_resta" -gt 0 ] || _resta=1
+                    sleep "$_resta"
                 fi
             fi
         done
