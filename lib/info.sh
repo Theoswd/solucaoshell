@@ -837,6 +837,8 @@ luta_inicio() {
     _reviveu=0
     LUTA_MOTIVO=""
     LUTA_SESSAO_CAIU=0
+    # Troca por aliado e fogo amigo (allies.sh).
+    type aliado_zerar > /dev/null 2>&1 && aliado_zerar
     [ -n "$1" ] && batalha_marcar "$1"
     return 0
 }
@@ -1180,8 +1182,41 @@ parse_status() {
 
     NOWHP="$ACC_HP"; NOWMP="$ACC_MP"
 
-    if [ -n "$ACC_HP" ] && [ -n "$FIXHP" ] && [ "$FIXHP" -gt 0 ] 2>/dev/null; then
-        HPPER=`awk -v a="$ACC_HP" -v b="$FIXHP" 'BEGIN{printf "%.0f", a/b*100}'`
+    # MAXIMO DA CONTA: O QUE O BOT LE DELA, NUNCA ABAIXO DO VALOR ATUAL.
+    #
+    # Regra do dono do bot: o maximo e o que a instancia le daquela conta.
+    # Duas leituras sao da propria conta:
+    #   - o /train (FIXHP e ACC_ENE), que ja traz o teto de cada uma — no
+    #     painel de 10/10/2026 os tetos de energia iam de 1555 (nivel 45, o
+    #     mesmo 1555 do cabecalho com a conta cheia) a 2155 (nivel 96);
+    #   - o MAIOR VALOR JA VISTO no cabecalho (o jogo so mostra o atual:
+    #     "731 | 1555"). HP e energia se regeneram ate o teto.
+    # Vale o maior dos dois: o /train da o numero certo desde a primeira
+    # leitura, e o visto impede um teto abaixo do valor atual (mais de 100%)
+    # quando o /train falha ou fica velho. Subiu de nivel, o visto recomeca.
+    # Fica em disco ($TMP/conta_max: "nivel hp energia") entre reinicios.
+    #
+    # So o painel e o log usam isto. As batalhas seguem com o FIXHP do /train.
+    _mx_n=""; _mx_h=0; _mx_e=0
+    { read -r _mx_n _mx_h _mx_e < "$TMP/conta_max"; } 2>/dev/null
+    case "$_mx_h" in ''|*[!0-9]*) _mx_h=0 ;; esac
+    case "$_mx_e" in ''|*[!0-9]*) _mx_e=0 ;; esac
+    if [ -n "$ACC_LVL" ] && [ "$ACC_LVL" != "$_mx_n" ]; then
+        _mx_n="$ACC_LVL"; _mx_h=0; _mx_e=0
+    fi
+    _mx_ant="$_mx_n $_mx_h $_mx_e"
+    [ -n "$ACC_HP" ] && [ "$ACC_HP" -gt "$_mx_h" ] && _mx_h="$ACC_HP"
+    [ -n "$ACC_MP" ] && [ "$ACC_MP" -gt "$_mx_e" ] && _mx_e="$ACC_MP"
+    [ "$_mx_n $_mx_h $_mx_e" = "$_mx_ant" ] || \
+        echo "$_mx_n $_mx_h $_mx_e" > "$TMP/conta_max" 2>/dev/null
+    # O teto do /train, quando maior. A energia so vale como numero inteiro:
+    # separador de milhar sai, valor com sufixo (K/M) fica de fora.
+    case "$FIXHP" in ''|*[!0-9]*) ;; *) [ "$FIXHP" -gt "$_mx_h" ] && _mx_h="$FIXHP" ;; esac
+    _mx_t=`printf '%s' "$ACC_ENE" | tr -d ".,'"` 2>/dev/null
+    case "$_mx_t" in ''|*[!0-9]*) ;; *) [ "$_mx_t" -gt "$_mx_e" ] && _mx_e="$_mx_t" ;; esac
+
+    if [ -n "$ACC_HP" ] && [ "$_mx_h" -gt 0 ]; then
+        HPPER=`awk -v a="$ACC_HP" -v b="$_mx_h" 'BEGIN{printf "%.0f", a/b*100}'`
     else
         HPPER=""
     fi
@@ -1204,21 +1239,24 @@ parse_status() {
     # Agora o campo traz os dois, no formato "atual/teto" (ex.: 809/2109),
     # que e como o proprio jogo apresenta. Quando so um dos dois e conhecido,
     # mostra o que houver, sem inventar o outro.
+    #
+    # O teto agora e o da propria conta (ver "maximo da conta", acima), nao o
+    # "Energia:" do /train.
     _ene_campo="-"
-    if [ -n "$ACC_MP" ] && [ -n "$ACC_ENE" ]; then
-        _ene_campo="${ACC_MP}/${ACC_ENE}"
+    if [ -n "$ACC_MP" ] && [ "$_mx_e" -gt 0 ]; then
+        _ene_campo="${ACC_MP}/${_mx_e}"
     elif [ -n "$ACC_MP" ]; then
         _ene_campo="$ACC_MP"
-    elif [ -n "$ACC_ENE" ]; then
-        _ene_campo="$ACC_ENE"
     fi
 
-    # O ultimo campo e o HP maximo: o painel mostra o HP em percentual.
+    # O ultimo campo e o HP maximo da conta: o painel mostra o HP em
+    # percentual dele. Ainda sem leitura, vazio (o painel mostra o numero).
+    [ "$_mx_h" -gt 0 ] || _mx_h=""
     printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
         "${ACC:-$SLS_USER}" "${ACC_HP:--}" "${ACC_MP:--}" "$_ene_campo" \
         "${ACC_LVL:--}" "${ACC_GOLD:--}" "${ACC_SILVER:--}" "$(date +%s)" \
-        "$FIXHP" > "$TMP/stats" 2>/dev/null
-    unset _ene_campo
+        "$_mx_h" > "$TMP/stats" 2>/dev/null
+    unset _ene_campo _mx_n _mx_h _mx_e _mx_ant _mx_t
 
     unset _pg
 }

@@ -468,6 +468,18 @@ tarefas_livres() {
         if clanDungeon; then masmorra_marcar; else masmorra_adiar; fi
     fi
 
+    # --- Torneio de Equipe: o lider inscreve a equipe no proximo torneio
+    #
+    # A inscricao abre horas antes do inicio e so o lider tem o botao. Logo
+    # depois da batalha o clancommand_start ja tenta; aqui fica a repescagem
+    # de hora em hora, para quando a inscricao abre mais tarde. Membro, ou
+    # lider ja inscrito, le a pagina uma vez e para ate o inicio do torneio.
+    liga_fora_da_inscricao || return 0
+    if [ -n "$CLD" ] && ativ_liberada torneq 60; then
+        clancommand_inscrever 2>/dev/null
+        ativ_marcar torneq
+    fi
+
     # --- Arena, sempre tomando antes a missao do cla que ela completa
     liga_fora_da_inscricao || return 0
     if arena_liberada; then
@@ -720,7 +732,7 @@ batalha_retomar() {
     # HP maximo: o limpar_combate apaga o FULL, e o worker relancado pode nao
     # te-lo. Sem ele o limiar de cura seria zero.
     case "$_bp_sec" in
-        king|clanfight|clandmgfight|altars) _br_full="$TMP/FULL" ;;
+        king|clanfight|clandmgfight|altars|clancommand) _br_full="$TMP/FULL" ;;
         clancoliseum) _br_full="$TMP/ccol_full" ;;
         flagfight)    _br_full="$TMP/flag_full" ;;
         *)            _br_full="" ;;
@@ -738,6 +750,10 @@ batalha_retomar() {
         clandmgfight) fetch_page "/clandmgfight" "$TMP/SRC";      clandmgfight_fight ;;
         clancoliseum) fetch_page "/clancoliseum" "$TMP/ccol_src"; clancoliseum_fight ;;
         flagfight)    fetch_page "/flagfight" "$TMP/flag_src";    flagfight_fight ;;
+        # O clancommand_start ja anotava a batalha (batalha_marcar), mas sem
+        # este ramo a retomada caia no "*)" e so apagava a anotacao: o worker
+        # relancado no meio do torneio deixava a luta.
+        clancommand)  fetch_page "/clancommand" "$TMP/ccmd_src";  clancommand_fight ;;
         coliseum)
             # O coliseum_fight tambem INSCREVE: chamado com a luta ja
             # encerrada, ele entraria numa luta NOVA — ate fora da janela

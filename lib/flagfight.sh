@@ -10,24 +10,34 @@ flagfight_fight() {
   RPER=15
 
   cf_access() {
+    # ALVO CINZA, UMA VEZ POR PAGINA. Toda pagina nova da luta passa por
+    # aqui (cada requisicao do laco, a releitura e o ressuscitar), e o
+    # laco consultava o mesmo arquivo ate tres vezes por volta, um awk
+    # cada. O resultado e o mesmo; muda so quantas vezes e calculado.
+    if alvo_grey "$src_ram"; then _grey=1; else _grey=0; fi
     grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[?]r[=][0-9]+)' "$src_ram" | sed -n '1p' > ATK 2>/dev/null
     grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > ATKRND 2>/dev/null
     grep -o -E '(/flagfight/dodge/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > DODGE 2>/dev/null
     grep -o -E '(/flagfight/heal/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > HEAL 2>/dev/null
     grep -o -E '(/[a-z]+/shield/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > SHIELD 2>/dev/null
     alvo_nome "$src_ram" > USER 2>/dev/null
+    aliado_ler cla
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
-    grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > ENH 2>/dev/null
-    awk -v ush="$(cat USH)" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }' > RHP
-    awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+    # HP DA PAGINA, LIDO UMA VEZ. O log, a checagem de morte e as comparacoes
+    # de cura e esquiva liam o arquivo um "cat" cada, e as duas comparacoes
+    # rodavam a cada volta do laco. Os valores so mudam com pagina nova, e a
+    # comparacao e a mesma de antes (o mesmo awk, com os mesmos textos).
+    _hp=`cat USH`
+    _cura=0; [ -s SHIELD ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
+    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
 
     if grep -q -o '/dodge/' "$src_ram"; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
       sessao_marcar
-      printf "Em batalha flagfight - HP: %s\n" "`cat USH`"
+      printf "Em batalha flagfight - HP: %s\n" "$_hp"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      if luta_hp "`cat USH`"; then
+      if luta_hp "$_hp"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #
         # Morrer nao e o mesmo que sair do evento: havendo unrip na
@@ -68,10 +78,14 @@ flagfight_fight() {
     fi
   }
 
+  # LIMIAR DE CURA, UMA VEZ POR LUTA: depende so do HP maximo, que nao muda
+  # durante a luta (era recalculado a cada pagina).
+  awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+  _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio flagfight
   cf_access
   > BREAK_LOOP
-  cat USH > old_HP
+  cat USH > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
   echo $(($(date +%s) - LA)) > last_atk
@@ -82,56 +96,58 @@ flagfight_fight() {
   FIGHT_BREAK=`luta_teto`
   # LINK VAZIO NUNCA VIRA REQUISICAO: cada ramo exige o proprio link na
   # pagina. "${URL}$(cat SHIELD)" com SHIELD vazio baixava a PAGINA INICIAL.
-  until [ -s "BREAK_LOOP" ] || [ "$(date +%s)" -gt "$FIGHT_BREAK" ]; do
+  # UM "date" POR VOLTA: o mesmo instante decide o teto e a recarga.
+  while _atk0=$(date +%s); [ ! -s "BREAK_LOOP" ] && [ "$_atk0" -le "$FIGHT_BREAK" ]; do
     # Instante do INICIO da volta: o ataque marca o last_atk com ele para o
     # tempo do request contar DENTRO da recarga (LA), e nao somar-se a ela.
-    _atk0=$(date +%s)
+    # (_atk0 vem da condicao do laco)
     # Uma leitura so do last_atk por volta: dois "cat" na mesma condicao podiam
     # devolver segundos diferentes e liberar o golpe antes da recarga.
-    _latk=$(( _atk0 - $(cat last_atk) ))
+    read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     if [ -s SHIELD ] && \
-       awk -v ush="$(cat USH)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(ush < hlhp) }' && \
-       [ "$(($(date +%s) - $(cat last_heal)))" -gt 90 ]; then
+       [ "$_cura" = 1 ] && \
+       { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
-        run_curl_exec "${URL}$(cat SHIELD)" > "$src_ram"
+        read -r _l < SHIELD; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
       # HP maximo (full_ram) preservado: vem do /train e nao pode ser trocado
       # pelo HP atual pos-escudo, senao o limiar HLHP cai a cada golpe e a
       # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      cat USH > old_HP
+      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_heal
 
-    elif [ -s DODGE ] && ! alvo_grey "$src_ram" && \
-         [ "$(($(date +%s) - $(cat last_dodge)))" -gt 20 ] && \
-         awk -v ush="$(cat USH)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(ush < oldhp) }'; then
+    elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
+         { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
+         [ "$_caiu" = 1 ]; then
       (
-        run_curl_exec "${URL}$(cat DODGE)" > "$src_ram"
+        read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
-      cat USH > old_HP
+      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_dodge
 
-    elif [ -s ATKRND ] && { \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
-         ! alvo_grey "$src_ram" && \
-         awk -v rhp="$(cat RHP)" -v enh="$(cat ENH)" 'BEGIN { exit !(rhp < enh) }' || \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk != atktime) }' && \
-         ! alvo_grey "$src_ram" && \
-         alvo_aliado USER cla; }; then
+    # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
+    #
+    # A condicao antiga tinha tambem "inimigo bem mais forte", mas o
+    # agrupamento dos && / || a anulava: na pratica so o aliado trocava, e
+    # essa e a regra do dono do bot. Ela foi escrita como de fato agia, mais
+    # o fogo amigo: so aliados na frente nao vira laco de trocas.
+    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+         troca_aliado "$_atk0"; then
       (
-        run_curl_exec "${URL}$(cat ATKRND)" > "$src_ram"
+        read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
       echo "$_atk0" > last_atk
 
     elif [ -s ATK ] && \
-         awk -v latk="$_latk" -v atktime="$LA" 'BEGIN { exit !(latk > atktime) }'; then
+         [ "$_latk" -gt "$LA" ]; then
       (
-        run_curl_exec "${URL}$(cat ATK)" > "$src_ram"
+        read -r _l < ATK; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
@@ -145,14 +161,20 @@ flagfight_fight() {
       # Rele tambem quando a leitura nao tem link de ataque: a luta so
       # termina pelo luta_acabou, e sem esta releitura o laco dormiria sobre
       # uma pagina sem acao (rede, sessao, transicao) ate o teto.
-      if alvo_grey "$src_ram" || [ ! -s ATK ]; then
+      if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
         fetch_page "/flagfight" "$src_ram"
         cf_access
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
       else
+        # FIM DO GIRO. Acorda no mesmo instante de antes (LA - _latk), mas
+        # nunca com espera zero: no segundo em que _latk == LA o golpe ainda
+        # nao sai ("-gt") e o laco girava sem dormir esse segundo inteiro
+        # (19 a 37 voltas medidas, ~170 processos por golpe). Nesse segundo a
+        # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
-        [ "$_resta" -gt 0 ] && sleep "$_resta"
+        [ "$_resta" -gt 0 ] || _resta=1
+        sleep "$_resta"
       fi
     fi
   done

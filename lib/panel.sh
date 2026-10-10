@@ -1010,7 +1010,15 @@ combate_de() {
     _d="$1"
     # Antes: `cat X | tr -cd 0-9` — dois processos por arquivo, quatro por
     # conta. O read e builtin e o case valida sem chamar o tr.
-    ler_arq "$_d/HP";     _hp="$_LIDO"
+    # O Coliseu do Cla e as Bandeiras gravam o HP da conta em USH, nao em HP
+    # (o old_HP e o mesmo nos dois casos): sem isto o ao vivo dessas duas
+    # batalhas nao mostrava HP nenhum. Vale o mais recente dos dois.
+    if [ -f "$_d/USH" ] && { [ ! -f "$_d/HP" ] || [ "$_d/USH" -nt "$_d/HP" ]; }; then
+        ler_arq "$_d/USH"
+    else
+        ler_arq "$_d/HP"
+    fi
+    _hp="$_LIDO"
     ler_arq "$_d/old_HP"; _old="$_LIDO"
     case "$_hp"  in ''|*[!0-9]*) _hp=""  ;; esac
     case "$_old" in ''|*[!0-9]*) _old="" ;; esac

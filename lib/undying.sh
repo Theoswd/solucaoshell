@@ -34,7 +34,10 @@ undying_fight() {
   # (retorno 0 = em luta, 1 = fora). NAO encerra a luta sozinho.
   cf_access() {
     grep -o -E '/undying/(hit|mana)/[?][r][=][0-9]+' "$TMP/SRC" | sed -n '1p' > HITMANA 2>/dev/null
+    # Portao na pagina: lido uma vez aqui, o laco usa a marca (_gate).
+    _gate=0
     if grep -q -o 'out_gate' "$TMP/SRC"; then
+      _gate=1
       sessao_marcar
       # O Vale nao le HP (sem luta_hp): marca aqui que a conta lutou, para o
       # fim sem botao valer em 15s e nao 90s (LUTA_FORA_LUTOU, em info.sh).
@@ -70,16 +73,16 @@ undying_fight() {
   # TETO DE SEGURANCA (luta_teto, em info.sh). Era de 10 minutos contados da
   # entrada de cada conta; agora so segura o laco que nunca resolve.
   FIGHT_BREAK=`luta_teto`
-  until [ -s "BREAK_LOOP" ] || [ "`date +%s`" -gt "$FIGHT_BREAK" ]; do
-    _agora=`date +%s`
+  # Um "date" por volta: o mesmo instante decide o teto e o relogio de acao.
+  while _agora=`date +%s`; [ ! -s "BREAK_LOOP" ] && [ "$_agora" -le "$FIGHT_BREAK" ]; do
 
     # Relogio de 5s entre golpes (o jogo recusa acoes coladas <4s).
     if [ $(( _agora - _last_act )) -ge "$LA" ]; then
-      if grep -q -o 'out_gate' "$TMP/SRC"; then
+      if [ "$_gate" = 1 ]; then
         if [ -s HITMANA ]; then
           # Golpe (hit/mana) a cada 5s.
           (
-            run_curl_exec "${URL}$(cat HITMANA)" > "$TMP/SRC"
+            read -r _l < HITMANA; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
           time_exit 17
           cf_access

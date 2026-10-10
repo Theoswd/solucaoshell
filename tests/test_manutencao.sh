@@ -179,8 +179,8 @@ printf "\n=== 5. Prioridade da cura x esquiva (altars, torneio e duelo de cla) =
 # Nesses modulos a cura deve ser avaliada ANTES da esquiva, para a conta nao
 # morrer esperando a releitura de HP que so viria depois do dodge.
 for f in altars.sh clanfight.sh clandmg.sh; do
-    _heal_ln=$(grep -n 'run_curl_exec "${URL}$(cat HEAL)"' "$LIB/$f" | head -n1 | cut -d: -f1)
-    _dodge_ln=$(grep -n 'run_curl_exec "${URL}$(cat DODGE)"' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _heal_ln=$(grep -n 'read -r _l < HEAL; run_curl_exec "${URL}$_l"' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _dodge_ln=$(grep -n 'read -r _l < DODGE; run_curl_exec "${URL}$_l"' "$LIB/$f" | head -n1 | cut -d: -f1)
     if [ -n "$_heal_ln" ] && [ -n "$_dodge_ln" ] && [ "$_heal_ln" -lt "$_dodge_ln" ]; then
         ok "$f: cura (linha $_heal_ln) antes da esquiva (linha $_dodge_ln)"
     else
@@ -189,8 +189,8 @@ for f in altars.sh clanfight.sh clandmg.sh; do
 done
 # flagfight e clancoliseum ja eram cura-primeiro
 for f in flagfight.sh clancoliseum.sh; do
-    _heal_ln=$(grep -n 'cat HEAL\|cat SHIELD\|SHIELD)' "$LIB/$f" | head -n1 | cut -d: -f1)
-    _dodge_ln=$(grep -n 'cat DODGE)' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _heal_ln=$(grep -n '< HEAL;\|< SHIELD;' "$LIB/$f" | head -n1 | cut -d: -f1)
+    _dodge_ln=$(grep -n '< DODGE;' "$LIB/$f" | head -n1 | cut -d: -f1)
     if [ -n "$_heal_ln" ] && [ -n "$_dodge_ln" ] && [ "$_heal_ln" -lt "$_dodge_ln" ]; then
         ok "$f: cura/escudo antes da esquiva"
     else
@@ -486,7 +486,7 @@ else
 fi
 # Esquiva SO com o rei fora da arena: o ramo do dodge dentro do laco tem de
 # estar preso ao _rei_morto. Enquanto o rei vive, cada janela de 5s vira dano.
-_d1=$(grep -n 'cat DODGE' "$K" | head -n1 | cut -d: -f1)
+_d1=$(grep -n '< DODGE; run_curl_exec' "$K" | head -n1 | cut -d: -f1)
 if [ -n "$_d1" ] && sed -n "$((_d1 - 6)),${_d1}p" "$K" | grep -q '\[ "\$_rei_morto" = 1 \]'; then
     ok "king.sh: esquiva so depois da morte do rei (presa ao _rei_morto)"
 else
@@ -1156,11 +1156,13 @@ if [ -f "$_al" ]; then
     else
         ok "nenhum modulo testa aliado com padrao sem aspas"
     fi
-    for _m in altars clancoliseum clandmg clanfight flagfight; do
-        grep -q 'alvo_aliado USER cla' "$LIB/$_m.sh" \
-            && ok "$_m usa alvo_aliado" || bad "$_m nao protege aliado"
+    # A consulta a lista mora no aliado_ler (allies.sh), com a lista de cla
+    # nas batalhas de cla e a do Rei no Rei; a troca sai pelo troca_aliado.
+    for _m in altars clancoliseum clandmg clanfight flagfight clancommand; do
+        grep -q '^ *aliado_ler cla$' "$LIB/$_m.sh" && grep -q 'troca_aliado "\$_atk0"' "$LIB/$_m.sh" \
+            && ok "$_m protege aliado (lista do cla)" || bad "$_m nao protege aliado"
     done
-    grep -q 'alvo_aliado USER' "$LIB/king.sh" \
+    grep -q '^ *aliado_ler$' "$LIB/king.sh" && grep -q 'troca_aliado "\$_agora"' "$LIB/king.sh" \
         && ok "king.sh troca de alvo quando o alvo e aliado" \
         || bad "king.sh bate em aliado"
 
@@ -1377,11 +1379,11 @@ done
 # RELER a pagina quando nao ha link de ataque — senao o laco dormia sobre uma
 # pagina sem acao ate o teto (achado na simulacao desta correcao).
 for _m in altars.sh clanfight.sh clandmg.sh clancoliseum.sh flagfight.sh clancommand.sh; do
-    grep -q "alvo_grey \"[^\"]*\" || \[ ! -s ATK \]" "$LIB/$_m" \
+    grep -q '\[ "\$_grey" = 1 \] || \[ ! -s ATK \]' "$LIB/$_m" \
         && ok "$_m: sem link de ataque, rele a pagina do evento" \
         || bad "$_m: sem link de ataque o laco dorme sem reler"
 done
-grep -q "alvo_grey \"\$src_ram\" || \[ -z \"\$ATK\" \]" "$LIB/coliseum.sh" \
+grep -q '\[ "\$_grey" = 1 \] || \[ -z "\$ATK" \]' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: sem link de ataque, rele a pagina do evento" \
     || bad "coliseum.sh: sem link de ataque o laco dorme sem reler"
 _sem=""
@@ -1799,8 +1801,8 @@ _r=$( . "$LIB/info.sh"; luta_inicio; luta_hp "4363
 9"; luta_hp 0 && printf 'morto' )
 check "luta_hp: le so o primeiro numero (linha dupla, espaco)" "morto" "$_r"
 
-for _p in "king.sh _hpat" "altars.sh HP" "clanfight.sh HP" "clandmg.sh HP" \
-          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh USH" \
+for _p in "king.sh _hpat" "altars.sh _hp" "clanfight.sh _hp" "clandmg.sh _hp" \
+          "clancoliseum.sh _hp" "flagfight.sh _hp" "coliseum.sh USH" \
           "clancommand.sh _hpat"; do
     set -- $_p
     grep -q "luta_hp \"[^\"]*$2" "$LIB/$1" \
@@ -3329,7 +3331,7 @@ _r=$(grep -c 'URL/train' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" 
 check "nenhum modulo de batalha pede /train direto" 7 "$_r"
 
 # last_atk lido uma vez por volta (duas leituras podiam dar segundos diferentes).
-_r=$(grep -c 'cat last_atk' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" \
+_r=$(grep -c 'read -r _latk < last_atk' "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clandmg.sh" \
      "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c ':1$')
 check "last_atk lido uma vez por volta nos cinco modulos" 5 "$_r"
 rm -rf "$_td16"; unset _td16 _r
@@ -3400,9 +3402,10 @@ _r=$( TMP="$_td19/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
 check "config: 08/00/010 viram 8/0/10 e chave com ';' nao executa" "480 0 10" "$_r"
 
 # Minuto de inscricao: a varredura para antes dos blocos pesados (a parte
-# em execucao esta na secao 48).
+# em execucao esta na secao 48). Seis desde a inscricao antecipada do
+# Torneio de Equipe (3.9.71), que entrou com a sua.
 _r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'liga_fora_da_inscricao || return 0'`
-check "varredura: relogio conferido entre os blocos pesados" 5 "$_r"
+check "varredura: relogio conferido entre os blocos pesados" 6 "$_r"
 
 # Erva paga em ouro fica de fora no Torneio e no Duelo.
 printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva</span></a>" > "$_td19/erva"
@@ -3593,8 +3596,205 @@ _r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null
       func_trade > /dev/null 2>&1; [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
 check "troca com resposta de login: o dia fica em aberto" "em_aberto" "$_r"
 
+# Torneio de Equipe: so o lider tem o botao "Aplicar". O membro (pagina da
+# captura de 09/10: contador, "Lider nao se inscreveu", sem botao) espera a
+# luta e luta, em vez de voltar para a rotina.
+#   _cc69 PAGINA_INICIAL -> pedidos feitos + o que o modulo decidiu
+#   PAGINA_INICIAL: membro | membro_longe | membro_chat | lider | nada
+_cc69() {
+    ( TMP="$_td20/cc_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      PG="$1"
+      # Roda em subshell (run_curl_exec ... &): a contagem vai pelo arquivo.
+      run_curl_exec() {
+          echo "$1" | sed 's|^http://jogo||' >> "$TMP/req"; echo x >> "$TMP/n"
+          N=`wc -l < "$TMP/n"`
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          if [ "$N" -ge 3 ]; then
+              echo "$_p <a href='/clancommand/attack/?r=1'>Atacar</a>"; return
+          fi
+          case "$PG" in
+              membro)       echo "$_p <span id='time_240000'>4 min</span> Líder não se inscreveu para a batalha <a href='/clancommand/'>Atualizar</a>" ;;
+              membro_longe) echo "$_p <span id='time_15808000'>4 h 23 min</span>" ;;
+              membro_chat)  echo "$_p <a href='/chat/changeRoom/?r=98418211'>Chat</a>" ;;
+              lider)        echo "$_p <a href='/clancommand/?enterFight=98418211'>Aplicar</a> <span id='time_240000'>4 min</span>" ;;
+              nada)         echo "$_p" ;;
+          esac; }
+      time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      full_atualizar() { :; }; batalha_marcar() { echo marcou >> "$TMP/req"; }; batalha_limpar() { :; }
+      evento_cancelar() { echo liberou >> "$TMP/req"; }; clancommand_fight() { echo lutou >> "$TMP/req"; }
+      clancommand_start > /dev/null 2>&1
+      grep -v '^/clancommand/$' "$TMP/req" | tr '\n' ' ' )
+}
+check "torneio: membro sem botao espera a luta e luta" "marcou lutou " "`_cc69 membro`"
+check "torneio: membro so com a sala da equipe tambem luta" "marcou lutou " "`_cc69 membro_chat`"
+check "torneio: membro com inicio longe e liberado sem inscrever" "liberou " "`_cc69 membro_longe`"
+check "torneio: lider inscreve e luta" "marcou /clancommand/?enterFight=98418211 lutou " "`_cc69 lider`"
+check "torneio: sem nada do torneio na pagina, pula" "liberou " "`_cc69 nada`"
+_r=$( . "$LIB/clancommand.sh" > /dev/null 2>&1; _f="$_td20/cc_sit"
+      echo "Líder não se inscreveu para a batalha" > "$_f"; printf '%s|' "`_cc_situacao "$_f"`"
+      echo "Participantes: 10 equipes" > "$_f"; printf '%s' "`_cc_situacao "$_f"`" )
+check "torneio: o log do membro diz se o lider ja inscreveu" \
+    "lider ainda nao inscreveu a equipe|membro da equipe, sem botao de inscricao" "$_r"
+
+# Inscricao antecipada (clancommand_inscrever): o lider inscreve longe do
+# inicio; inscrito ou membro, a pagina nao e pedida de novo ate o torneio.
+#   _cc70 PAGINA -> pedidos da 1a chamada | rc | anotou? | pedidos da 2a
+#   PAGINA: lider | recusa | membro | perto | fechado
+_cc70() {
+    ( TMP="$_td20/ci_$1"; URL=http://jogo; CLD=77; export TMP URL CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      PG="$1"
+      run_curl_exec() {
+          _u=`echo "$1" | sed 's|^http://jogo||'`; echo "$_u" >> "$TMP/req"
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          _t="<span id='time_15808000'>4 h 23 min</span>"
+          _a="<a href='/clancommand/?enterFight=34500465'>Aplicar</a>"
+          case "$PG:$_u" in
+              lider:*enterFight*) echo "$_p $_t" ;;
+              lider:*|recusa:*)   echo "$_p $_a $_t" ;;
+              membro:*)           echo "$_p $_t Líder não se inscreveu para a batalha" ;;
+              perto:*)            echo "$_p $_a <span id='time_300000'>5 min</span>" ;;
+              fechado:*)          echo "$_p" ;;
+          esac; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      clancommand_inscrever > /dev/null 2>&1; _rc=$?
+      printf '%s|%s|' "$(tr '\n' ' ' < "$TMP/req")" "$_rc"
+      [ -s "$TMP/torneq_ate" ] && printf 'anotou|' || printf 'nao|'
+      : > "$TMP/req"; clancommand_inscrever > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+}
+check "inscricao antecipada: lider inscreve e para ate o inicio" \
+    "/clancommand/ /clancommand/?enterFight=34500465 |0|anotou|" "`_cc70 lider`"
+check "inscricao antecipada: recusada, tenta de novo depois" \
+    "/clancommand/ /clancommand/?enterFight=34500465 |1|nao|/clancommand/ /clancommand/?enterFight=34500465 " "`_cc70 recusa`"
+check "inscricao antecipada: membro le uma vez e para ate o inicio" \
+    "/clancommand/ |0|anotou|" "`_cc70 membro`"
+check "inscricao antecipada: perto do inicio fica com a janela do run.sh" \
+    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 perto`"
+check "inscricao antecipada: sem torneio aberto, sem inscricao" \
+    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 fechado`"
+check "torneio: inscreve o proximo depois da batalha (dois caminhos)" 2 \
+    "$(grep -A1 '^ *clancommand_fight$' "$LIB/clancommand.sh" | grep -c '^ *clancommand_inscrever$')"
+grep -q '^ *clancommand_inscrever 2>/dev/null$' "$LIB/crono.sh" \
+    && ok "torneio: repescagem da inscricao na rotina" \
+    || bad "torneio: a rotina nao tenta a inscricao antecipada"
+grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancommand_fight ;;' "$LIB/crono.sh" \
+    && ok "torneio: worker relancado volta para a luta" \
+    || bad "torneio: batalha_retomar sem o clancommand"
+
+# Ao vivo do painel no Coliseu do Cla e nas Bandeiras: o HP da conta vem em
+# USH. Com HP velho de outra luta no disco, vale o mais recente.
+_r=$( _d="$_td20/aovivo"; mkdir -p "$_d"; . "$LIB/panel.sh" > /dev/null 2>&1
+      echo 4200 > "$_d/USH"; echo 5000 > "$_d/old_HP"; ESTREITO=1
+      printf '%s|' "`combate_de "$_d"`"
+      echo 9999 > "$_d/HP"; sleep 1; echo 4100 > "$_d/USH"
+      printf '%s' "`combate_de "$_d"`" )
+check "painel ao vivo: HP do Coliseu do Cla e das Bandeiras (USH)" "HP 4200 (-800)|HP 4100 (-900)" "$_r"
+
+# Painel: HP e energia maximos sao os da propria conta (maior valor lido no
+# cabecalho), nao os do /train. Capturas de 10/10: nivel 45 com 731 | 1555.
+_r=$( TMP="$_td20/mx"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      FIXHP=""; ACC_ENE=""; ACC=Draco
+      _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
+      _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
+      parse_status "`_pg 45 731 1555`";  printf '%s ' "`_st`"
+      parse_status "`_pg 45 9922 1400`"; printf '%s ' "`_st`"
+      parse_status "`_pg 45 8000 1555`"; printf '%s ' "`_st`"
+      ACC_LVL=""; parse_status "`_pg 45 7000 900`"; printf '%s ' "`_st`"
+      parse_status "`_pg 46 9000 1600`"; printf '%s' "`_st`" )
+check "painel: maximo de HP e energia e o da conta, recomeca ao subir de nivel" \
+    "731|1555/1555|731 9922|1400/1555|9922 8000|1555/1555|9922 7000|900/1555|9922 9000|1600/1600|9000" "$_r"
+# Com o /train lido, o teto dele vale desde a primeira leitura; abaixo do
+# valor ja visto, vale o visto (nunca mais de 100%).
+_r=$( TMP="$_td20/mx2"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      ACC=Draco
+      _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
+      _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
+      FIXHP=4061; ACC_ENE=1555; parse_status "`_pg 45 731 900`"; printf '%s ' "`_st`"
+      FIXHP=4000; ACC_ENE="1'500"; parse_status "`_pg 45 4061 1555`"; printf '%s ' "`_st`"
+      ACC_ENE="2,1M"; parse_status "`_pg 45 3000 1000`"; printf '%s' "`_st`" )
+check "painel: teto do /train desde a primeira leitura, nunca abaixo do visto" \
+    "731|900/1555|4061 4061|1555/1555|4061 3000|1000/1555|4061" "$_r"
+
+# HP da pagina lido uma vez: o _hp dos modulos de cla e o arquivo do HP da
+# conta (HP ou USH), e as comparacoes de cura/esquiva sao marcas da pagina.
+check "_hp vem do HP da conta (cinco modulos de cla)" "HP HP HP USH USH" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight; do sed -n 's/^ *_hp=`cat \([A-Z]*\)`$/\1/p' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+check "cura e esquiva sem cat por volta (sete modulos)" 0 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" \
+           "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -v '^ *_hlhp=' | grep -c 'cat HLHP\|cat old_HP')"
+check "HP e limiar do inimigo nao calculados a toa (cinco modulos)" 0 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c '> HP2\|> ENH\|> RHP')"
+
+# Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
+# andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto
+# de voltas o teste o encerra, e os golpes nao chegam a seis.
+#   _giro71 MODULO SECAO FUNCAO [aliado] -> "golpes=N relogio_lido=M trocas=T"
+_giro71() {
+    ( TMP="$_td20/giro_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/$1.sh" > /dev/null 2>&1
+      _pg="$TMP/pagina.html"
+      { printf "<img src='/images/icon/level.png'/> <img src='/images/race/1.png' alt=''/> Eu <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 8000</span>"
+        _alvo=Ele; [ -n "$4" ] && _alvo=Amigo
+        printf "<img src='/images/race/0.png' alt=''/> %s <span class='nwr'>" "$_alvo"
+        printf "<img src='/images/icon/health.png' alt='hp'/>&nbsp;5000</span>"
+        for _v in attack attackrandom dodge heal; do printf "<a class='nbtn' href='/%s/%s/?r=1'>x</a>" "$2" "$_v"; done
+        printf '<script>jsInterface.event("user=5")</script>\n'; } > "$_pg"
+      for _f in SRC src.html x_src; do cp "$_pg" "$TMP/$_f"; done
+      echo 10000 > "$TMP/FULL"; echo 10000 > "$TMP/x_full"; src_ram="$TMP/x_src"; full_ram="$TMP/x_full"
+      echo Amigo > "$TMP/callies.txt"; echo Amigo > "$TMP/allies.txt"
+      echo 100000 > "$TMP/relogio"; : > "$TMP/nrel"; : > "$TMP/req"
+      date() { echo x >> "$TMP/nrel"
+               [ "`wc -l < "$TMP/nrel"`" -gt 600 ] && echo 1 > "$TMP/BREAK_LOOP"
+               cat "$TMP/relogio"; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; cat "$_pg"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      luta_teto() { echo $(( `cat "$TMP/relogio"` + 30 )); }
+      func_unset() { :; }
+      cd "$TMP" && $3 > /dev/null 2>&1
+      printf 'golpes=%s relogio_lido=%s trocas=%s' "`grep -c '/attack/' "$TMP/req"`" \
+             "`wc -l < "$TMP/nrel" | tr -d ' '`" "`grep -c '/attackrandom/' "$TMP/req"`" )
+}
+for _m in "clanfight clanfight clanfight_fight" "clandmg clandmgfight clandmgfight_fight" \
+          "altars altars altars_fight" "clancoliseum clancoliseum clancoliseum_fight" \
+          "flagfight flagfight flagfight_fight" "clancommand clancommand clancommand_fight"; do
+    set -- $_m
+    _r=`_giro71 "$1" "$2" "$3"`
+    _g=${_r#golpes=}; _g=${_g%% *}; _n=${_r#*relogio_lido=}; _n=${_n%% *}
+    if [ "$_g" -ge 5 ] && [ "$_n" -lt 120 ]; then ok "$1: laco sem giro em 30s ($_r)"
+    else bad "$1: laco girando sem dormir ($_r)"; fi
+done
+
+# Troca por aliado: so aliados na frente nao vira laco de trocas; depois de
+# tres trocas que so deram aliado, fogo amigo por 30s. Antes: 181 a 447
+# trocas e nenhum golpe em 100s.
+for _m in "clanfight clanfight clanfight_fight" "clancommand clancommand clancommand_fight"; do
+    set -- $_m
+    _r=`_giro71 "$1" "$2" "$3" aliado`
+    _g=${_r#golpes=}; _g=${_g%% *}; _t=${_r##*trocas=}
+    if [ "$_t" -ge 1 ] && [ "$_t" -le 4 ] && [ "$_g" -ge 3 ]; then ok "$1: so aliados - 3 trocas e fogo amigo ($_r)"
+    else bad "$1: so aliados vira laco de trocas ($_r)"; fi
+done
+_r=$( TMP="$_td20/al72"; mkdir -p "$TMP"; cd "$TMP" || exit
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      echo Amigo_1 > callies.txt; aliado_zerar
+      _v() { echo "$1" > USER; aliado_ler cla; if troca_aliado "$2" > /dev/null; then printf T; else printf A; fi; }
+      _v Amigo_1 100; _v Amigo_1 101; _v Amigo_1 102; _v Amigo_1 103
+      _v Amigo_1 110; _v Amigo_1 134; _v Inimigo 135; _v Amigo_1 136 )
+check "troca por aliado: 3 trocas, fogo amigo 30s, inimigo zera a conta" "TTTAATAT" "$_r"
+check "lista de aliados consultada so no aliado_ler" "0 0 0 0 0 0 0" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand king; do grep -c 'alvo_aliado' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+check "aliado_ler em cada leitura de pagina (sete modulos)" "1 1 1 1 1 1 1" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand king; do grep -c '^ *aliado_ler' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+check "fim do giro: espera nunca zero (sete modulos)" 7 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" \
+           "$LIB/flagfight.sh" "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -c '\[ "\$_resta" -gt 0 \] || _resta=1$')"
+check "alvo cinza calculado uma vez por pagina (sete modulos)" "1 1 1 1 1 1 1" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand coliseum; do grep -c 'alvo_grey' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
