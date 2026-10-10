@@ -101,6 +101,8 @@ king_fight() {
   }
 
   cl_access() {
+    # Alvo cinza uma vez por pagina (ver o mesmo ponto no clanfight.sh).
+    if alvo_grey "$TMP/SRC"; then _grey=1; else _grey=0; fi
     set -- `combate_ler king "$HPER" "$RPER" "$TMP/SRC"`
     _emluta="$1"; RHP="$2"; HLHP="$3"; _hpat="$4"; _hp2at="$5"
     # Nome do ALVO (ver alvo_nome, em info.sh). A leitura antiga devolvia
@@ -235,8 +237,8 @@ king_fight() {
   # rei cai. Agora so segura o laco que nunca resolve (rede fora): quem
   # encerra a luta e o jogo, pelo luta_acabou.
   FIGHT_BREAK=`luta_teto`
-  until [ -s "BREAK_LOOP" ] || [ "`date +%s`" -gt "$FIGHT_BREAK" ]; do
-    _agora=`date +%s`
+  # Um "date" por volta: o mesmo instante decide o teto e o relogio de acao.
+  while _agora=`date +%s`; [ ! -s "BREAK_LOOP" ] && [ "$_agora" -le "$FIGHT_BREAK" ]; do
 
     # RELOGIO UNICO: so age uma vez a cada LA (5s). Qualquer acao (ataque,
     # erva, pedra, cura, esquiva) antes disso "falha" no jogo, entao todas
@@ -258,7 +260,7 @@ king_fight() {
          awk -v ush="$_hpat" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && \
          [ $(( _agora - _last_heal )) -ge "$LC" ]; then
         (
-          run_curl_exec "${URL}$(cat HEAL)" > "$TMP/SRC"
+          read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cl_access
@@ -274,7 +276,7 @@ king_fight() {
            awk -v ush="$_hpat" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && \
            [ $(( _agora - _last_dodge )) -ge "$LD" ]; then
         (
-          run_curl_exec "${URL}$(cat DODGE)" > "$TMP/SRC"
+          read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cl_access
@@ -286,7 +288,7 @@ king_fight() {
       # descarta o link quando a etiqueta do botao pede ouro. Recarga de 1min.
       elif [ -s GRASS ] && [ $(( _agora - _last_grass )) -ge "$LG" ]; then
         (
-          run_curl_exec "${URL}$(cat GRASS)" > "$TMP/SRC"
+          read -r _l < GRASS; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cl_access
@@ -297,7 +299,7 @@ king_fight() {
       # (STONE nao-vazio), so de graca e com recarga de 1min.
       elif [ -s STONE ] && [ $(( _agora - _last_stone )) -ge "$LS" ]; then
         (
-          run_curl_exec "${URL}$(cat STONE)" > "$TMP/SRC"
+          read -r _l < STONE; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
         cl_access
@@ -309,11 +311,11 @@ king_fight() {
       # entre jogadores continua. So com link de verdade e so quando o alvo
       # NAO esta grey (invulneravel).
       elif { [ -s KINGATK ] || [ -s ATK ]; } && \
-           ! alvo_grey "$TMP/SRC"; then
+           [ "$_grey" = 0 ]; then
         if [ -s KINGATK ]; then
           # O golpe forte e no REI, nao num jogador: nao ha aliado a poupar.
           (
-            run_curl_exec "${URL}$(cat KINGATK)" > "$TMP/SRC"
+            read -r _l < KINGATK; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
           time_exit 17
           cl_access
@@ -329,13 +331,13 @@ king_fight() {
           # e uma jogada, e nao pode virar rajada.
           printf "Alvo aliado — trocando de alvo\n"
           (
-            run_curl_exec "${URL}$(cat ATKRND)" > "$TMP/SRC"
+            read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
           time_exit 17
           cl_access
         else
           (
-            run_curl_exec "${URL}$(cat ATK)" > "$TMP/SRC"
+            read -r _l < ATK; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
           time_exit 17
           cl_access

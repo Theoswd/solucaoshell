@@ -23,17 +23,21 @@ flagfight_fight() {
     alvo_nome "$src_ram" > USER 2>/dev/null
     aliado_ler cla
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
-    grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > ENH 2>/dev/null
-    awk -v ush="$(cat USH)" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }' > RHP
-    awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+    # HP DA PAGINA, LIDO UMA VEZ. O log, a checagem de morte e as comparacoes
+    # de cura e esquiva liam o arquivo um "cat" cada, e as duas comparacoes
+    # rodavam a cada volta do laco. Os valores so mudam com pagina nova, e a
+    # comparacao e a mesma de antes (o mesmo awk, com os mesmos textos).
+    _hp=`cat USH`
+    _cura=0; [ -s SHIELD ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
+    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
 
     if grep -q -o '/dodge/' "$src_ram"; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
       sessao_marcar
-      printf "Em batalha flagfight - HP: %s\n" "`cat USH`"
+      printf "Em batalha flagfight - HP: %s\n" "$_hp"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      if luta_hp "`cat USH`"; then
+      if luta_hp "$_hp"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #
         # Morrer nao e o mesmo que sair do evento: havendo unrip na
@@ -74,10 +78,14 @@ flagfight_fight() {
     fi
   }
 
+  # LIMIAR DE CURA, UMA VEZ POR LUTA: depende so do HP maximo, que nao muda
+  # durante a luta (era recalculado a cada pagina).
+  awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+  _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio flagfight
   cf_access
   > BREAK_LOOP
-  cat USH > old_HP
+  cat USH > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
   echo $(($(date +%s) - LA)) > last_atk
@@ -97,7 +105,7 @@ flagfight_fight() {
     # devolver segundos diferentes e liberar o golpe antes da recarga.
     read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     if [ -s SHIELD ] && \
-       awk -v ush="$(cat USH)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(ush < hlhp) }' && \
+       [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
         read -r _l < SHIELD; run_curl_exec "${URL}$_l" > "$src_ram"
@@ -107,18 +115,18 @@ flagfight_fight() {
       # HP maximo (full_ram) preservado: vem do /train e nao pode ser trocado
       # pelo HP atual pos-escudo, senao o limiar HLHP cai a cada golpe e a
       # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      cat USH > old_HP
+      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_heal
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         awk -v ush="$(cat USH)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(ush < oldhp) }'; then
+         [ "$_caiu" = 1 ]; then
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
-      cat USH > old_HP
+      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_dodge
 
     # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).

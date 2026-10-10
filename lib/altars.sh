@@ -20,16 +20,20 @@ altars_fight() {
     alvo_nome "$TMP/src.html" > USER 2>/dev/null
     aliado_ler cla
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/src.html" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
-    grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$TMP/src.html" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > HP2 2>/dev/null
-    awk -v ush="$(cat HP)" -v rper="$(cat RPER)" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }' > RHP
-    awk -v ush="$(cat FULL)" -v hper="$(cat HPER)" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+    # HP DA PAGINA, LIDO UMA VEZ. O log, a checagem de morte e as comparacoes
+    # de cura e esquiva liam o arquivo um "cat" cada, e as duas comparacoes
+    # rodavam a cada volta do laco. Os valores so mudam com pagina nova, e a
+    # comparacao e a mesma de antes (o mesmo awk, com os mesmos textos).
+    _hp=`cat HP`
+    _cura=0; [ -s HEAL ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
+    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
     if grep -q -o '/dodge/' "$TMP/src.html"; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
       sessao_marcar
-      printf "Em batalha - HP: %s\n" "`cat HP`"
+      printf "Em batalha - HP: %s\n" "$_hp"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
-      if luta_hp "`cat HP`"; then
+      if luta_hp "$_hp"; then
         # ANTES DE ENCERRAR, TENTA VOLTAR.
         #
         # Morrer nao e o mesmo que sair do evento: havendo unrip na
@@ -70,9 +74,13 @@ altars_fight() {
     fi
   }
 
+  # LIMIAR DE CURA, UMA VEZ POR LUTA: depende so do HP maximo, que nao muda
+  # durante a luta (era recalculado a cada pagina).
+  awk -v ush="$(cat FULL)" -v hper="$(cat HPER)" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
+  _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio altars
   cf_access
-  : > BREAK_LOOP; cat HP > old_HP
+  : > BREAK_LOOP; cat HP > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
   echo $(($(date +%s) - LA)) > last_atk
@@ -98,7 +106,7 @@ altars_fight() {
     # altares a conta apanha muito; curar primeiro evita a morte por esperar
     # a releitura de HP que so viria depois da esquiva.
     if [ -s HEAL ] && \
-       awk -v ush="$(cat HP)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(ush < hlhp) }' && \
+       [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/src.html"
@@ -108,19 +116,19 @@ altars_fight() {
       # HP maximo (FULL) preservado: vem do /train e nao pode ser trocado
       # pelo HP atual pos-cura, senao o limiar HLHP cai a cada golpe e a
       # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      cat HP > old_HP
+      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_heal
 
     # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         awk -v ush="$(cat HP)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(ush < oldhp) }'; then
+         [ "$_caiu" = 1 ]; then
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cf_access
-      cat HP > old_HP; date +%s > last_dodge
+      cat HP > old_HP; _old_hp="$_hp"; _caiu=0; date +%s > last_dodge
 
     # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
     #

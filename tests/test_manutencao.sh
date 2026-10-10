@@ -486,7 +486,7 @@ else
 fi
 # Esquiva SO com o rei fora da arena: o ramo do dodge dentro do laco tem de
 # estar preso ao _rei_morto. Enquanto o rei vive, cada janela de 5s vira dano.
-_d1=$(grep -n 'cat DODGE' "$K" | head -n1 | cut -d: -f1)
+_d1=$(grep -n '< DODGE; run_curl_exec' "$K" | head -n1 | cut -d: -f1)
 if [ -n "$_d1" ] && sed -n "$((_d1 - 6)),${_d1}p" "$K" | grep -q '\[ "\$_rei_morto" = 1 \]'; then
     ok "king.sh: esquiva so depois da morte do rei (presa ao _rei_morto)"
 else
@@ -1801,8 +1801,8 @@ _r=$( . "$LIB/info.sh"; luta_inicio; luta_hp "4363
 9"; luta_hp 0 && printf 'morto' )
 check "luta_hp: le so o primeiro numero (linha dupla, espaco)" "morto" "$_r"
 
-for _p in "king.sh _hpat" "altars.sh HP" "clanfight.sh HP" "clandmg.sh HP" \
-          "clancoliseum.sh USH" "flagfight.sh USH" "coliseum.sh USH" \
+for _p in "king.sh _hpat" "altars.sh _hp" "clanfight.sh _hp" "clandmg.sh _hp" \
+          "clancoliseum.sh _hp" "flagfight.sh _hp" "coliseum.sh USH" \
           "clancommand.sh _hpat"; do
     set -- $_p
     grep -q "luta_hp \"[^\"]*$2" "$LIB/$1" \
@@ -3681,6 +3681,25 @@ grep -q '^ *clancommand_inscrever 2>/dev/null$' "$LIB/crono.sh" \
 grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancommand_fight ;;' "$LIB/crono.sh" \
     && ok "torneio: worker relancado volta para a luta" \
     || bad "torneio: batalha_retomar sem o clancommand"
+
+# Ao vivo do painel no Coliseu do Cla e nas Bandeiras: o HP da conta vem em
+# USH. Com HP velho de outra luta no disco, vale o mais recente.
+_r=$( _d="$_td20/aovivo"; mkdir -p "$_d"; . "$LIB/panel.sh" > /dev/null 2>&1
+      echo 4200 > "$_d/USH"; echo 5000 > "$_d/old_HP"; ESTREITO=1
+      printf '%s|' "`combate_de "$_d"`"
+      echo 9999 > "$_d/HP"; sleep 1; echo 4100 > "$_d/USH"
+      printf '%s' "`combate_de "$_d"`" )
+check "painel ao vivo: HP do Coliseu do Cla e das Bandeiras (USH)" "HP 4200 (-800)|HP 4100 (-900)" "$_r"
+
+# HP da pagina lido uma vez: o _hp dos modulos de cla e o arquivo do HP da
+# conta (HP ou USH), e as comparacoes de cura/esquiva sao marcas da pagina.
+check "_hp vem do HP da conta (cinco modulos de cla)" "HP HP HP USH USH" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight; do sed -n 's/^ *_hp=`cat \([A-Z]*\)`$/\1/p' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+check "cura e esquiva sem cat por volta (sete modulos)" 0 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" \
+           "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -v '^ *_hlhp=' | grep -c 'cat HLHP\|cat old_HP')"
+check "HP e limiar do inimigo nao calculados a toa (cinco modulos)" 0 \
+    "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c '> HP2\|> ENH\|> RHP')"
 
 # Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
 # andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto

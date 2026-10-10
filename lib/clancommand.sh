@@ -178,6 +178,11 @@ clancommand_fight() {
     _emluta="$1"; RHP="$2"; HLHP="$3"; _hpat="$4"; _hp2at="$5"
     alvo_nome "$src_ram" > USER 2>/dev/null
     aliado_ler cla
+    # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina
+    # (mesmo awk, mesmos textos), nao a cada volta do laco.
+    _hp=`cat HP`
+    _cura=0; [ -s HEAL ] && awk -v hp="$_hp" -v hlhp="$HLHP" 'BEGIN { exit !(hp < hlhp) }' && _cura=1
+    _caiu=0; [ -s DODGE ] && awk -v hp="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(hp < oldhp) }' && _caiu=1
 
     if [ "$_emluta" = "1" ] || _cc_acao; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -226,7 +231,7 @@ clancommand_fight() {
   luta_inicio clancommand
   cc_access
   > BREAK_LOOP
-  cat HP > old_HP 2>/dev/null
+  cat HP > old_HP 2>/dev/null; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
   echo $(($(date +%s) - LA)) > last_atk
@@ -240,25 +245,25 @@ clancommand_fight() {
     read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
 
     if [ -s HEAL ] && \
-       awk -v hp="$(cat HP)" -v hlhp="$(cat HLHP)" 'BEGIN { exit !(hp < hlhp) }' && \
+       [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
-      cat HP > old_HP
+      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_heal
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         awk -v hp="$(cat HP)" -v oldhp="$(cat old_HP)" 'BEGIN { exit !(hp < oldhp) }'; then
+         [ "$_caiu" = 1 ]; then
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       cc_access
-      cat HP > old_HP
+      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
       date +%s > last_dodge
 
     # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE (troca_aliado,
