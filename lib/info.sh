@@ -453,6 +453,7 @@ erva_gratis() { # SECAO ARQUIVO
 # modulo reconhece esse link, a sessao esta provada — e e so carimbar.
 sessao_marcar() { date +%s > "$TMP/last_ok" 2>/dev/null; }
 
+
 # SESSAO CAIDA OU SERVIDOR MUDO?   sessao_estado ARQUIVO   (ou "-" = stdin)
 #
 #   viva          pagina do jogo com a conta logada

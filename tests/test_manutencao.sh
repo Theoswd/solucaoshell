@@ -1408,12 +1408,17 @@ else
 fi
 # O worker relancado volta para a batalha antes de qualquer outra atividade.
 _rt=$(grep -n '^    batalha_retomar' "$LIB/run.sh" | head -n1 | cut -d: -f1)
-_cs=$(grep -n 'case `date +%H:%M` in' "$LIB/run.sh" | head -n1 | cut -d: -f1)
+_cs=$(grep -n 'case "$_HH:$_MM" in' "$LIB/run.sh" | head -n1 | cut -d: -f1)
 if [ -n "$_rt" ] && [ -n "$_cs" ] && [ "$_rt" -lt "$_cs" ]; then
     ok "run.sh: batalha pendente e retomada antes do cronograma"
 else
     bad "run.sh: worker relancado cai na rotina com a batalha em andamento"
 fi
+# O horario do cronograma e o do relogio da volta: acertado antes dele.
+_rs=$(grep -n '^ *relogio_sync$' "$LIB/run.sh" | head -n1 | cut -d: -f1)
+[ -n "$_rs" ] && [ -n "$_cs" ] && [ "$_rs" -lt "$_cs" ] \
+    && ok "run.sh: relogio da volta acertado antes do cronograma" \
+    || bad "run.sh: cronograma sem o relogio da volta"
 rm -rf "$_bt"
 unset _bt _CAB _CAB0 _r _p _m _l _sem _ogc _bp _og _rt _cs _st _msg
 unset -f pg descanso_cenario
@@ -3726,6 +3731,24 @@ check "cura e esquiva sem cat por volta (sete modulos)" 0 \
            "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -v '^ *_hlhp=' | grep -c 'cat HLHP\|cat old_HP')"
 check "HP e limiar do inimigo nao calculados a toa (cinco modulos)" 0 \
     "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c '> HP2\|> ENH\|> RHP')"
+
+# Relogio da volta: um date, o resto pelo /proc/uptime. Mesmo epoch, minuto,
+# hora e dia do date (tolerancia de 1s); fora do laco, o date de antes.
+_r=$( TMP="$_td20/rv"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+      relogio_sync; _a1=`date '+%s %M %H %d'`
+      agora_s; minuto_atual; hora_atual; dia_atual
+      _a2=`date '+%s %M %H %d'`
+      # Vale o date de antes ou o de depois (virada de minuto no meio).
+      _ok() { set -- $1; [ $(( _AGORA - $1 )) -ge -1 ] && [ $(( _AGORA - $1 )) -le 1 ] && \
+              [ "$_MIN" = "${2#0}" ] && [ "$_HOR" = "${3#0}" ] && [ "$_DIA" = "$4" ]; }
+      if _ok "$_a1" || _ok "$_a2"; then printf ok; else printf '%s|%s|%s %s %s %s' "$_a1" "$_a2" "$_AGORA" "$_MIN" "$_HOR" "$_DIA"; fi )
+check "relogio da volta: epoch, minuto, hora e dia batem com o date" ok "$_r"
+_r=$( TMP="$_td20/rv2"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { case "$1" in +%M) echo 07 ;; +%H) echo 09 ;; +%d) echo 01 ;; +%s) echo 1000 ;; *) command date "$@" ;; esac; }
+      agora_s; minuto_atual; hora_atual; dia_atual; printf '%s %s %s %s' "$_AGORA" "$_MIN" "$_HOR" "$_DIA" )
+check "relogio da volta: fora do laco usa o date (testes e entrada do bot)" "1000 7 9 01" "$_r"
+check "rotina: os portoes de atividade nao chamam o date" 0 \
+    "$(sed -n '/^ativ_liberada() {/,/^}/p;/^relogio_liberado() {/,/^}/p;/^masmorra_liberada() {/,/^}/p' "$LIB/crono.sh" | grep -c 'date')"
 
 # Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
 # andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto

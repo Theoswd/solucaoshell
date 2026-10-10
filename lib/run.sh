@@ -1,4 +1,7 @@
 sls_play() {
+    # Um "date" por volta: o horario da agenda e todos os portoes da rotina
+    # saem dele (relogio_sync, em info.sh).
+    relogio_sync
     echo "$RUN" > "$TMP/runmode_file" 2>/dev/null
 
     # ID DO CLA — A VARIAVEL, NAO SO O ARQUIVO.
@@ -51,7 +54,7 @@ sls_play() {
     # no evento_espera, com as atividades suspensas a toa. Agora a marcacao
     # fica dentro do ramo que de fato entra na batalha, e o modulo que desiste
     # a apaga (evento_cancelar), devolvendo a conta para a rotina na hora.
-    case `date +%H:%M` in
+    case "$_HH:$_MM" in
 
         # --- 1. Coliseu do Cla
         #

@@ -419,7 +419,12 @@ printf "[%s] %s — loop principal iniciado\n" "$SLS_TAG" "$ACC"
 # sem reiniciar. Copia e esvazia no lugar, sem mv: o sls.log e o arquivo que
 # o play.sh abriu com ">>", e o processo continua escrevendo no que abriu.
 # Com mv o log seguia crescendo no .1 e o sls.log ficava vazio.
+# O tamanho e conferido a cada 10 voltas (~10 min): eram dois "wc" por
+# volta, e o log cresce poucos KB por minuto ate o limite de 5 MB.
+_rl_voltas=0
 rotate_log() {
+    _rl_voltas=$(( _rl_voltas + 1 ))
+    [ $(( _rl_voltas % 10 )) -eq 1 ] || return 0
     for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG"; do
         _sz=$(wc -c < "$_lg" 2>/dev/null)
         case "$_sz" in ''|*[!0-9]*) continue ;; esac

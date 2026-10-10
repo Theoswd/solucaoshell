@@ -152,7 +152,13 @@ liga_do_dia() {
 # Bandeiras, :25-:29 e :55-:59 os demais): o evento vem primeiro e a
 # varredura seguinte faz a Liga.
 liga_fora_da_inscricao() {
-    case `date +%M` in
+    # Minuto do relogio da volta (crono.sh); carregado sozinho, o date.
+    if type minuto_atual > /dev/null 2>&1; then
+        minuto_atual; _lfi_m="$_MIN"
+    else
+        _lfi_m=`date +%M`
+    fi
+    case "$_lfi_m" in
         1[0-4]|2[5-9]|5[5-9]) return 1 ;;
     esac
     return 0
