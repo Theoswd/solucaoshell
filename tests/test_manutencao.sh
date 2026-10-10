@@ -3691,6 +3691,31 @@ _r=$( _d="$_td20/aovivo"; mkdir -p "$_d"; . "$LIB/panel.sh" > /dev/null 2>&1
       printf '%s' "`combate_de "$_d"`" )
 check "painel ao vivo: HP do Coliseu do Cla e das Bandeiras (USH)" "HP 4200 (-800)|HP 4100 (-900)" "$_r"
 
+# Painel: HP e energia maximos sao os da propria conta (maior valor lido no
+# cabecalho), nao os do /train. Capturas de 10/10: nivel 45 com 731 | 1555.
+_r=$( TMP="$_td20/mx"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      FIXHP=""; ACC_ENE=""; ACC=Draco
+      _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
+      _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
+      parse_status "`_pg 45 731 1555`";  printf '%s ' "`_st`"
+      parse_status "`_pg 45 9922 1400`"; printf '%s ' "`_st`"
+      parse_status "`_pg 45 8000 1555`"; printf '%s ' "`_st`"
+      ACC_LVL=""; parse_status "`_pg 45 7000 900`"; printf '%s ' "`_st`"
+      parse_status "`_pg 46 9000 1600`"; printf '%s' "`_st`" )
+check "painel: maximo de HP e energia e o da conta, recomeca ao subir de nivel" \
+    "731|1555/1555|731 9922|1400/1555|9922 8000|1555/1555|9922 7000|900/1555|9922 9000|1600/1600|9000" "$_r"
+# Com o /train lido, o teto dele vale desde a primeira leitura; abaixo do
+# valor ja visto, vale o visto (nunca mais de 100%).
+_r=$( TMP="$_td20/mx2"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      ACC=Draco
+      _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
+      _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
+      FIXHP=4061; ACC_ENE=1555; parse_status "`_pg 45 731 900`"; printf '%s ' "`_st`"
+      FIXHP=4000; ACC_ENE="1'500"; parse_status "`_pg 45 4061 1555`"; printf '%s ' "`_st`"
+      ACC_ENE="2,1M"; parse_status "`_pg 45 3000 1000`"; printf '%s' "`_st`" )
+check "painel: teto do /train desde a primeira leitura, nunca abaixo do visto" \
+    "731|900/1555|4061 4061|1555/1555|4061 3000|1000/1555|4061" "$_r"
+
 # HP da pagina lido uma vez: o _hp dos modulos de cla e o arquivo do HP da
 # conta (HP ou USH), e as comparacoes de cura/esquiva sao marcas da pagina.
 check "_hp vem do HP da conta (cinco modulos de cla)" "HP HP HP USH USH" \
