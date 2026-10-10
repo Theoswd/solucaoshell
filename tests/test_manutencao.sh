@@ -1082,14 +1082,15 @@ else
 fi
 
 # NA RAIZ, SO O QUE PRECISA ESTAR NA RAIZ: os comandos do usuario, o que o
-# GitHub so reconhece ali (README, LICENSE) e o que o git so aplica aos
+# GitHub so reconhece ali (README, LICENSE), o que o git so aplica aos
 # arquivos da raiz estando nela (.gitattributes com o eol=lf dos scripts,
-# .gitignore). Qualquer outra coisa vai para lib/.
+# .gitignore) e o CLAUDE.md, que o Claude Code so le na raiz. Qualquer outra
+# coisa vai para lib/.
 _sobra=""
 for _e in "$ROOT"/* "$ROOT"/.[!.]*; do
     [ -e "$_e" ] || continue
     case "$(basename "$_e")" in
-        .git|.gitattributes|.gitignore|LICENSE|README.md|lib|tests) ;;
+        .git|.gitattributes|.gitignore|LICENSE|README.md|CLAUDE.md|lib|tests) ;;
         play.sh|setup.sh|status.sh|stop.sh|uninstall.sh) ;;
         *) _sobra="$_sobra $(basename "$_e")" ;;
     esac
