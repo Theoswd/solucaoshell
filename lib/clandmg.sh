@@ -25,6 +25,7 @@ clandmgfight_fight() {
     grep -o -E '(/clandmgfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > HEAL 2>/dev/null
     erva_gratis clandmgfight "$TMP/SRC" > GRASS
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
+    aliado_ler cla
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
     grep -o -E "(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}" "$TMP/SRC" | sed -n 's,nbsp[;],,;s,\ ,,;1p' > HP2 2>/dev/null
     awk -v ush="$(cat HP)" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }' > RHP
@@ -136,13 +137,14 @@ clandmgfight_fight() {
       cat HP > old_HP
       date +%s > last_dodge
 
-    elif [ -s ATKRND ] && { \
-         [ "$_latk" -ne "$LA" ] && \
-         [ "$_grey" = 0 ] && \
-         awk -v rhp="$(cat RHP)" -v enh="$(cat HP2)" 'BEGIN { exit !(rhp < enh) }' || \
-         [ "$_latk" -ne "$LA" ] && \
-         [ "$_grey" = 0 ] && \
-         alvo_aliado USER cla; }; then
+    # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
+    #
+    # A condicao antiga tinha tambem "inimigo bem mais forte", mas o
+    # agrupamento dos && / || a anulava: na pratica so o aliado trocava, e
+    # essa e a regra do dono do bot. Ela foi escrita como de fato agia, mais
+    # o fogo amigo: so aliados na frente nao vira laco de trocas.
+    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+         troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &

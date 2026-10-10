@@ -218,3 +218,66 @@ alvo_aliado() {
     unset _aa_n _aa_l
     return 1
 }
+
+# ============================================================
+#  TROCA DE ALVO POR ALIADO, SEM VIRAR LACO — E O FOGO AMIGO
+#
+#  A troca de alvo existe para nao bater em aliado. Mas quando so ha aliados
+#  na frente, cada troca cai em outro aliado e o laco nao termina: nos
+#  modulos de cla a troca nem espera a recarga do ataque, entao eram
+#  requisicoes seguidas, uma por segundo, ate o fim da batalha.
+#
+#  Regra do dono do bot: trocas que so resultam em aliado querem dizer que
+#  nao ha inimigo a vista, e ai vale o fogo amigo. Depois de
+#  ALIADO_TROCAS_MAX trocas seguidas caindo em aliado, a conta ataca o alvo
+#  por ALIADO_FOGO_SEG segundos; passado esse tempo volta a tentar trocar,
+#  para pegar um inimigo que tenha entrado. No pior caso sao 3 trocas a mais
+#  a cada 30 s, nunca um laco.
+#
+#  Sem processo novo por volta: o estado fica em variaveis, e a lista de
+#  aliados so e consultada quando o NOME do alvo muda.
+# ============================================================
+ALIADO_TROCAS_MAX=3
+ALIADO_FOGO_SEG=30
+
+# Zera o estado. No inicio de cada luta (luta_inicio): a lista pode ter mudado
+# entre uma batalha e outra.
+aliado_zerar() { _al_nome="-"; _aliado=0; _al_seguidas=0; _al_trocou=0; _al_fogo_ate=0; }
+
+# Na leitura de cada pagina da luta, depois do alvo_nome.   aliado_ler [cla]
+#
+# Define _aliado (1 = o alvo da pagina e aliado) e conta o resultado da troca
+# anterior: caiu em aliado de novo soma, caiu em inimigo zera.
+aliado_ler() {
+    _al_n=""
+    { read -r _al_n < USER; } 2>/dev/null
+    if [ "$_al_n" != "$_al_nome" ]; then
+        _al_nome="$_al_n"
+        if alvo_aliado USER "$1"; then _aliado=1; else _aliado=0; fi
+    fi
+    unset _al_n
+    if [ "$_aliado" = 0 ]; then
+        _al_seguidas=0
+    elif [ "$_al_trocou" = 1 ]; then
+        _al_seguidas=$(( _al_seguidas + 1 ))
+    fi
+    _al_trocou=0
+}
+
+# Trocar de alvo agora?   troca_aliado AGORA   (0 = troca)
+#
+# Sempre o ULTIMO teste da condicao de troca: devolvendo 0, a troca sai, e
+# ela fica anotada para o aliado_ler contar o resultado.
+troca_aliado() {
+    [ "$_aliado" = 1 ] || return 1
+    [ "$1" -lt "$_al_fogo_ate" ] && return 1
+    if [ "$_al_seguidas" -ge "$ALIADO_TROCAS_MAX" ]; then
+        _al_seguidas=0
+        _al_fogo_ate=$(( $1 + ALIADO_FOGO_SEG ))
+        printf "So aliados na frente (%s trocas) - fogo amigo por %ss\n" \
+               "$ALIADO_TROCAS_MAX" "$ALIADO_FOGO_SEG"
+        return 1
+    fi
+    _al_trocou=1
+    return 0
+}

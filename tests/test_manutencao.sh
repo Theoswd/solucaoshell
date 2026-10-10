@@ -1156,11 +1156,13 @@ if [ -f "$_al" ]; then
     else
         ok "nenhum modulo testa aliado com padrao sem aspas"
     fi
-    for _m in altars clancoliseum clandmg clanfight flagfight; do
-        grep -q 'alvo_aliado USER cla' "$LIB/$_m.sh" \
-            && ok "$_m usa alvo_aliado" || bad "$_m nao protege aliado"
+    # A consulta a lista mora no aliado_ler (allies.sh), com a lista de cla
+    # nas batalhas de cla e a do Rei no Rei; a troca sai pelo troca_aliado.
+    for _m in altars clancoliseum clandmg clanfight flagfight clancommand; do
+        grep -q '^ *aliado_ler cla$' "$LIB/$_m.sh" && grep -q 'troca_aliado "\$_atk0"' "$LIB/$_m.sh" \
+            && ok "$_m protege aliado (lista do cla)" || bad "$_m nao protege aliado"
     done
-    grep -q 'alvo_aliado USER' "$LIB/king.sh" \
+    grep -q '^ *aliado_ler$' "$LIB/king.sh" && grep -q 'troca_aliado "\$_agora"' "$LIB/king.sh" \
         && ok "king.sh troca de alvo quando o alvo e aliado" \
         || bad "king.sh bate em aliado"
 
@@ -3683,17 +3685,20 @@ grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancomma
 # Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
 # andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto
 # de voltas o teste o encerra, e os golpes nao chegam a seis.
-#   _giro71 MODULO SECAO FUNCAO -> "golpes=N relogio_lido=M"
+#   _giro71 MODULO SECAO FUNCAO [aliado] -> "golpes=N relogio_lido=M trocas=T"
 _giro71() {
     ( TMP="$_td20/giro_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/$1.sh" > /dev/null 2>&1
       _pg="$TMP/pagina.html"
       { printf "<img src='/images/icon/level.png'/> <img src='/images/race/1.png' alt=''/> Eu <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 8000</span>"
-        printf "<img src='/images/race/0.png' alt=''/> Ele <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;5000</span>"
+        _alvo=Ele; [ -n "$4" ] && _alvo=Amigo
+        printf "<img src='/images/race/0.png' alt=''/> %s <span class='nwr'>" "$_alvo"
+        printf "<img src='/images/icon/health.png' alt='hp'/>&nbsp;5000</span>"
         for _v in attack attackrandom dodge heal; do printf "<a class='nbtn' href='/%s/%s/?r=1'>x</a>" "$2" "$_v"; done
         printf '<script>jsInterface.event("user=5")</script>\n'; } > "$_pg"
       for _f in SRC src.html x_src; do cp "$_pg" "$TMP/$_f"; done
       echo 10000 > "$TMP/FULL"; echo 10000 > "$TMP/x_full"; src_ram="$TMP/x_src"; full_ram="$TMP/x_full"
+      echo Amigo > "$TMP/callies.txt"; echo Amigo > "$TMP/allies.txt"
       echo 100000 > "$TMP/relogio"; : > "$TMP/nrel"; : > "$TMP/req"
       date() { echo x >> "$TMP/nrel"
                [ "`wc -l < "$TMP/nrel"`" -gt 600 ] && echo 1 > "$TMP/BREAK_LOOP"
@@ -3704,17 +3709,40 @@ _giro71() {
       luta_teto() { echo $(( `cat "$TMP/relogio"` + 30 )); }
       func_unset() { :; }
       cd "$TMP" && $3 > /dev/null 2>&1
-      printf 'golpes=%s relogio_lido=%s' "`grep -c '/attack/' "$TMP/req"`" "`wc -l < "$TMP/nrel" | tr -d ' '`" )
+      printf 'golpes=%s relogio_lido=%s trocas=%s' "`grep -c '/attack/' "$TMP/req"`" \
+             "`wc -l < "$TMP/nrel" | tr -d ' '`" "`grep -c '/attackrandom/' "$TMP/req"`" )
 }
 for _m in "clanfight clanfight clanfight_fight" "clandmg clandmgfight clandmgfight_fight" \
           "altars altars altars_fight" "clancoliseum clancoliseum clancoliseum_fight" \
           "flagfight flagfight flagfight_fight" "clancommand clancommand clancommand_fight"; do
     set -- $_m
     _r=`_giro71 "$1" "$2" "$3"`
-    _g=${_r#golpes=}; _g=${_g%% *}; _n=${_r##*=}
+    _g=${_r#golpes=}; _g=${_g%% *}; _n=${_r#*relogio_lido=}; _n=${_n%% *}
     if [ "$_g" -ge 5 ] && [ "$_n" -lt 120 ]; then ok "$1: laco sem giro em 30s ($_r)"
     else bad "$1: laco girando sem dormir ($_r)"; fi
 done
+
+# Troca por aliado: so aliados na frente nao vira laco de trocas; depois de
+# tres trocas que so deram aliado, fogo amigo por 30s. Antes: 181 a 447
+# trocas e nenhum golpe em 100s.
+for _m in "clanfight clanfight clanfight_fight" "clancommand clancommand clancommand_fight"; do
+    set -- $_m
+    _r=`_giro71 "$1" "$2" "$3" aliado`
+    _g=${_r#golpes=}; _g=${_g%% *}; _t=${_r##*trocas=}
+    if [ "$_t" -ge 1 ] && [ "$_t" -le 4 ] && [ "$_g" -ge 3 ]; then ok "$1: so aliados - 3 trocas e fogo amigo ($_r)"
+    else bad "$1: so aliados vira laco de trocas ($_r)"; fi
+done
+_r=$( TMP="$_td20/al72"; mkdir -p "$TMP"; cd "$TMP" || exit
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      echo Amigo_1 > callies.txt; aliado_zerar
+      _v() { echo "$1" > USER; aliado_ler cla; if troca_aliado "$2" > /dev/null; then printf T; else printf A; fi; }
+      _v Amigo_1 100; _v Amigo_1 101; _v Amigo_1 102; _v Amigo_1 103
+      _v Amigo_1 110; _v Amigo_1 134; _v Inimigo 135; _v Amigo_1 136 )
+check "troca por aliado: 3 trocas, fogo amigo 30s, inimigo zera a conta" "TTTAATAT" "$_r"
+check "lista de aliados consultada so no aliado_ler" "0 0 0 0 0 0 0" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand king; do grep -c 'alvo_aliado' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+check "aliado_ler em cada leitura de pagina (sete modulos)" "1 1 1 1 1 1 1" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand king; do grep -c '^ *aliado_ler' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
 check "fim do giro: espera nunca zero (sete modulos)" 7 \
     "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" \
            "$LIB/flagfight.sh" "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -c '\[ "\$_resta" -gt 0 \] || _resta=1$')"

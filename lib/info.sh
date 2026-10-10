@@ -837,6 +837,8 @@ luta_inicio() {
     _reviveu=0
     LUTA_MOTIVO=""
     LUTA_SESSAO_CAIU=0
+    # Troca por aliado e fogo amigo (allies.sh).
+    type aliado_zerar > /dev/null 2>&1 && aliado_zerar
     [ -n "$1" ] && batalha_marcar "$1"
     return 0
 }

@@ -106,6 +106,7 @@ king_fight() {
     # Nome do ALVO (ver alvo_nome, em info.sh). A leitura antiga devolvia
     # "Fulano_&" em toda pagina do Rei: a protecao de aliados nunca agia.
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
+    aliado_ler
 
     if [ "$_emluta" = "1" ] || acao_disponivel; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -316,7 +317,7 @@ king_fight() {
           ) </dev/null > /dev/null 2>&1 &
           time_exit 17
           cl_access
-        elif [ -s ATKRND ] && alvo_aliado USER; then
+        elif [ -s ATKRND ] && troca_aliado "$_agora"; then
           # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE.
           #
           # Depois que o rei morre a luta continua entre jogadores, e o alvo

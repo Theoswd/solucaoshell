@@ -177,6 +177,7 @@ clancommand_fight() {
     set -- `combate_ler clancommand "$HPER" "$RPER" "$src_ram"`
     _emluta="$1"; RHP="$2"; HLHP="$3"; _hpat="$4"; _hp2at="$5"
     alvo_nome "$src_ram" > USER 2>/dev/null
+    aliado_ler cla
 
     if [ "$_emluta" = "1" ] || _cc_acao; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -260,14 +261,13 @@ clancommand_fight() {
       cat HP > old_HP
       date +%s > last_dodge
 
-    # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE. A equipe e do
-    # proprio cla, entao a protecao de aliados vale aqui como nas batalhas de
-    # cla — o atkrnd sorteia outro alvo.
-    elif [ -s ATKRND ] && \
-         [ "$_latk" -ge "$LA" ] && \
-         [ "$_grey" = 0 ] && \
-         { awk -v rhp="$(cat RHP)" -v hp2="$(cat HP2)" 'BEGIN { exit !(rhp < hp2) }' || \
-           alvo_aliado USER cla; }; then
+    # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE (troca_aliado,
+    # em allies.sh, com o fogo amigo). So por aliado, como nas outras
+    # batalhas de cla: aqui havia tambem "inimigo bem mais forte", e com 3
+    # adversarios todos fortes a conta passava a luta trocando sem atacar
+    # (medido: 6 trocas e 0 golpes em 20s).
+    elif [ -s ATKRND ] && [ "$_latk" -ge "$LA" ] && [ "$_grey" = 0 ] && \
+         troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
