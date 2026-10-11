@@ -3905,8 +3905,38 @@ _r=$( . "$LIB/crono.sh" > /dev/null 2>&1
       espera_interrompivel 40; printf '| '; espera_interrompivel 7; printf '| '; espera_interrompivel 60 )
 check "espera: fatias de 15s, total exato" "15 15 10 | 7 | 15 15 15 15 " "$_r"
 
+# Vale (3.9.80): monstro do jogo, regra do dono e fazer dano com golpe, erva
+# e pedra. Uma acao a cada 5s: erva e pedra de graca a cada 1 min, golpe no
+# resto; erva que cobra ouro fica de fora. Relogio virtual de 70s.
+#   _vl80 [ouro] -> sequencia de acoes (e=erva p=pedra h=golpe m=mana)
+_vl80() {
+    ( TMP="$_td20/vale_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/undying.sh" > /dev/null 2>&1
+      _pg="$TMP/pagina.html"
+      _er="<a href='/undying/grass/?r=7'>Erva (844)</a>"
+      [ "$1" = ouro ] && _er="<a href='/undying/grass/?r=7'>Erva <img src='/images/icon/gold.png' alt='g'/> 5</a>"
+      printf "%s" "<img src='/images/icon/level.png'/> <a href='/undying/hit/?r=1'>Bater</a> $_er <a href='/undying/stone/?r=8'>Pedra (208)</a> <a href='/undying/?out_gate'>sair</a>" > "$_pg"
+      cp "$_pg" "$TMP/SRC"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; cat "$_pg"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      luta_teto() { echo $(( `cat "$TMP/relogio"` + 70 )); }
+      cd "$TMP" && undying_fight > "$TMP/out" 2>&1
+      sed -n 's|.*/undying/\([a-z]*\)/.*|\1|p' "$TMP/req" | sed 's/grass/e/; s/stone/p/; s/hit/h/; s/mana/m/' | tr -d '\n'
+      printf '|%s' "$(grep -o 'Vale: .*;' "$TMP/out")"; [ -s "$TMP/vale_luta.html" ] && printf 'pagina' )
+}
+check "Vale: erva e pedra a cada 1 min, golpe no resto (uma acao a cada 5s)" \
+    "ephhhhhhhhhheph|Vale: 11 golpes (hit 11, mana 0), erva 2, pedra 2;pagina" "`_vl80 gratis`"
+check "Vale: erva que cobra ouro nao e usada" \
+    "phhhhhhhhhhhphh|Vale: 13 golpes (hit 13, mana 0), erva 0, pedra 2;pagina" "`_vl80 ouro`"
+_r=`( cd "$_td20" && . "$LIB/info.sh" > /dev/null 2>&1
+      printf '%s' "<a href='/undying/grass/?r=7'>Erva <img src='/images/icon/gold.png'/> 5</a><a href='/undying/stone/?r=8'>Pedra (2)</a>" > it.html
+      itens_gratis undying it.html; printf '[%s][%s]' "\`cat GRASS\`" "\`cat STONE\`" )`
+check "itens_gratis: erva com preco em ouro fora, pedra gratis dentro" "[][/undying/stone/?r=8]" "$_r"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
