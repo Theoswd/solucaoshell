@@ -3630,7 +3630,7 @@ _cc69() {
       full_atualizar() { :; }; batalha_marcar() { echo marcou >> "$TMP/req"; }; batalha_limpar() { :; }
       evento_cancelar() { echo liberou >> "$TMP/req"; }; clancommand_fight() { echo lutou >> "$TMP/req"; }
       clancommand_start > /dev/null 2>&1
-      grep -v '^/clancommand/$' "$TMP/req" | tr '\n' ' ' )
+      grep -v '^/clancommand/$' "$TMP/req" | grep -v '^/clancommand/?close=reward$' | tr '\n' ' ' )
 }
 check "torneio: membro sem botao espera a luta e luta" "marcou lutou " "`_cc69 membro`"
 check "torneio: membro so com a sala da equipe tambem luta" "marcou lutou " "`_cc69 membro_chat`"
@@ -3657,7 +3657,10 @@ _cc70() {
           _t="<span id='time_15808000'>4 h 23 min</span>"
           _a="<a href='/clancommand/?enterFight=34500465'>Aplicar</a>"
           case "$PG:$_u" in
-              lider:*enterFight*) echo "$_p $_t" ;;
+              lider:*enterFight*|resultado:*enterFight*) echo "$_p $_t" ;;
+              # Resultado da batalha aberto: so o ?close=reward mostra o torneio.
+              resultado:*close=reward*) echo "$_p $_a $_t" ;;
+              resultado:*)        echo "$_p Resultado da batalha" ;;
               lider:*|recusa:*)   echo "$_p $_a $_t" ;;
               membro:*)           echo "$_p $_t Líder não se inscreveu para a batalha" ;;
               perto:*)            echo "$_p $_a <span id='time_300000'>5 min</span>" ;;
@@ -3670,15 +3673,17 @@ _cc70() {
       : > "$TMP/req"; clancommand_inscrever > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
 }
 check "inscricao antecipada: lider inscreve e para ate o inicio" \
-    "/clancommand/ /clancommand/?enterFight=34500465 |0|anotou|" "`_cc70 lider`"
+    "/clancommand/?close=reward /clancommand/?enterFight=34500465 |0|anotou|" "`_cc70 lider`"
+check "inscricao antecipada: resultado da batalha aberto e fechado antes (11/10)" \
+    "/clancommand/?close=reward /clancommand/?enterFight=34500465 |0|anotou|" "`_cc70 resultado`"
 check "inscricao antecipada: recusada, tenta de novo depois" \
-    "/clancommand/ /clancommand/?enterFight=34500465 |1|nao|/clancommand/ /clancommand/?enterFight=34500465 " "`_cc70 recusa`"
+    "/clancommand/?close=reward /clancommand/?enterFight=34500465 |1|nao|/clancommand/?close=reward /clancommand/?enterFight=34500465 " "`_cc70 recusa`"
 check "inscricao antecipada: membro le uma vez e para ate o inicio" \
-    "/clancommand/ |0|anotou|" "`_cc70 membro`"
+    "/clancommand/?close=reward |0|anotou|" "`_cc70 membro`"
 check "inscricao antecipada: perto do inicio fica com a janela do run.sh" \
-    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 perto`"
+    "/clancommand/?close=reward |1|nao|/clancommand/?close=reward " "`_cc70 perto`"
 check "inscricao antecipada: sem torneio aberto, sem inscricao" \
-    "/clancommand/ |1|nao|/clancommand/ " "`_cc70 fechado`"
+    "/clancommand/?close=reward |1|nao|/clancommand/?close=reward " "`_cc70 fechado`"
 check "torneio: inscreve o proximo depois da batalha (dois caminhos)" 2 \
     "$(grep -A1 '^ *clancommand_fight$' "$LIB/clancommand.sh" | grep -c '^ *clancommand_inscrever$')"
 grep -q '^ *clancommand_inscrever 2>/dev/null$' "$LIB/crono.sh" \
