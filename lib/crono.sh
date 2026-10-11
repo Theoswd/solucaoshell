@@ -1,11 +1,83 @@
 # shellcheck disable=SC2154
 # shellcheck disable=SC2317
+# ============================================================
+#  RELOGIO DA VOLTA: UM "date" POR VOLTA DO LACO, NAO TRINTA E NOVE
+#
+#  Medido no laco real do worker parado (strace, 4 min): 95 processos por
+#  minuto por conta, e 39 deles so para perguntar a hora - cada portao de
+#  atividade (arena, caverna, liga, troca, missoes...), cada conferencia do
+#  minuto de inscricao e o log chamavam o seu "date". Com 18 contas eram
+#  ~1.900 processos por minuto com o bot sem fazer nada.
+#
+#  relogio_sync (inicio de cada volta, no sls_play) pergunta ao date uma vez
+#  e anota quanto o /proc/uptime marcava naquele instante. Dai em diante a
+#  hora e o date da volta mais o que o /proc/uptime andou, lido com "read",
+#  sem processo. A diferenca para um "date" de verdade e de no maximo 1s, e
+#  os portoes da rotina contam minutos.
+#
+#  Sem relogio_sync (fora do laco: a entrada do bot, os testes) ou sem
+#  /proc/uptime legivel, cada funcao faz as MESMAS chamadas ao date de antes.
+#  Nas lutas nada disso e usado: os relogios de golpe e esquiva seguem com o
+#  date.
+# ============================================================
+relogio_sync() {
+    set -- `date '+%s %H %M %S %d'`
+    _rl_ep="$1"; _HH="$2"; _MM="$3"; _DD="$5"
+    _rl_tz=$(( ${2#0} * 3600 + ${3#0} * 60 + ${4#0} - $1 % 86400 ))
+    _rl_up=""
+    { read -r _rl_up _rl_x < /proc/uptime; } 2>/dev/null
+    _rl_up=${_rl_up%%.*}
+    case "$_rl_up" in ''|*[!0-9]*) _rl_up="" ;; esac
+    unset _rl_x
+}
+
+# Epoch de agora em _AGORA.
+agora_s() {
+    _rl_u=""
+    [ -n "$_rl_up" ] && { read -r _rl_u _rl_x < /proc/uptime; } 2>/dev/null
+    _rl_u=${_rl_u%%.*}
+    case "$_rl_u" in
+        ''|*[!0-9]*) _AGORA=`date +%s` ;;
+        *)           _AGORA=$(( _rl_ep + _rl_u - _rl_up )) ;;
+    esac
+    unset _rl_u _rl_x
+}
+
+# Minuto local de agora em _MIN, sem zero a esquerda (era date +%M | sed).
+minuto_atual() {
+    if [ -n "$_rl_up" ]; then
+        agora_s
+        _MIN=$(( (_AGORA + _rl_tz + 86400) % 86400 / 60 % 60 ))
+    else
+        _MIN=`date +%M`; _MIN=${_MIN#0}
+    fi
+}
+
+# Hora local de agora em _HOR, sem zero a esquerda (era date +%H | sed).
+hora_atual() {
+    if [ -n "$_rl_up" ]; then
+        agora_s
+        _HOR=$(( (_AGORA + _rl_tz + 86400) % 86400 / 3600 ))
+    else
+        _HOR=`date +%H`; _HOR=${_HOR#0}
+    fi
+}
+
+# Dia do mes da volta em _DIA (era date +%d).
+dia_atual() {
+    if [ -n "$_rl_up" ] && [ -n "$_DD" ]; then _DIA="$_DD"; else _DIA=`date +%d`; fi
+}
+
 func_crono() {
-    HOUR=`date +%H | sed 's/^0//'`
-    MIN=`date +%M | sed 's/^0//'`
+    hora_atual; minuto_atual
+    HOUR="$_HOR"; MIN="$_MIN"
     [ -z "$HOUR" ] && HOUR=0
     [ -z "$MIN" ] && MIN=0
-    printf "%s %s\n" "$URL" "`date +%H:%M`"
+    if [ -n "$_rl_up" ]; then
+        printf "%s %02d:%02d\n" "$URL" "$HOUR" "$MIN"
+    else
+        printf "%s %s\n" "$URL" "`date +%H:%M`"
+    fi
 }
 
 # Pausa entre ciclos.
@@ -124,7 +196,9 @@ func_cat() {
 func_sleep() {
     [ -t 1 ] && clear
 
-    if [ "`date +%d`" -eq 01 ] 2>/dev/null; then
+    # O dia e o da volta (relogio_sync); fora do laco, o date.
+    dia_atual
+    if [ "$_DIA" -eq 01 ] 2>/dev/null; then
         if [ "${HOUR:-99}" -lt 9 ] 2>/dev/null; then
             # Missao 11 do dia 1: o coliseum_start pede /quest/ mesmo sem ela.
             # A cada volta eram ~500 pedidos na madrugada; 15 min bastam.
@@ -153,7 +227,8 @@ func_sleep() {
     # func_sleep e chamado ANTES do func_crono, entao o $MIN esta defasado de
     # um ciclo (e vazio na primeira volta) — justamente o erro que faria a
     # espera curta cair no minuto errado.
-    _fs_min=`date +%M | sed 's/^0//'`
+    minuto_atual
+    _fs_min="$_MIN"
     case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
     # A espera curta (15s) tem de cobrir TODA a janela de entrada de cada
     # evento, senao uma espera de 60s iniciada perto do fim da janela acorda
@@ -175,15 +250,15 @@ func_sleep() {
 
 # Intervalo do checklist de missoes do cla.
 cq_liberado()    { ativ_liberada cq    "${FUNC_cq_min:-15}"; }
-cq_marcar() { date +%s > "$TMP/last_cq" 2>/dev/null; }
+cq_marcar() { ativ_marcar cq; }
 
 # Atualizacao dos numeros do painel (HP, energia, nivel, ouro, prata).
 #
 # O stats so era gravado dentro do start(), que roda nos minutos da
 # agenda — com vaos de mais de uma hora. O painel exibia valores
 # velhos: ouro 128 quando ja era 28, HP 583 quando ja era 656.
-# Uma requisicao a /user a cada 3 minutos por conta resolve sem peso.
-stats_liberado() { ativ_liberada stats "${FUNC_stats_min:-3}"; }
+# Uma requisicao a /user a cada 5 minutos por conta (FUNC_stats_min; eram 3).
+stats_liberado() { ativ_liberada stats "${FUNC_stats_min:-5}"; }
 
 atualiza_stats() {
     # Preserva a aba atual em TODOS os caminhos de saida. O run_curl
@@ -245,7 +320,7 @@ atualiza_stats() {
     sessao_marcar
     parse_status "$_pg"
     messages_info
-    date +%s > "$TMP/last_stats" 2>/dev/null
+    ativ_marcar stats
     printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
     unset _pg _a _aba_ant
 }
@@ -278,10 +353,11 @@ masmorra_liberada() {
     # A chave existia no config.cfg desde sempre e NINGUEM a lia: quem
     # desligasse a masmorra ali continuava com ela ligada.
     [ "${FUNC_masmorra:-y}" = "y" ] || return 1
-    _u=`cat "$TMP/next_masmorra" 2>/dev/null`
+    _u=; { read -r _u < "$TMP/next_masmorra"; } 2>/dev/null
     case "$_u" in ''|*[!0-9]*) _u=0 ;; esac
     # Mais de 2 dias adiante nao e relogio do jogo (ver relogio_liberado).
-    _u=$(( _u - `date +%s` ))
+    agora_s
+    _u=$(( _u - _AGORA ))
     [ "$_u" -le 0 ] || [ "$_u" -gt 172800 ]
 }
 # Segundos ate os golpes voltarem, lidos da pagina da masmorra ($1).
@@ -294,7 +370,8 @@ masmorra_relogio() {
 masmorra_anotar() { # segundos_sem_relogio
     _ms=`masmorra_relogio "$TMP/DUNGEON"`
     case "$_ms" in ''|*[!0-9]*) _ms="$1" ;; esac
-    echo $(( `date +%s` + _ms + 60 )) > "$TMP/next_masmorra" 2>/dev/null
+    agora_s
+    echo $(( _AGORA + _ms + 60 )) > "$TMP/next_masmorra" 2>/dev/null
     unset _ms
 }
 # Sem relogio na pagina depois dos golpes: as 8h do jogo.
@@ -327,20 +404,25 @@ masmorra_adiar() {
 #     $TMP/next_caverna   $TMP/next_campanha   (epoch em que a atividade volta)
 # ---------------------------------------------------------------------------
 
-# "(21:04)" ou "(1:02:03)" -> segundos
-relogio_segundos() {
-    printf '%s\n' "$1" | awk -F: '
-        NF == 2 { print $1 * 60 + $2; exit }
-        NF == 3 { print $1 * 3600 + $2 * 60 + $3; exit }'
+# "21:04" ou "1:02:03" -> segundos, sem processo (o awk abaixo fazia o mesmo).
+relogio_seg_sh() {
+    _rs_ifs=$IFS; IFS=:; set -- $1; IFS=$_rs_ifs; unset _rs_ifs
+    _rs_a=${1#0}; _rs_b=${2#0}; _rs_c=${3#0}
+    case $# in
+        2) echo $(( ${_rs_a:-0} * 60 + ${_rs_b:-0} )) ;;
+        3) echo $(( ${_rs_a:-0} * 3600 + ${_rs_b:-0} * 60 + ${_rs_c:-0} )) ;;
+    esac
+    unset _rs_a _rs_b _rs_c
 }
 
 relogio_liberado() { # nome -> 0 se o relogio da atividade venceu
-    _rl=`cat "$TMP/next_$1" 2>/dev/null`
+    _rl=; { read -r _rl < "$TMP/next_$1"; } 2>/dev/null
     case "$_rl" in ''|*[!0-9]*) unset _rl; return 2 ;; esac
     # Nenhum relogio do jogo passa de 1 dia. Mais de 2 dias adiante e marca
     # gravada com o relogio do aparelho errado (o WSL ja pulou anos para a
     # frente): vale como vencido, senao a atividade fecharia ate aquela data.
-    _rl=$(( _rl - `date +%s` ))
+    agora_s
+    _rl=$(( _rl - _AGORA ))
     if [ "$_rl" -le 0 ] || [ "$_rl" -gt 172800 ]; then unset _rl; return 0; fi
     unset _rl
     return 1
@@ -348,7 +430,8 @@ relogio_liberado() { # nome -> 0 se o relogio da atividade venceu
 
 relogio_anotar() { # nome segundos
     case "$2" in ''|*[!0-9]*) return 1 ;; esac
-    echo $(( `date +%s` + $2 )) > "$TMP/next_$1" 2>/dev/null
+    agora_s
+    echo $(( _AGORA + $2 )) > "$TMP/next_$1" 2>/dev/null
 }
 
 # Le o relogio da caverna no menu da pagina inicial ($1). Sem menu (pagina
@@ -356,10 +439,13 @@ relogio_anotar() { # nome segundos
 # sai do link da caverna: o item seguinte do menu (Rei dos Imortais) tambem
 # tem relogio entre parenteses.
 caverna_ler_menu() {
-    _cv=`grep -o -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null \
-         | head -n 1 | grep -o -E '([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\)$' | tr -d ')'`
+    # O grep e o mesmo; o corte do "(21:04)" e a conta dos segundos sao do
+    # shell (eram head, grep, tr e o awk do relogio_segundos a cada descanso).
+    _cv=`grep -o -m 1 -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null`
+    _cv=${_cv%%"
+"*}; _cv=${_cv##*\(}; _cv=${_cv%\)}
     if [ -n "$_cv" ]; then
-        relogio_anotar caverna $(( `relogio_segundos "$_cv"` + 30 ))
+        relogio_anotar caverna $(( `relogio_seg_sh "$_cv"` + 30 ))
     elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then
         relogio_anotar caverna 0
     fi
@@ -425,7 +511,7 @@ campanha_liberada() {
 tarefas_livres() {
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
-    # --- Numeros do painel, a cada 3 min
+    # --- Numeros do painel, a cada 5 min
     if stats_liberado; then
         atualiza_stats 2>/dev/null
     fi
@@ -575,7 +661,7 @@ tarefas_livres() {
 # Arena a cada 30 minutos, controlada por marcador em disco para
 # sobreviver a reinicios do worker.
 arena_liberada() { ativ_liberada arena "${FUNC_arena_min:-30}"; }
-arena_marcar() { date +%s > "$TMP/last_arena" 2>/dev/null; }
+arena_marcar() { ativ_marcar arena; }
 
 # Varredura periodica de atividades no ciclo ocioso.
 #
@@ -594,13 +680,14 @@ ativ_liberada() {
     _au=; { read -r _au < "$TMP/last_$_an"; } 2>/dev/null
     case "$_au" in ''|*[!0-9]*) _au=0 ;; esac
     # Marcador no futuro (relogio do aparelho voltou, NTP no Android): vencido.
-    _au=$(( $(date +%s) - _au ))
+    agora_s
+    _au=$(( _AGORA - _au ))
     if [ "$_au" -lt 0 ] || [ "$_au" -ge $((_am * 60)) ]; then
         unset _an _am _au; return 0
     fi
     unset _an _am _au; return 1
 }
-ativ_marcar() { date +%s > "$TMP/last_$1" 2>/dev/null; }
+ativ_marcar() { agora_s; echo "$_AGORA" > "$TMP/last_$1" 2>/dev/null; }
 
 # ============================================================
 #  PERIODO DEDICADO AO EVENTO
@@ -711,6 +798,9 @@ evento_espera() {
 # combate fantasma. Apagados aqui (no descanso), o ao vivo passa a refletir
 # apenas batalha de verdade em andamento.
 limpar_combate() {
+    # So chama o rm quando ha o que apagar: no descanso de todo minuto, quase
+    # sempre nao ha (o teste [ -e ] e do proprio shell).
+    [ -e "$TMP/HP" ] || [ -e "$TMP/old_HP" ] || [ -e "$TMP/FULL" ] || [ -e "$TMP/USH" ] || return 0
     rm -f "$TMP/HP" "$TMP/old_HP" "$TMP/FULL" "$TMP/USH" 2>/dev/null
 }
 
@@ -812,7 +902,8 @@ descansar() {
     _ds_req=; _ds_ok=0
     { read -r _ds_req < "$TMP/.ult_req"; read -r _ds_ok < "$TMP/.home_ok"; } 2>/dev/null
     case "$_ds_ok" in ''|*[!0-9]*) _ds_ok=0 ;; esac
-    _ds_ok=$(( `date +%s` - _ds_ok ))
+    agora_s
+    _ds_ok=$(( _AGORA - _ds_ok ))
     # Diferenca negativa = relogio voltou: nao prova nada, pede a Home.
     if [ "$_ds_req" = "/" ] && [ "$_ds_ok" -ge 0 ] && [ "$_ds_ok" -lt 50 ]; then
         unset _ds_req _ds_ok
@@ -870,7 +961,7 @@ descansar() {
     # sessao fica como esta e o proximo descanso confere de novo.
     case "`sessao_estado "$TMP/REST"`" in
         viva)
-            _ds_ok=`date +%s`
+            agora_s; _ds_ok="$_AGORA"
             echo "$_ds_ok" > "$TMP/last_ok" 2>/dev/null
             echo "$_ds_ok" > "$TMP/.home_ok" 2>/dev/null
             unset _ds_ok

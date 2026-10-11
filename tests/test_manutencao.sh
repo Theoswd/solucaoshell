@@ -1408,12 +1408,17 @@ else
 fi
 # O worker relancado volta para a batalha antes de qualquer outra atividade.
 _rt=$(grep -n '^    batalha_retomar' "$LIB/run.sh" | head -n1 | cut -d: -f1)
-_cs=$(grep -n 'case `date +%H:%M` in' "$LIB/run.sh" | head -n1 | cut -d: -f1)
+_cs=$(grep -n 'case "$_HH:$_MM" in' "$LIB/run.sh" | head -n1 | cut -d: -f1)
 if [ -n "$_rt" ] && [ -n "$_cs" ] && [ "$_rt" -lt "$_cs" ]; then
     ok "run.sh: batalha pendente e retomada antes do cronograma"
 else
     bad "run.sh: worker relancado cai na rotina com a batalha em andamento"
 fi
+# O horario do cronograma e o do relogio da volta: acertado antes dele.
+_rs=$(grep -n '^ *relogio_sync$' "$LIB/run.sh" | head -n1 | cut -d: -f1)
+[ -n "$_rs" ] && [ -n "$_cs" ] && [ "$_rs" -lt "$_cs" ] \
+    && ok "run.sh: relogio da volta acertado antes do cronograma" \
+    || bad "run.sh: cronograma sem o relogio da volta"
 rm -rf "$_bt"
 unset _bt _CAB _CAB0 _r _p _m _l _sem _ogc _bp _og _rt _cs _st _msg
 unset -f pg descanso_cenario
@@ -3585,7 +3590,7 @@ _r=$( TMP="$_td20/tr"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$T
       fetch_train_stats; fetch_train_stats; printf '%s ' "$(wc -l < "$TMP/req" | tr -d ' ')"
       ACC_LVL=40; parse_status "icon/level.png' alt=''/> 41"; fetch_train_stats
       printf '%s %s' "$(wc -l < "$TMP/req" | tr -d ' ')" "$FIXHP" )
-check "/train: uma leitura por 15 min, e outra ao subir de nivel" "1 2 5000" "$_r"
+check "/train: uma leitura por hora fora das lutas, e outra ao subir de nivel" "1 2 5000" "$_r"
 
 # Troca: resposta de login nao gasta o dia.
 _r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
@@ -3727,6 +3732,65 @@ check "cura e esquiva sem cat por volta (sete modulos)" 0 \
 check "HP e limiar do inimigo nao calculados a toa (cinco modulos)" 0 \
     "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" | grep -c '> HP2\|> ENH\|> RHP')"
 
+# HP maximo lido no inicio da batalha: o full_atualizar rele o /train se a
+# leitura tem mais de 10 min; nao rele se e recente nem na retomada da luta.
+# Fora das lutas, o /train sai uma vez por hora.
+#   _tr77 MIN_DESDE_A_ULTIMA_LEITURA [retomada] -> pedidos de /train | FULL
+_tr77() {
+    ( TMP="$_td20/tr77_$1$2"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo x >> "$TMP/req"; echo "Saude: 2304 (4608) Energia: 1555"; }
+      FIXHP=4000; ACC_ENE=1555
+      echo $(( `date +%s` - $1 * 60 )) > "$TMP/last_train"
+      [ -n "$2" ] && _BR_ATIVO=1
+      full_atualizar "$TMP/FULL"
+      printf '%s|%s' "`wc -l < "$TMP/req" | tr -d ' '`" "`cat "$TMP/FULL"`" )
+}
+check "inicio da batalha: /train lido ha 11 min e relido (HP maximo novo)" "1|4608" "`_tr77 11`"
+check "inicio da batalha: /train lido ha 5 min vale o que esta" "0|4000" "`_tr77 5`"
+check "retomada da luta: nao rele o /train" "0|4000" "`_tr77 30 retomada`"
+_r=$( TMP="$_td20/tr77h"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo x >> "$TMP/req"; echo "Saude: 2304 (4608) Energia: 1555"; }
+      FIXHP=4000; ACC_ENE=1555
+      echo $(( `date +%s` - 30 * 60 )) > "$TMP/last_train"; fetch_train_stats
+      printf '%s ' "`wc -l < "$TMP/req" | tr -d ' '`"
+      echo $(( `date +%s` - 61 * 60 )) > "$TMP/last_train"; fetch_train_stats
+      printf '%s' "`wc -l < "$TMP/req" | tr -d ' '`" )
+check "fora das lutas: /train de hora em hora (30 min nao, 61 min sim)" "0 1" "$_r"
+grep -q '^ *\*" -fix "\*) SLS_MAXTIME=17; fetch_train_stats 10' "$LIB/info.sh" \
+    && ok "Vale: HP e mana maximos conferidos no inicio, como nas outras lutas" \
+    || bad "Vale: entra com o HP maximo de horas atras"
+
+# Numeros do painel a cada 5 min: padrao novo e migracao unica de quem
+# estava no padrao antigo (3). Um valor escolhido depois fica como esta.
+_r=$( TMP="$_td20/cfg77"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
+      printf 'FUNC_stats_min=3\nFUNC_arena_min=30\n' > "$TMP/config.cfg"
+      load_config; printf '%s ' "$FUNC_stats_min"
+      sed -i 's/^FUNC_stats_min=.*/FUNC_stats_min=3/' "$TMP/config.cfg"
+      load_config; printf '%s ' "$FUNC_stats_min"
+      TMP="$_td20/cfg77b"; mkdir -p "$TMP"; : > "$TMP/config.cfg"
+      load_config; printf '%s' "$FUNC_stats_min" )
+check "painel a cada 5 min: o 3 antigo vira 5 uma vez; conta nova ja nasce com 5" "5 3 5" "$_r"
+
+# Relogio da volta: um date, o resto pelo /proc/uptime. Mesmo epoch, minuto,
+# hora e dia do date (tolerancia de 1s); fora do laco, o date de antes.
+_r=$( TMP="$_td20/rv"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+      relogio_sync; _a1=`date '+%s %M %H %d'`
+      agora_s; minuto_atual; hora_atual; dia_atual
+      _a2=`date '+%s %M %H %d'`
+      # Vale o date de antes ou o de depois (virada de minuto no meio).
+      _ok() { set -- $1; [ $(( _AGORA - $1 )) -ge -1 ] && [ $(( _AGORA - $1 )) -le 1 ] && \
+              [ "$_MIN" = "${2#0}" ] && [ "$_HOR" = "${3#0}" ] && [ "$_DIA" = "$4" ]; }
+      if _ok "$_a1" || _ok "$_a2"; then printf ok; else printf '%s|%s|%s %s %s %s' "$_a1" "$_a2" "$_AGORA" "$_MIN" "$_HOR" "$_DIA"; fi )
+check "relogio da volta: epoch, minuto, hora e dia batem com o date" ok "$_r"
+_r=$( TMP="$_td20/rv2"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { case "$1" in +%M) echo 07 ;; +%H) echo 09 ;; +%d) echo 01 ;; +%s) echo 1000 ;; *) command date "$@" ;; esac; }
+      agora_s; minuto_atual; hora_atual; dia_atual; printf '%s %s %s %s' "$_AGORA" "$_MIN" "$_HOR" "$_DIA" )
+check "relogio da volta: fora do laco usa o date (testes e entrada do bot)" "1000 7 9 01" "$_r"
+check "rotina: os portoes de atividade nao chamam o date" 0 \
+    "$(sed -n '/^ativ_liberada() {/,/^}/p;/^relogio_liberado() {/,/^}/p;/^masmorra_liberada() {/,/^}/p' "$LIB/crono.sh" | grep -c 'date')"
+
 # Laco de luta sem giro: relogio virtual (date le, so o sleep faz o tempo
 # andar). Um laco que gira sem dormir nunca avanca o relogio: passado o teto
 # de voltas o teste o encerra, e os golpes nao chegam a seis.
@@ -3795,7 +3859,7 @@ check "alvo cinza calculado uma vez por pagina (sete modulos)" "1 1 1 1 1 1 1" \
     "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand coliseum; do grep -c 'alvo_grey' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

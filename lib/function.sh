@@ -21,7 +21,7 @@ FUNC_masmorra=y
 FUNC_masmorra_min=45
 FUNC_masmorra_max=15
 FUNC_estatua_horas=6
-FUNC_stats_min=3
+FUNC_stats_min=5
 FUNC_clan_statue=y
 ALLIES=
 EOF
@@ -50,6 +50,21 @@ load_config() {
         grep -q "^${_dk}=" "$CONFIG_FILE" 2>/dev/null || \
             printf '%s=%s\n' "$_dk" "$_dv" >> "$CONFIG_FILE"
     done
+
+    # NUMEROS DO PAINEL: 3 -> 5 MIN, UMA VEZ. O padrao ficava gravado no
+    # config.cfg de cada conta, entao mudar so o padrao nao valia para quem
+    # ja existia. Quem estava no 3 (o padrao antigo) passa para 5 uma unica
+    # vez; um valor escolhido depois disso fica como esta.
+    if [ ! -f "${TMP:-.}/.cfg_stats5" ]; then
+        if grep -q '^FUNC_stats_min=3$' "$CONFIG_FILE" 2>/dev/null; then
+            while IFS= read -r _cl; do
+                case "$_cl" in FUNC_stats_min=3) _cl=FUNC_stats_min=5 ;; esac
+                printf '%s\n' "$_cl"
+            done < "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv -f "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+        fi
+        : > "${TMP:-.}/.cfg_stats5" 2>/dev/null
+        unset _cl
+    fi
 
     _cr=$(printf '\r')
     while IFS='=' read -r _ck _cv; do

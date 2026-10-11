@@ -453,6 +453,7 @@ erva_gratis() { # SECAO ARQUIVO
 # modulo reconhece esse link, a sessao esta provada — e e so carimbar.
 sessao_marcar() { date +%s > "$TMP/last_ok" 2>/dev/null; }
 
+
 # SESSAO CAIDA OU SERVIDOR MUDO?   sessao_estado ARQUIVO   (ou "-" = stdin)
 #
 #   viva          pagina do jogo com a conta logada
@@ -1004,6 +1005,18 @@ luta_acabou() {
 # fazia os outros seguirem com o arquivo antigo deles — de outro dia, com o
 # HP de antes de subir de nivel, e a cura saia tarde.
 full_atualizar() { # arquivo_do_HP_maximo
+    # HP MAXIMO LIDO NO INICIO DA BATALHA. Pedido do dono do bot: e na luta
+    # que o HP maximo importa (o limiar de cura sai dele), entao e aqui que
+    # ele e conferido - com troca de equipamento, a batalha seguinte ja usa o
+    # valor novo. Lido ha menos de 10 min (eventos seguidos, os pulsos do
+    # Coliseu), vale o que ja esta. Na retomada de uma luta em andamento nao
+    # rele: a conta volta direto para ela. Prazo de 17s, como as paginas de
+    # luta: o /train sai no minuto de inscricao.
+    if [ "${_BR_ATIVO:-0}" != 1 ]; then
+        SLS_MAXTIME=17
+        fetch_train_stats 10 2>/dev/null
+        unset SLS_MAXTIME
+    fi
     case "$FIXHP" in
         ''|0|*[!0-9]*) ;;
         *) printf '%s\n' "$FIXHP" > "$1" 2>/dev/null; return 0 ;;
@@ -1091,6 +1104,11 @@ ressuscitar() {
 }
 
 hpmp() {
+    # INICIO DO VALE: HP e mana maximos conferidos como no inicio das outras
+    # batalhas (ver full_atualizar): relidos se a leitura tem mais de 10 min.
+    case " $* " in
+        *" -fix "*) SLS_MAXTIME=17; fetch_train_stats 10 2>/dev/null; unset SLS_MAXTIME ;;
+    esac
     # HP e mana maximos ja lidos neste processo: sem outro /train.
     if echo "$@" | grep -q '\-fix' && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
         (
@@ -1283,13 +1301,22 @@ fetch_train_stats() {
     # cada oscilacao de rede. Os dois usos dele ja sao protegidos por
     # [ -n "$FIXHP" ].
     #
-    # A CADA 15 MIN, NAO A CADA 3. O /train so traz o HP maximo e o teto de
-    # energia, que so mudam ao subir de nivel: eram 480 pedidos por dia por
-    # conta. O parse_status apaga o last_train quando o nivel muda, e a leitura
-    # seguinte ja sai. Sem HP maximo conhecido (entrada do bot), le sempre.
-    if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train 15; then
+    # INTERVALO: fetch_train_stats [MINUTOS], 60 por padrao. O /train so traz
+    # o HP maximo e o teto de energia, que mudam ao subir de nivel ou trocar
+    # equipamento. Fora das batalhas ele so serve ao painel, uma vez por
+    # hora; no INICIO DE CADA BATALHA o full_atualizar rele se a leitura tem
+    # mais de 10 min, e e la que o HP maximo importa (limiar de cura). Era a
+    # cada 15 min o dia todo, 96 pedidos por dia por conta, quase sempre sem
+    # batalha por perto. O parse_status apaga o last_train quando o nivel
+    # muda, e a leitura seguinte ja sai. Sem HP maximo conhecido (entrada do
+    # bot), le sempre.
+    _ft_min="${1:-60}"
+    case "$_ft_min" in ''|*[!0-9]*) _ft_min=60 ;; esac
+    if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train "$_ft_min"; then
+        unset _ft_min
         return 0
     fi
+    unset _ft_min
     ACC_ENE=""
 
     _t=`run_curl "${URL}/train" 2>/dev/null`
