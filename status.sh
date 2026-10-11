@@ -61,7 +61,7 @@ while [ "$#" -gt 0 ]; do
         -h|--help)
             printf "uso: ./status.sh [-1] [-n SEGUNDOS] [-cols] [-icones]\n"
             printf "  -1        imprime uma vez e sai\n"
-            printf "  -n SEG    intervalo de atualizacao (padrao 5)\n"
+            printf "  -n SEG    intervalo de atualizacao (padrao 5; 10 no Termux)\n"
             printf "  -cols     regua de calibracao da largura da tela\n"
             printf "  -icones   desenha os tres conjuntos de icones, para escolher\n"
             exit 0

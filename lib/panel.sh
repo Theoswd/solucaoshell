@@ -314,7 +314,8 @@ painel_largura_calc() {
     #    e $COLUMNS (so existe em shell interativo, e nao acompanha o giro
     #    da tela).
     PAINEL_LARG_FONTE=stty
-    _pw=$(stty size 2>/dev/null | cut -d" " -f2)
+    # "linhas colunas": o corte e do shell (era um cut a cada redesenho).
+    _pw=$(stty size 2>/dev/null); _pw=${_pw##* }
     case "$_pw" in ''|*[!0-9]*) _pw="" ;; esac
     if [ -z "$_pw" ] && command -v tput > /dev/null 2>&1; then
         PAINEL_LARG_FONTE=tput
@@ -464,6 +465,11 @@ painel_regua() {
 # Separador dos campos que o painel_loop manda ao painel_render.
 _US=$(printf '\037')
 
+# Classes de bytes do UTF-8 para o painel_render contar colunas. Montadas uma
+# vez, ao carregar: eram quatro $(printf) a cada desenho, oito por redesenho.
+_PR_CONT=$(printf '[\200-\277]');  _PR_LEAD2=$(printf '[\300-\337]')
+_PR_LEAD3=$(printf '[\340-\357]'); _PR_LEAD4=$(printf '[\360-\367]')
+
 # DESENHO DA TABELA E DO RODAPE — UM AWK SO.
 #
 # O printf do shell alinha por BYTES: "Clã", "·" e o emoji tem mais bytes que
@@ -487,8 +493,8 @@ painel_render() {
     LC_ALL=C awk -v fs="$_US" -v larg="$LARG" -v scol="$S_COL" -v esc="$ESC" \
         -v son="$S_ON" -v sup="$S_WAIT" -v soff="$S_ERR" -v seta="$I_ARROW" \
         -v tv="$T_V" -v th="$T_H" -v tx="$T_X" -v tb="$T_B" -v td="$T_D" -v ret="$T_RET" \
-        -v cont="$(printf '[\200-\277]')" -v lead2="$(printf '[\300-\337]')" \
-        -v lead3="$(printf '[\340-\357]')" -v lead4="$(printf '[\360-\367]')" '
+        -v cont="$_PR_CONT" -v lead2="$_PR_LEAD2" \
+        -v lead3="$_PR_LEAD3" -v lead4="$_PR_LEAD4" '
     BEGIN {
         FS = fs; nr = 0
         fim = esc "[0m"
@@ -677,17 +683,18 @@ EVENTOS="0030|Coliseu
 # Devolve o nome do evento, ou vazio. E a unica fonte de verdade sobre o
 # evento estar em andamento: o caminho vem do $TMP/pagina, gravado a cada
 # requisicao pelo proprio worker.
-evento_da_pagina() {
+evento_da_pagina_v() {
     case "$1" in
-        /altars*)       printf '%s' "$A_ALTARES" ;;
-        /undying*)      printf '%s' "$A_VALE" ;;
-        /king*)         printf '%s' "$A_REI" ;;
-        /clanfight*)    printf '%s' "$A_CLANFIGHT" ;;
-        /clancoliseum*) printf '%s' "$A_CLANCOL" ;;
-        /clancommand*)  printf '%s' "$A_TORNEQ" ;;
-        *)              printf '' ;;
+        /altars*)       _EVP="$A_ALTARES" ;;
+        /undying*)      _EVP="$A_VALE" ;;
+        /king*)         _EVP="$A_REI" ;;
+        /clanfight*)    _EVP="$A_CLANFIGHT" ;;
+        /clancoliseum*) _EVP="$A_CLANCOL" ;;
+        /clancommand*)  _EVP="$A_TORNEQ" ;;
+        *)              _EVP='' ;;
     esac
 }
+evento_da_pagina() { evento_da_pagina_v "$1"; printf '%s' "$_EVP"; }
 
 # O codigo em disco e mais novo que ESTE processo de painel?
 #
@@ -808,13 +815,22 @@ _scan_eventos() {
 proximo_evento() {
     _pe_agenda=""
     _pe_ag="$HOME/.sls/agenda"
-    if [ -s "$_pe_ag" ]; then
-        _pe_idade=$(( $(date +%s) - $(stat -c %Y "$_pe_ag" 2>/dev/null || echo 0) ))
-        [ "$_pe_idade" -lt 7200 ] && _pe_agenda=`cat "$_pe_ag"`
+    # No painel_loop, a agenda e a hora de Brasilia ja vem do redesenho
+    # (painel_relogio): sem stat, cat e date aqui. Fora dele, como antes.
+    if [ -n "$_PE_OK" ]; then
+        if [ -n "$_PE_AG_MT" ]; then
+            _pe_idade=$(( _agora_ep - _PE_AG_MT ))
+            [ "$_pe_idade" -lt 7200 ] && _pe_agenda="$_PE_AG_TXT"
+        fi
+        _pe_ai=$(( (_agora_ep + _PE_BAHIA) % 86400 / 60 ))
+    else
+        if [ -s "$_pe_ag" ]; then
+            _pe_idade=$(( $(date +%s) - $(stat -c %Y "$_pe_ag" 2>/dev/null || echo 0) ))
+            [ "$_pe_idade" -lt 7200 ] && _pe_agenda=`cat "$_pe_ag"`
+        fi
+        _hhmm_min "`TZ=America/Bahia date +%H%M`"
+        _pe_ai=$_HM
     fi
-
-    _hhmm_min "`TZ=America/Bahia date +%H%M`"
-    _pe_ai=$_HM
     [ "$_pe_ai" -lt 0 ] && _pe_ai=0
 
     # DUAS JANELAS, PORQUE AS DUAS LISTAS MARCAM COISAS DIFERENTES.
@@ -948,52 +964,55 @@ ler_arq() {
 # O fetch_page grava o caminho acessado em $TMP/pagina, entao aqui e so
 # traduzir. Descanso deixa de ser um rotulo generico: quando a conta volta
 # para "/", o painel mostra "Pagina Principal", que e onde ela de fato esta.
-aba_de() {
-    ler_arq "$1/pagina"; _p="$_LIDO"
-    case "$_p" in
-        ""|"/"|"/?out_gate_confirm=true") echo "Página Principal" ;;
-        "/?sign_in=1")    echo "Entrando" ;;
-        /fights*)         echo "Agenda de Batalhas" ;;
-        /arena*)          echo "Arena" ;;
-        /career*)         echo "Carreira" ;;
-        /cave*)           echo "Caverna" ;;
-        /campaign*)       echo "Campanha" ;;
-        /coliseum*)       echo "Coliseu" ;;
-        /clancoliseum*)   echo "Coliseu do Clã" ;;
-        /clancommand*)   echo "Torneio de Equipe" ;;
-        /clanfight*)      echo "Torneio dos Clãs" ;;
-        /clandungeon*)    echo "Masmorra do Clã" ;;
+# Mesmo resultado em _ABA, sem copiar o shell: o painel chama isto para cada
+# conta a cada redesenho, e o $(aba_de) custava um processo por conta.
+aba_de_v() {
+    ler_arq "$1/pagina"; _abp="$_LIDO"
+    case "$_abp" in
+        ""|"/"|"/?out_gate_confirm=true") _ABA="Página Principal" ;;
+        "/?sign_in=1")    _ABA="Entrando" ;;
+        /fights*)         _ABA="Agenda de Batalhas" ;;
+        /arena*)          _ABA="Arena" ;;
+        /career*)         _ABA="Carreira" ;;
+        /cave*)           _ABA="Caverna" ;;
+        /campaign*)       _ABA="Campanha" ;;
+        /coliseum*)       _ABA="Coliseu" ;;
+        /clancoliseum*)   _ABA="Coliseu do Clã" ;;
+        /clancommand*)   _ABA="Torneio de Equipe" ;;
+        /clanfight*)      _ABA="Torneio dos Clãs" ;;
+        /clandungeon*)    _ABA="Masmorra do Clã" ;;
         # /clandmgfight e o duelo do cla (evento de 09:25 e 21:25), outra
         # atividade — vinha rotulado como Masmorra e confundia o painel.
-        /clandmgfight*)   echo "Duelo do Clã" ;;
-        /clan/*quest*)    echo "Missões do Clã" ;;
-        /clan/*built*)    echo "Estátua do Clã" ;;
-        /clan*)           echo "Clã" ;;
-        /altars*)         echo "Altares dos Deuses" ;;
-        /undying*)        echo "Vale dos Imortais" ;;
-        /king*)           echo "Rei dos Imortais" ;;
-        /flagfight*)      echo "Batalha de Bandeiras" ;;
-        /league*)         echo "Liga dos Favoritos" ;;
-        /trade*)          echo "Troca" ;;
-        /effshop*|/lab*)  echo "Aprimoramento" ;;
-        /quest*)          echo "Missões" ;;
-        /collector*)      echo "Coleções" ;;
-        /relic*)          echo "Relíquias" ;;
-        /sage*)           echo "Cabana do Sábio" ;;
-        /inv*)            echo "Inventário" ;;
-        /train*)          echo "Treino" ;;
-        /fault*)          echo "Falha" ;;
-        /collfight*)      echo "Batalha Coletiva" ;;
-        /marathon*)       echo "Maratona" ;;
-        /user*)           echo "Meu Herói" ;;
-        /settings*)       echo "Configurações" ;;
-        /mail*)           echo "Mensagens" ;;
-        /questrnd*)       echo "Missão Aleatória" ;;
-        /logout*)         echo "Saindo" ;;
-        *)                echo "$_p" ;;
+        /clandmgfight*)   _ABA="Duelo do Clã" ;;
+        /clan/*quest*)    _ABA="Missões do Clã" ;;
+        /clan/*built*)    _ABA="Estátua do Clã" ;;
+        /clan*)           _ABA="Clã" ;;
+        /altars*)         _ABA="Altares dos Deuses" ;;
+        /undying*)        _ABA="Vale dos Imortais" ;;
+        /king*)           _ABA="Rei dos Imortais" ;;
+        /flagfight*)      _ABA="Batalha de Bandeiras" ;;
+        /league*)         _ABA="Liga dos Favoritos" ;;
+        /trade*)          _ABA="Troca" ;;
+        /effshop*|/lab*)  _ABA="Aprimoramento" ;;
+        /quest*)          _ABA="Missões" ;;
+        /collector*)      _ABA="Coleções" ;;
+        /relic*)          _ABA="Relíquias" ;;
+        /sage*)           _ABA="Cabana do Sábio" ;;
+        /inv*)            _ABA="Inventário" ;;
+        /train*)          _ABA="Treino" ;;
+        /fault*)          _ABA="Falha" ;;
+        /collfight*)      _ABA="Batalha Coletiva" ;;
+        /marathon*)       _ABA="Maratona" ;;
+        /user*)           _ABA="Meu Herói" ;;
+        /settings*)       _ABA="Configurações" ;;
+        /mail*)           _ABA="Mensagens" ;;
+        /questrnd*)       _ABA="Missão Aleatória" ;;
+        /logout*)         _ABA="Saindo" ;;
+        *)                _ABA="$_abp" ;;
     esac
-    unset _p
+    unset _abp
 }
+aba_de() { aba_de_v "$1"; echo "$_ABA"; }
 
 # Relatorio de combate: HP ao vivo e dano recebido.
 #
@@ -1006,53 +1025,54 @@ aba_de() {
 #   "-142 de dano recebido"      perdeu vida desde a ultima leitura
 #   "+380 recuperado"            curou
 #   ""                           fora de combate
-combate_de() {
-    _d="$1"
+combate_de_v() {
+    _cbd="$1"
     # Antes: `cat X | tr -cd 0-9` — dois processos por arquivo, quatro por
     # conta. O read e builtin e o case valida sem chamar o tr.
     # O Coliseu do Cla e as Bandeiras gravam o HP da conta em USH, nao em HP
     # (o old_HP e o mesmo nos dois casos): sem isto o ao vivo dessas duas
     # batalhas nao mostrava HP nenhum. Vale o mais recente dos dois.
-    if [ -f "$_d/USH" ] && { [ ! -f "$_d/HP" ] || [ "$_d/USH" -nt "$_d/HP" ]; }; then
-        ler_arq "$_d/USH"
+    if [ -f "$_cbd/USH" ] && { [ ! -f "$_cbd/HP" ] || [ "$_cbd/USH" -nt "$_cbd/HP" ]; }; then
+        ler_arq "$_cbd/USH"
     else
-        ler_arq "$_d/HP"
+        ler_arq "$_cbd/HP"
     fi
-    _hp="$_LIDO"
-    ler_arq "$_d/old_HP"; _old="$_LIDO"
-    case "$_hp"  in ''|*[!0-9]*) _hp=""  ;; esac
-    case "$_old" in ''|*[!0-9]*) _old="" ;; esac
-    [ -n "$_hp" ] || { echo ""; return; }
+    _cbh="$_LIDO"
+    ler_arq "$_cbd/old_HP"; _cbo="$_LIDO"
+    case "$_cbh"  in ''|*[!0-9]*) _cbh=""  ;; esac
+    case "$_cbo" in ''|*[!0-9]*) _cbo="" ;; esac
+    [ -n "$_cbh" ] || { _CBT=""; unset _cbd _cbh _cbo; return; }
 
-    if [ "$_hp" -eq 0 ] 2>/dev/null; then
-        echo "VOCÊ ESTÁ MORTO"
-        unset _d _hp _old
+    if [ "$_cbh" -eq 0 ] 2>/dev/null; then
+        _CBT="VOCÊ ESTÁ MORTO"
+        unset _cbd _cbh _cbo
         return
     fi
 
-    if [ -n "$_old" ] && [ "$_old" -gt 0 ] 2>/dev/null; then
-        _dif=$((_hp - _old))
+    if [ -n "$_cbo" ] && [ "$_cbo" -gt 0 ] 2>/dev/null; then
+        _cbf=$((_cbh - _cbo))
         # Na tela do celular a frase por extenso empurra o numero para fora
         # do campo de visao. Com o registro da luta logo abaixo dizendo quem
         # bateu e com quanto, a forma curta nao perde nada.
         if [ "${ESTREITO:-0}" = 1 ]; then
-            case "$_dif" in
-                -*) printf 'HP %s (%s)' "$_hp" "$_dif" ;;
-                0)  printf 'HP %s' "$_hp" ;;
-                *)  printf 'HP %s (+%s)' "$_hp" "$_dif" ;;
+            case "$_cbf" in
+                -*) _CBT="HP $_cbh ($_cbf)" ;;
+                0)  _CBT="HP $_cbh" ;;
+                *)  _CBT="HP $_cbh (+$_cbf)" ;;
             esac
-        elif [ "$_dif" -lt 0 ]; then
-            printf 'HP %s  (%s de dano recebido)' "$_hp" "$_dif"
-        elif [ "$_dif" -gt 0 ]; then
-            printf 'HP %s  (+%s recuperado)' "$_hp" "$_dif"
+        elif [ "$_cbf" -lt 0 ]; then
+            _CBT="HP $_cbh  ($_cbf de dano recebido)"
+        elif [ "$_cbf" -gt 0 ]; then
+            _CBT="HP $_cbh  (+$_cbf recuperado)"
         else
-            printf 'HP %s' "$_hp"
+            _CBT="HP $_cbh"
         fi
     else
-        printf 'HP %s' "$_hp"
+        _CBT="HP $_cbh"
     fi
-    unset _d _hp _old _dif
+    unset _cbd _cbh _cbo _cbf
 }
+combate_de() { combate_de_v "$1"; printf '%s' "$_CBT"; }
 
 # ============================================================
 #  REGISTRO DA BATALHA AO VIVO
@@ -1183,13 +1203,65 @@ combate_log() {
 PANEL_LOG_LINHAS="${PANEL_LOG_LINHAS:-2}"
 case "$PANEL_LOG_LINHAS" in ''|*[!0-9]*) PANEL_LOG_LINHAS=2 ;; esac
 
+# RELOGIO E AGENDA DO RODAPE, PREPARADOS NO REDESENHO.
+#
+# O proximo_evento roda a cada redesenho e pedia ao sistema, toda vez, a
+# hora de Brasilia (date), a idade da agenda (stat) e a agenda (cat). Aqui:
+#   - a diferenca de Brasilia para o epoch e lida uma vez por hora (um date);
+#     a hora sai do mesmo date do redesenho;
+#   - a agenda e relida quando o arquivo fica mais novo que a ultima leitura
+#     e, por garantia, a cada 30 redesenhos.
+painel_relogio() {
+    if [ -z "$_PE_BAHIA" ] || [ $(( _agora_ep - ${_PE_BAHIA_EM:-0} )) -ge 3600 ]; then
+        set -- `TZ=America/Bahia date '+%s %H %M %S'`
+        _PE_BAHIA=$(( ${2#0} * 3600 + ${3#0} * 60 + ${4#0} - $1 % 86400 + 86400 ))
+        _PE_BAHIA_EM="$_agora_ep"
+    fi
+    _pr_ag="$HOME/.sls/agenda"; _pr_mk="$HOME/.sls/.painel_agenda"
+    _PE_AG_N=$(( ${_PE_AG_N:-30} + 1 ))
+    if [ ! -s "$_pr_ag" ]; then
+        _PE_AG_MT=""; _PE_AG_TXT=""
+    elif [ -z "$_PE_AG_MT" ] || [ "$_PE_AG_N" -gt 30 ] || [ "$_pr_ag" -nt "$_pr_mk" ]; then
+        _PE_AG_MT=$(stat -c %Y "$_pr_ag" 2>/dev/null || echo 0)
+        _PE_AG_TXT=$(cat "$_pr_ag")
+        : > "$_pr_mk" 2>/dev/null
+        _PE_AG_N=0
+    fi
+    _PE_OK=1
+    unset _pr_ag _pr_mk
+}
+
+# CONTA VIVA, SEM UM "tr" POR CONTA A CADA REDESENHO.
+#
+# O worker_vivo le o /proc/PID/cmdline com um tr para confirmar que o PID e
+# o worker DESTA conta. O cmdline de um processo vivo nao muda, entao basta
+# confirmar uma vez: depois o kill -0 (do proprio shell) diz se ele segue
+# vivo. A checagem completa volta quando o PID muda e a cada 12 redesenhos,
+# por garantia contra PID reaproveitado.
+worker_vivo_painel() { # pid pasta (usa $idx, a posicao da conta)
+    eval "_wvp=\${_WVP_$idx:-}"
+    _wvp_n=99
+    case "$_wvp" in "$1|$2|"*) _wvp_n=${_wvp##*|} ;; esac
+    if [ "$_wvp_n" -lt 12 ] && kill -0 "$1" 2>/dev/null; then
+        eval "_WVP_$idx=\"\$1|\$2|$(( _wvp_n + 1 ))\""
+        unset _wvp _wvp_n; return 0
+    fi
+    unset _wvp _wvp_n
+    if worker_vivo "$1" "$2"; then eval "_WVP_$idx=\"\$1|\$2|0\""; return 0; fi
+    eval "_WVP_$idx="
+    return 1
+}
+
 painel_loop() {
 while true; do
-    [ -t 1 ] && [ "${PANEL_ONCE:-0}" != "1" ] && clear
-    agora=$(date +%H:%M:%S)
+    # O mesmo que o "clear" escreve num terminal xterm (Termux e WSL), sem
+    # o processo.
+    [ -t 1 ] && [ "${PANEL_ONCE:-0}" != "1" ] && printf '\033[H\033[2J\033[3J'
+    # Um "date" por redesenho: hora da tela e epoch na mesma leitura.
+    _pd=$(date '+%H:%M:%S %s'); agora=${_pd% *}; _agora_ep=${_pd#* }; unset _pd
+    painel_relogio
     # Epoch uma vez por desenho, nao por conta: serve para medir ha
     # quanto tempo os numeros de cada conta nao sao atualizados.
-    _agora_ep=$(date +%s)
 
     # Remede a cada volta: o celular pode ser girado com o painel aberto.
     painel_largura_calc; LARG="$PAINEL_LARG"
@@ -1229,7 +1301,7 @@ while true; do
         # recicla PIDs. Relanca no maximo uma vez por minuto por conta, para
         # um worker que morre ao subir nao virar laco.
         _sobe=0
-        if [ -n "$pid" ] && ! worker_vivo "$pid" "$acc_dir"; then
+        if [ -n "$pid" ] && ! worker_vivo_painel "$pid" "$acc_dir"; then
             status="dead"
             _sobe=1
         elif [ -z "$pid" ] && [ "$status" != "stopped" ]; then
@@ -1372,18 +1444,18 @@ while true; do
         esac
 
         # Aba atual + relatorio de combate (HP ao vivo, dano, morte)
-        _aba=$(aba_de "$acc_dir")
+        aba_de_v "$acc_dir"; _aba="$_ABA"
         # Alguma conta viva numa pagina de evento? O rodape usa isso no lugar
         # da janela estimada por FUNC_evento_min.
         if [ "$status" = "running" ] && [ -z "$PANEL_EVENTO_ATIVO" ]; then
             ler_arq "$acc_dir/pagina"
-            PANEL_EVENTO_ATIVO=$(evento_da_pagina "$_LIDO")
+            evento_da_pagina_v "$_LIDO"; PANEL_EVENTO_ATIVO="$_EVP"
         fi
         # Os arquivos HP/old_HP ficam no disco depois que o worker morre.
         # Mostrar "-1110 de dano recebido" numa conta fora do ar e uma
         # leitura falsa de combate — o combate acabou junto com o processo.
         if [ "$status" = "running" ] || [ "$status" = "paused" ]; then
-            _cbt=$(combate_de "$acc_dir")
+            combate_de_v "$acc_dir"; _cbt="$_CBT"
         else
             _cbt=""
         fi
@@ -1567,6 +1639,15 @@ while true; do
     # Uma volta so (status.sh -1): desenha e sai, sem dormir.
     [ "${PANEL_ONCE:-0}" = "1" ] && break
 
-    sleep "${PANEL_INTERVAL:-5}"
+    # A CADA 10 S NO CELULAR (TERMUX), 5 S NO PC. No Termux o painel fica
+    # aberto o tempo todo (o play.sh termina nele) e, com CPU fraca, cada
+    # redesenho pesa; "status.sh -n SEGUNDOS" escolhe outro intervalo.
+    if [ -n "$PANEL_INTERVAL" ]; then
+        sleep "$PANEL_INTERVAL"
+    elif [ -d /data/data/com.termux ]; then
+        sleep 10
+    else
+        sleep 5
+    fi
 done
 }

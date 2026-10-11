@@ -3858,6 +3858,48 @@ check "fim do giro: espera nunca zero (sete modulos)" 7 \
 check "alvo cinza calculado uma vez por pagina (sete modulos)" "1 1 1 1 1 1 1" \
     "$(for _m in clanfight clandmg altars clancoliseum flagfight clancommand coliseum; do grep -c 'alvo_grey' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
 
+# Painel (3.9.78): menos processos por redesenho, a mesma tela.
+# Hora de Brasilia do rodape: diferenca para o epoch lida uma vez por hora.
+_r=$( HOME="$_td20/pr78"; mkdir -p "$HOME/.sls"; export HOME
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      _a=`TZ=America/Bahia date '+%H %M'`; _agora_ep=`date +%s`; painel_relogio
+      _b=`TZ=America/Bahia date '+%H %M'`
+      _m=$(( (_agora_ep + _PE_BAHIA) % 86400 / 60 ))
+      for _x in "$_a" "$_b"; do set -- $_x
+          [ $(( ${1#0} * 60 + ${2#0} )) = "$_m" ] && { echo igual; exit; }; done
+      echo "diferente ($_m x $_a/$_b)" )
+check "painel: minuto de Brasilia sem date por redesenho = TZ=America/Bahia date" igual "$_r"
+# Agenda: lida uma vez e relida quando o arquivo muda.
+_r=$( HOME="$_td20/pr78"; export HOME
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      _agora_ep=`date +%s`
+      echo '1130|Torneio de equipe' > "$HOME/.sls/agenda"; painel_relogio; printf '%s ' "${_PE_AG_TXT%%|*}"
+      painel_relogio; printf '%s ' "${_PE_AG_TXT%%|*}"
+      echo '2225|Rei dos Imortais' > "$HOME/.sls/agenda"; touch -d "@$(( _agora_ep + 5 ))" "$HOME/.sls/agenda"
+      painel_relogio; printf '%s ' "${_PE_AG_TXT%%|*}"
+      : > "$HOME/.sls/agenda"; painel_relogio; printf '[%s]' "$_PE_AG_TXT" )
+check "painel: agenda em cache, relida quando muda" "1130 1130 2225 []" "$_r"
+# Conta viva: checagem completa (cmdline) na 1a vez e a cada 12 redesenhos.
+_r=$( . "$LIB/panel.sh" > /dev/null 2>&1
+      worker_vivo() { _wv=$((_wv + 1)); kill -0 "$1" 2>/dev/null; }
+      _wv=0; idx=1; _i=0
+      while [ $_i -lt 14 ]; do worker_vivo_painel $$ /x/BR_A || printf M; _i=$((_i + 1)); done
+      printf '%s ' "$_wv"
+      worker_vivo_painel 999999999 /x/BR_A && printf vivo || printf morto; printf ' %s ' "$_wv"
+      worker_vivo_painel $$ /x/BR_A && printf vivo; printf ' %s' "$_wv" )
+check "painel: kill -0 entre as checagens completas, morto e PID novo conferidos" "2 morto 3 vivo 4" "$_r"
+check "painel: classes UTF-8 montadas uma vez, nao a cada desenho" 0 \
+    "`sed -n '/^painel_render()/,/^}/p' "$LIB/panel.sh" | grep -c '\$(printf'`"
+grep -q '/data/data/com.termux' "$LIB/panel.sh" && grep -q '^        sleep 10$' "$LIB/panel.sh" \
+    && ok "painel: a cada 10s no Termux (5s no PC, -n escolhe)" \
+    || bad "painel: intervalo do Termux ausente"
+# Espera da rotina em fatias de 15s, somando exatamente o pedido.
+_r=$( . "$LIB/crono.sh" > /dev/null 2>&1
+      runnow_pedido() { return 1; }
+      sleep() { printf '%s ' "$1"; }
+      espera_interrompivel 40; printf '| '; espera_interrompivel 7; printf '| '; espera_interrompivel 60 )
+check "espera: fatias de 15s, total exato" "15 15 10 | 7 | 15 15 15 15 " "$_r"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77
 
