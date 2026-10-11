@@ -130,8 +130,13 @@ clancommand_inscrever() {
     fi
 
     _ci_f="$TMP/ccmd_insc"
+    # ?close=reward, COMO NOS OUTROS EVENTOS. Terminada a batalha, o jogo
+    # mostra o RESULTADO em /clancommand/ ate alguem fecha-lo: sem "Aplicar"
+    # e sem contador. O lider lia so essa tela, logo depois da luta e na
+    # repescagem de hora em hora, e nunca inscrevia a equipe (Stephenn Curry,
+    # 11/10/2026). Sem resultado aberto, o jogo devolve a pagina do torneio.
     (
-      run_curl_exec "$URL/clancommand/" > "$_ci_f"
+      run_curl_exec "$URL/clancommand/?close=reward" > "$_ci_f"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
 
@@ -144,6 +149,9 @@ clancommand_inscrever() {
         # saiu de temporada). Perto do inicio: e a vez do clancommand_start.
         if [ "$_ci_seg" -gt 600 ]; then
             _cc_antecipar "$_ci_f" "`_cc_inscricao "$_ci_f"`" "$_ci_seg" && _ci_rc=0
+        elif [ "$_ci_seg" = 0 ]; then
+            # Sem isto a repescagem nao deixava rastro nenhum no log.
+            printf "Torneio de equipe: sem contador na pagina - tenta de novo em 1h\n"
         fi
     fi
     rm -f "$_ci_f"
@@ -324,8 +332,11 @@ clancommand_fight() {
 clancommand_start() {
   src_ram="$TMP/ccmd_src"
 
+  # ?close=reward: fecha o resultado da batalha anterior, se ainda estiver
+  # aberto (ver clancommand_inscrever). Com a luta em andamento ou sem
+  # resultado, o jogo devolve a pagina do torneio, como nos outros eventos.
   (
-    run_curl_exec "$URL/clancommand/" > "$src_ram"
+    run_curl_exec "$URL/clancommand/?close=reward" > "$src_ram"
   ) </dev/null > /dev/null 2>&1 &
   time_exit 17
 
