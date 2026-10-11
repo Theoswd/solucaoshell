@@ -257,8 +257,8 @@ cq_marcar() { ativ_marcar cq; }
 # O stats so era gravado dentro do start(), que roda nos minutos da
 # agenda — com vaos de mais de uma hora. O painel exibia valores
 # velhos: ouro 128 quando ja era 28, HP 583 quando ja era 656.
-# Uma requisicao a /user a cada 3 minutos por conta resolve sem peso.
-stats_liberado() { ativ_liberada stats "${FUNC_stats_min:-3}"; }
+# Uma requisicao a /user a cada 5 minutos por conta (FUNC_stats_min; eram 3).
+stats_liberado() { ativ_liberada stats "${FUNC_stats_min:-5}"; }
 
 atualiza_stats() {
     # Preserva a aba atual em TODOS os caminhos de saida. O run_curl
@@ -511,7 +511,7 @@ campanha_liberada() {
 tarefas_livres() {
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
-    # --- Numeros do painel, a cada 3 min
+    # --- Numeros do painel, a cada 5 min
     if stats_liberado; then
         atualiza_stats 2>/dev/null
     fi
