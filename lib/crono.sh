@@ -146,9 +146,15 @@ runnow_consumir() {
 # Dorme em fatias, atendendo ao pedido de varredura no meio do caminho.
 #
 # Antes era um "sleep $i" unico: um pedido feito logo apos o inicio da
-# espera so seria visto ate 60s depois. Em fatias de 5s a resposta e quase
-# imediata, e continua sendo UM processo de sleep por vez — o que importa no
+# espera so seria visto ate 60s depois. Em fatias a resposta sai no meio da
+# espera, e continua sendo UM processo de sleep por vez — o que importa no
 # Android, onde cada processo conta para o limite de 32.
+#
+# FATIAS DE 15S (ERAM 5S). Cada fatia e um "sleep" e acorda a CPU: eram 12
+# por minuto por conta, agora 4 — no celular, bateria e aquecimento. O
+# RUNNOW responde em ate 15s. A espera total e a mesma: perto das janelas
+# de evento ela ja e de 15s (uma fatia), e a de 60s vira quatro. A ultima
+# fatia dorme so o que falta (antes uma espera de 47s dormia 50).
 espera_interrompivel() {
     _ei_total="$1"
     case "$_ei_total" in ''|*[!0-9]*) _ei_total=60 ;; esac
@@ -156,13 +162,15 @@ espera_interrompivel() {
     while [ "$_ei_gasto" -lt "$_ei_total" ]; do
         if runnow_pedido; then
             runnow_consumir
-            unset _ei_total _ei_gasto
+            unset _ei_total _ei_gasto _ei_f
             return 0
         fi
-        sleep 5
-        _ei_gasto=$((_ei_gasto + 5))
+        _ei_f=$(( _ei_total - _ei_gasto ))
+        [ "$_ei_f" -gt 15 ] && _ei_f=15
+        sleep "$_ei_f"
+        _ei_gasto=$((_ei_gasto + _ei_f))
     done
-    unset _ei_total _ei_gasto
+    unset _ei_total _ei_gasto _ei_f
     return 0
 }
 
