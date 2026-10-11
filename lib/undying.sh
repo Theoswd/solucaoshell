@@ -34,6 +34,8 @@ undying_fight() {
   # (retorno 0 = em luta, 1 = fora). NAO encerra a luta sozinho.
   cf_access() {
     grep -o -E '/undying/(hit|mana)/[?][r][=][0-9]+' "$TMP/SRC" | sed -n '1p' > HITMANA 2>/dev/null
+    # Erva e pedra de graca (nunca as que cobram ouro): GRASS e STONE.
+    itens_gratis undying "$TMP/SRC"
     # Portao na pagina: lido uma vez aqui, o laco usa a marca (_gate).
     _gate=0
     if grep -q -o 'out_gate' "$TMP/SRC"; then
@@ -43,6 +45,9 @@ undying_fight() {
       # fim sem botao valer em 15s e nao 90s (LUTA_FORA_LUTOU, em info.sh).
       _lt_lutou=1
       printf "Em batalha undying\n"
+      # A primeira pagina da luta fica guardada: e a prova dos botoes que o
+      # Vale oferece (golpes, erva, pedra), para conferir depois.
+      [ "$_vl_pg" = 1 ] || { cp "$TMP/SRC" "$TMP/vale_luta.html" 2>/dev/null; _vl_pg=1; }
       return 0
     fi
     return 1
@@ -63,11 +68,32 @@ undying_fight() {
     luta_acabou "$TMP/SRC" undying
   }
 
+  # VALE: E MONSTRO DO JOGO, NAO JOGADOR. A regra do dono do bot e fazer
+  # dano, com o golpe, a erva e a pedra. Uma acao a cada LA (5s), nesta
+  # ordem:
+  #   1 erva   de graca, 1 min de recarga
+  #   2 pedra  de graca, 1 min de recarga
+  #   3 golpe  (hit/mana), o primeiro que a pagina oferece
+  # Erva e pedra que cobram ouro ficam de fora (itens_gratis, em info.sh),
+  # como no Rei. A conta de cada uma sai no log no fim da luta.
+  _vl_pg=0; _vl_hit=0; _vl_mana=0; _vl_erva=0; _vl_pedra=0; _vl_t1=""; _vl_h1=""
+  # Uma acao: o link do arquivo, a releitura da pagina e o relogio.
+  _vl_acao() {
+    (
+      read -r _l < "$1"; run_curl_exec "${URL}$_l" > "$TMP/SRC"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    [ -n "$_vl_t1" ] || { _vl_t1="$_agora"; _vl_h1=`date +%H:%M:%S`; }
+    cf_access
+    _last_act="$_agora"; echo "$_last_act" > last_atk
+  }
+
   luta_inicio undying
   cf_access
   _agora=`date +%s`
   _last_act=$(( _agora - LA ))
   echo "$_last_act" > last_atk
+  _last_grass=$(( _agora - 60 )); _last_stone=$(( _agora - 60 ))
   : > BREAK_LOOP
 
   # TETO DE SEGURANCA (luta_teto, em info.sh). Era de 10 minutos contados da
@@ -79,14 +105,20 @@ undying_fight() {
     # Relogio de 5s entre golpes (o jogo recusa acoes coladas <4s).
     if [ $(( _agora - _last_act )) -ge "$LA" ]; then
       if [ "$_gate" = 1 ]; then
-        if [ -s HITMANA ]; then
+        if [ -s GRASS ] && [ $(( _agora - _last_grass )) -ge 60 ]; then
+          _vl_acao GRASS
+          _last_grass="$_agora"; _vl_erva=$(( _vl_erva + 1 ))
+        elif [ -s STONE ] && [ $(( _agora - _last_stone )) -ge 60 ]; then
+          _vl_acao STONE
+          _last_stone="$_agora"; _vl_pedra=$(( _vl_pedra + 1 ))
+        elif [ -s HITMANA ]; then
           # Golpe (hit/mana) a cada 5s.
-          (
-            read -r _l < HITMANA; run_curl_exec "${URL}$_l" > "$TMP/SRC"
-          ) </dev/null > /dev/null 2>&1 &
-          time_exit 17
-          cf_access
-          _last_act="$_agora"; echo "$_last_act" > last_atk
+          read -r _hm < HITMANA
+          case "$_hm" in
+            */mana/*) _vl_mana=$(( _vl_mana + 1 )) ;;
+            *)        _vl_hit=$(( _vl_hit + 1 )) ;;
+          esac
+          _vl_acao HITMANA
         else
           # Em luta, mas sem link nesta leitura: rele /undying para recuperar o
           # link — NUNCA busca a home com link vazio (era o que abandonava).
@@ -116,7 +148,12 @@ undying_fight() {
     fi
   done
 
-  unset cf_access luta_confirmada_fim
+  cp "$TMP/SRC" "$TMP/vale_fim.html" 2>/dev/null
+  printf "Vale: %s golpes (hit %s, mana %s), erva %s, pedra %s; primeiro golpe %s, ultimo %ss depois\n" \
+         "$(( _vl_hit + _vl_mana ))" "$_vl_hit" "$_vl_mana" "$_vl_erva" "$_vl_pedra" \
+         "${_vl_h1:--}" "$(( _last_act - ${_vl_t1:-$_last_act} ))"
+  unset cf_access luta_confirmada_fim _vl_acao _vl_pg _vl_hit _vl_mana _vl_erva _vl_pedra _vl_t1 _vl_h1 \
+        _last_grass _last_stone
   printf "Undying ok\n"
   # Sem apply_event: inscrevia no Vale seguinte (ver king.sh). A inscricao e
   # a do undying_start.

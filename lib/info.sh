@@ -436,6 +436,27 @@ erva_gratis() { # SECAO ARQUIVO
         }' "$2" 2>/dev/null
 }
 
+# Erva e pedra de graca de uma pagina de luta, num awk so: grava GRASS e
+# STONE no diretorio corrente (vazio quando nao ha, ou quando o botao cobra
+# ouro), com a mesma regra do erva_gratis e do combate_ler. Usado no Vale,
+# que le os golpes (hit/mana) por conta propria.
+itens_gratis() { # SECAO ARQUIVO
+    awk -v sec="$1" '
+        function item(nome, arq,    l, r, c) {
+            l = ""
+            if (match(t, "/" sec "/" nome "/[?]r[=][0-9]+")) {
+                l = substr(t, RSTART, RLENGTH)
+                r = substr(t, RSTART + RLENGTH, 300)
+                c = index(r, "</a>")
+                if (c && tolower(substr(r, 1, c)) ~ /gold|ouro/) l = ""
+            }
+            if (l == "") printf "" > arq; else printf "%s\n", l > arq
+            close(arq)
+        }
+        { t = t $0 " " }
+        END { item("grass", "GRASS"); item("stone", "STONE") }' "$2" 2>/dev/null
+}
+
 # A sessao esta viva: carimba a hora da ultima confirmacao.
 #
 # POR QUE ISTO EXISTE
