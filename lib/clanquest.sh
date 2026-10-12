@@ -12,9 +12,8 @@
 #   7 Alquimista                   Faça 2 Elixires               -> elixir
 #   8 Velho Lojista                Obtenha 3 pedras ou ervas     -> loja
 #
-# A ideia e sempre TOMAR a missao antes de executar a atividade, para que
-# o progresso conte. Fazer a atividade sem a missao ativa desperdiça a
-# tentativa.
+# Sempre TOMAR a missao antes de executar a atividade, para o progresso
+# contar.
 
 # IDs de missao por tipo de atividade
 cq_ids() {
@@ -29,35 +28,17 @@ cq_ids() {
     esac
 }
 
-# Baixa a pagina de missoes do cla em $TMP/CQUEST.
-#
-# A PAGINA E REAPROVEITADA ENQUANTO NINGUEM CLICA.
-#
-# Medido: um ciclo de tarefas_livres pedia esta MESMA pagina 23 vezes, de 41
-# requisicoes no total. Ela e consultada por tres caminhos — as cq_* daqui, o
-# checkQuest (clanid.sh) e o clanQuests — e o cq_antes sozinho pedia duas
-# vezes seguidas, porque cq_concluir e cq_tomar chamam cada um o cq_pagina.
-#
-# O conteudo so muda quando ALGUEM CLICA num link dela. Entao: reaproveita
-# enquanto ninguem clicou, e todo clique chama cq_invalidar para a proxima
-# consulta buscar de novo. O teto de tempo cobre o caso de outro membro do
-# cla mexer na missao pelo site, sem o bot saber.
+# Baixa a pagina de missoes do cla em $TMP/CQUEST, reaproveitada enquanto
+# ninguem clica: todo clique chama cq_invalidar. O teto de tempo cobre outro
+# membro do cla mexendo na missao pelo site.
 CQ_VALIDADE=${CQ_VALIDADE:-45}
 
 # Marca a pagina como velha. Chamado depois de TODO clique que a altera.
 cq_invalidar() { _CQ_TS=0; }
 
-# A ultima requisicao desta conta foi a propria pagina de missoes?
-#
-# SO REAPROVEITA SE NADA SAIU NO MEIO.
-#
-# O cache guardava a leitura por 45s mesmo com outras requisicoes no meio —
-# o checkQuest "end" roda DEPOIS da arena, da caverna, da carreira. Os links
-# da pagina levam um nonce (?r=), e o proprio projeto registra, no king.sh e
-# no check.sh, o servidor recusando nonce de pagina antiga: a missao nao era
-# tomada nem encerrada, em silencio. O $TMP/.ult_req (gravado pelo motor a
-# cada requisicao) diz se houve outra depois; havendo, le de novo. As duas
-# leituras seguidas do cq_antes — a economia medida — continuam uma so.
+# A ultima requisicao desta conta foi a propria pagina de missoes? So
+# reaproveita se nada saiu no meio: o servidor recusa o nonce (?r=) de pagina
+# velha, em silencio. O $TMP/.ult_req e gravado pelo motor a cada requisicao.
 cq_ultima_foi_ela() {
     _cu=""
     [ -r "$TMP/.ult_req" ] && read -r _cu < "$TMP/.ult_req" 2>/dev/null
@@ -85,8 +66,8 @@ cq_pagina() {
     fetch_page "/clan/${CLD}/quest/" "$TMP/CQUEST"
     if [ -s "$TMP/CQUEST" ]; then
         _CQ_TS=`date +%s`
-        # O motor ja grava isto; repetido aqui para valer tambem quando o
-        # fetch_page for substituido (testes).
+        # O motor ja grava isto; repetido para valer com fetch_page substituido
+        # (testes).
         printf %s "/clan/${CLD}/quest/" > "$TMP/.ult_req" 2>/dev/null
         return 0
     fi
@@ -97,11 +78,8 @@ cq_pagina() {
 # cq_tomar <tipo>
 # Toma a missao do cla correspondente aquela atividade, se houver.
 # Devolve 0 se tomou alguma (a atividade vale a pena agora).
-#
-# RELE A PAGINA DEPOIS DE CADA CLIQUE. O nonce da leitura anterior nao vale
-# para o proximo link (ver cq_ultima_foi_ela), e e a releitura que confirma:
-# tomada so se o link "take" daquela missao sumiu. Sem isso o cq_elixir e o
-# cq_mercador produziam com o pedido falhado, sem a missao ativa.
+# Rele a pagina depois de cada clique (nonce novo) e so confirma se o link
+# "take" daquela missao sumiu.
 cq_tomar() {
     _tipo="$1"
     [ "${FUNC_clan_quests:-y}" = "y" ] || return 1
@@ -124,17 +102,11 @@ cq_tomar() {
     return $_tomou
 }
 
-# cq_falta <id>: quanto falta na missao que esta com ESTA conta.
+# cq_falta <id>: quanto falta na missao que esta com ESTA conta (tomada agora
+# ou antes, ja sem link de tomar).
 #
-# A missao tomada numa volta anterior (ou pelo cq_antes, logo antes) nao tem
-# mais link de tomar, e a caverna, o elixir e o mercador achavam que nao havia
-# missao: a caverna nao acelerava e a producao nunca andava.
-#
-# O "Cancelar missao" (/quest/delete/N/) nao prova nada: conta com cargo o ve
-# nas missoes de todo o cla. So quem executa ou ajuda tem o botao "Va la", com
-# o caminho da atividade (/league/, /arena/, /lab/alchemy/...), entre o
-# "Trofeu" e o cancelar; concluida, ele vira o link de concluir. Conferido nas
-# paginas das 17 contas em 16/09 (inclusive uma missao concluida):
+# O "Cancelar missao" nao prova nada: conta com cargo o ve em todo o cla. So
+# quem executa ou ajuda tem o botao "Va la", entre o "Trofeu" e o cancelar:
 #
 #   Alquimista Faça 2 Elixires Progresso: 0 de 2 Troféu: 1 645
 #   Interpretada por: ... Ajudante: ... <a href='/lab/alchemy/'>Vá lá</a>
@@ -182,7 +154,7 @@ cq_concluir() {
 
 # cq_ajudar
 # Apoia missoes de companheiros que estejam perto de concluir.
-# A ajuda nao cobra ouro no jogo (conferido pelo dono do bot, 14/09).
+# A ajuda nao cobra ouro no jogo.
 cq_ajudar() {
     [ "${FUNC_clan_help:-y}" = "y" ] || return 1
     cq_pagina || return 1
@@ -199,13 +171,7 @@ cq_ajudar() {
     return 0
 }
 
-# CONCLUIR MISSAO DO CLA PAGANDO OURO: REMOVIDO.
-#
-# A funcao cq_forcar_ouro pagava com ouro as missoes do cla que travavam.
-# O bot nao gasta ouro, entao ela foi apagada junto com as chaves
-# FUNC_quest_force_gold e FUNC_quest_gold_min. As missoes agora so avancam
-# pelo jogo: cq_concluir recolhe as prontas e cq_ajudar apoia as dos
-# companheiros.
+# Concluir missao pagando ouro foi removido: as missoes so avancam pelo jogo.
 
 # cq_antes <tipo>
 # Chamada antes de cada atividade: recolhe concluidas, toma a do tipo,
@@ -216,9 +182,8 @@ cq_antes() {
     cq_tomar "$1"
 }
 
-# Sorteio portatil de 1..N. Nao usa shuf (ausente em ash/toybox enxutos)
-# nem $RANDOM (nao existe em dash). Semeia com o PID para que contas
-# diferentes no mesmo segundo nao escolham sempre a mesma opcao.
+# Sorteio portatil de 1..N: sem shuf (ausente em toybox enxuto) nem $RANDOM
+# (nao existe em dash). Semeia com o PID para contas no mesmo segundo.
 cq_sorteia() {
     _sn="$1"
     _sc=`cat "$TMP/rnd_seq" 2>/dev/null`
@@ -230,14 +195,12 @@ cq_sorteia() {
     unset _sn _sc
 }
 
-# Missao 7 do cla: produzir elixir no laboratorio (secao 17 do prompt).
-# So produz o necessario para a missao: toma a missao, faz a pocao e
-# encerra. Sem missao ativa nao produz nada.
+# Missao 7 do cla: produzir elixir no laboratorio. So produz o que falta na
+# missao; sem missao ativa nao produz nada.
 cq_elixir() {
     [ -n "$CLD" ] || return 1
-    # Tomada agora ou numa volta anterior: produz o que falta (ver cq_falta).
-    # Ja ativa, no maximo uma leva por hora: uma producao que nao contou nao
-    # vira gasto a cada checklist.
+    # Tomada agora ou numa volta anterior (cq_falta). Ja ativa, no maximo uma
+    # leva por hora: producao que nao contou nao vira gasto a cada checklist.
     cq_tomar elixir || ativ_liberada cq_elixir 60 || return 1
     _max=`cq_falta 7` || { unset _max; return 1; }
     [ "$_max" -le 3 ] 2>/dev/null || _max=3
@@ -257,11 +220,8 @@ cq_elixir() {
         4) printf "Elixir de protecao\n" ;;
     esac
 
-    # O QUE FALTA NA MISSAO, NAO UM NUMERO FIXO.
-    #
-    # Eram tres cliques sempre; a pagina real (16/09) pede "Faça 2 Elixires":
-    # um elixir a mais por missao. Cada volta rebusca o link porque o nonce ?r=
-    # muda a cada producao. O custo e o minimo da missao, que e para ser pago.
+    # O QUE FALTA NA MISSAO, NAO UM NUMERO FIXO. Cada volta rebusca o link:
+    # o nonce ?r= muda a cada producao.
     _n=1
     while [ "$_n" -le "$_max" ]; do
         [ -n "$_cl" ] || break
@@ -278,9 +238,8 @@ cq_elixir() {
     return 0
 }
 
-# Missao 8 do cla: obter pedras ou ervas com o mercador do Coliseu
-# (secao 18). A missao chama "Velho Lojista", mas a loja dela NAO e a
-# troca de prata: e /coliseum/merchant/.
+# Missao 8 do cla ("Velho Lojista"): pedras ou ervas do mercador do Coliseu,
+# /coliseum/merchant/ (NAO a troca de prata).
 cq_mercador() {
     [ -n "$CLD" ] || return 1
     # Mesma regra do cq_elixir: tomada agora, ou ja ativa (uma leva por hora).

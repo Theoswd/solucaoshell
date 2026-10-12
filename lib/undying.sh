@@ -3,31 +3,17 @@ undying_fight() {
   LA=5
 
   # ============================================================
-  #  VALE DOS IMORTAIS — POR QUE A CONTA ABANDONAVA ANTES DO FIM
-  #
-  #  1) LINK VAZIO -> BAIXAVA A HOME. O cf_access reparseia o link de golpe
-  #     (hit/mana) a cada leitura. Numa leitura sem o link (troca de turno,
-  #     mana regenerando, pagina de transicao), o arquivo HITMANA ficava
-  #     VAZIO, e o ataque "run_curl ${URL}$(cat HITMANA)" virava
-  #     "run_curl ${URL}" — baixava a PAGINA INICIAL. Sem out_gate, o proximo
-  #     cf_access declarava "Battle over" e a conta saia da luta.
-  #  2) UMA LEITURA SEM out_gate JA ENCERRAVA. Um unico soluco de rede ou uma
-  #     pagina intermediaria (sem out_gate) bastava para abandonar, sem
-  #     reconfirmar.
-  #  3) DESVIO PARA A ARENA. O undying_start chama arena_fullmana logo antes
-  #     desta funcao, o que leva a sessao para /arena. Se a luta comecasse
-  #     lendo esse estado, o cf_access nao via out_gate e desistia.
-  #
-  #  AGORA: re-busca /undying no inicio (recupera do desvio da arena); NUNCA
-  #  busca a home com link vazio (rele /undying para recuperar o link); e so
-  #  encerra apos CONFIRMAR o fim com uma releitura. Um golpe a cada LA (5s).
+  #  VALE DOS IMORTAIS — NAO ABANDONAR A LUTA ANTES DO FIM
+  #  - Link vazio nunca vira pedido: "${URL}" sozinho baixa a home, sem
+  #    out_gate, e a conta sairia da luta. Sem link, rele /undying.
+  #  - Uma leitura sem out_gate nao encerra: confirma com releitura.
+  #  - O undying_start chama arena_fullmana antes, o que leva a sessao para
+  #    /arena: a luta comeca relendo /undying. Um golpe a cada LA (5s).
   # ============================================================
 
-  # Recupera a pagina de batalha (o arena_fullmana do start pode ter navegado
-  # para fora). Sem isto a luta poderia comecar lendo uma pagina de arena.
-  # Vindo do undying_start, que acabou de dar o primeiro golpe, a pagina e a
-  # resposta dele: reler aqui era um pedido a toa, colado no golpe (<5s).
-  # So quando o golpe respondeu: estourado ou vazio, rele como antes.
+  # Rele /undying (o arena_fullmana pode ter navegado para fora), exceto
+  # quando o golpe do undying_start ja respondeu: a pagina e a resposta dele,
+  # e reler seria um pedido colado no golpe (<5s).
   if [ "${_VL_PAGINA0:-0}" != 1 ]; then
   (
     run_curl_exec "${URL}/undying" > "$TMP/SRC"
@@ -58,12 +44,8 @@ undying_fight() {
     return 1
   }
 
-  # Confirma o fim da luta relendo /undying: um unico out_gate ausente pode ser
-  # so uma pagina de transicao. Retorna 0 se REALMENTE acabou, 1 se ainda ha luta.
-  #
-  # "Realmente acabou" era "a releitura tambem veio sem out_gate": duas
-  # leituras ruins seguidas — rede, sessao caida — e a conta saia do Vale
-  # viva. Agora quem decide e o jogo (luta_acabou, em info.sh).
+  # Confirma o fim relendo /undying: quem decide e o jogo (luta_acabou).
+  # Retorna 0 se REALMENTE acabou, 1 se ainda ha luta.
   luta_confirmada_fim() {
     (
       run_curl_exec "${URL}/undying" > "$TMP/SRC"
@@ -73,14 +55,9 @@ undying_fight() {
     luta_acabou "$TMP/SRC" undying
   }
 
-  # VALE: E MONSTRO DO JOGO, NAO JOGADOR. A regra do dono do bot e fazer
-  # dano, com o golpe, a erva e a pedra. Uma acao a cada LA (5s), nesta
-  # ordem:
-  #   1 erva   de graca, 1 min de recarga
-  #   2 pedra  de graca, 1 min de recarga
-  #   3 golpe  (hit/mana), o primeiro que a pagina oferece
-  # Erva e pedra que cobram ouro ficam de fora (itens_gratis, em info.sh),
-  # como no Rei. A conta de cada uma sai no log no fim da luta.
+  # Vale: monstro do jogo, nao jogador. Regra do dono: fazer dano. Uma acao
+  # a cada LA (5s), nesta ordem: 1 erva, 2 pedra (de graca, recarga 1 min;
+  # itens_gratis descarta as que cobram ouro), 3 golpe (hit/mana).
   _vl_pg=0; _vl_hit=0; _vl_mana=0; _vl_erva=0; _vl_pedra=0; _vl_t1=""; _vl_h1=""
   # Uma acao: o link do arquivo, a releitura da pagina e o relogio.
   _vl_acao() {
@@ -97,9 +74,8 @@ undying_fight() {
   cf_access
   _agora=`date +%s`
   _last_act=$(( _agora - LA ))
-  # O golpe do undying_start conta no relogio de 5s e no resumo: a acao
-  # seguinte saia 1-2s depois dele, e o jogo recusa acoes coladas (a erva
-  # recusada so voltava 60s depois).
+  # O golpe do undying_start conta no relogio de 5s e no resumo: o jogo
+  # recusa acoes coladas.
   if [ -n "$_VL_GOLPE0" ]; then
     _last_act="$_VL_GOLPE0"; _vl_t1="$_VL_GOLPE0"; _vl_h1="$_VL_HORA0"
     case "$_VL_LINK0" in */mana/*) _vl_mana=1 ;; *) _vl_hit=1 ;; esac
@@ -109,8 +85,7 @@ undying_fight() {
   _last_grass=$(( _agora - 60 )); _last_stone=$(( _agora - 60 ))
   : > BREAK_LOOP
 
-  # TETO DE SEGURANCA (luta_teto, em info.sh). Era de 10 minutos contados da
-  # entrada de cada conta; agora so segura o laco que nunca resolve.
+  # Teto de seguranca (luta_teto): so segura o laco que nunca resolve.
   FIGHT_BREAK=`luta_teto`
   # Um "date" por volta: o mesmo instante decide o teto e o relogio de acao.
   while _agora=`date +%s`; [ ! -s "BREAK_LOOP" ] && [ "$_agora" -le "$FIGHT_BREAK" ]; do
@@ -133,8 +108,7 @@ undying_fight() {
           esac
           _vl_acao HITMANA
         else
-          # Em luta, mas sem link nesta leitura: rele /undying para recuperar o
-          # link — NUNCA busca a home com link vazio (era o que abandonava).
+          # Em luta, mas sem link nesta leitura: rele /undying (nunca a home).
           (
             run_curl_exec "${URL}/undying" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
@@ -143,8 +117,7 @@ undying_fight() {
           _last_act="$_agora"; echo "$_last_act" > last_atk
         fi
       else
-        # Sem out_gate: confirma o fim antes de desistir (evita abandono por
-        # uma leitura de transicao ou soluco de rede).
+        # Sem out_gate: confirma o fim antes de desistir.
         if luta_confirmada_fim; then
           echo 1 > BREAK_LOOP
           printf "Undying: luta encerrada (%s).\n" "$LUTA_MOTIVO"
@@ -154,8 +127,7 @@ undying_fight() {
         fi
       fi
     else
-      # Dentro dos 5s: espera o restante sem requisitar (atualizar <5s tambem
-      # atrapalha o proximo golpe).
+      # Dentro dos 5s: espera o restante sem requisitar.
       _resta=$(( LA - ( _agora - _last_act ) ))
       # Relogio do aparelho voltou: nunca mais que LA.
       [ "$_resta" -le "$LA" ] || _resta=$LA
@@ -170,8 +142,7 @@ undying_fight() {
   unset cf_access luta_confirmada_fim _vl_acao _vl_pg _vl_hit _vl_mana _vl_erva _vl_pedra _vl_t1 _vl_h1 \
         _last_grass _last_stone
   printf "Undying ok\n"
-  # Sem apply_event: inscrevia no Vale seguinte (ver king.sh). A inscricao e
-  # a do undying_start. (O "sleep 15s" que vinha aqui era tempo morto.)
+  # Sem apply_event: a inscricao e a do undying_start.
 }
 
 undying_start() {
@@ -186,8 +157,7 @@ undying_start() {
     apply_event undying
     printf "Valley of the Immortals will be started... %s\n" "`date +%Hh:%Mm`"
 
-    # Ate :59:50-:59:59, escalonado por conta (janela_alvo, em info.sh). O
-    # laco abaixo ainda espera a hora virar antes do primeiro golpe.
+    # Ate :59:50-:59:59, escalonado por conta (janela_alvo, em info.sh).
     espera_janela 5500 `janela_alvo 5950 10`
 
     hpmp -now
@@ -201,8 +171,6 @@ undying_start() {
       sleep 5s
     done
 
-    # (A leitura de /undying/ que vinha aqui era descartada: o laco abaixo
-    # rele a pagina antes de olhar o link.)
     > BREAK_LOOP
     BREAK=$(($(date +%s) + 11))
 
@@ -214,8 +182,7 @@ undying_start() {
 
       grep -o -E '/undying/(mana|hit)/[?][r][=][0-9]+' "$TMP/SRC" | head -n 1 > "$TMP/HITMANA" 2>/dev/null
 
-      # So com o link inteiro (?r=nonce): com a pagina cortada no meio do link
-      # o HITMANA ficava vazio e o pedido ia para a pagina inicial.
+      # So com o link inteiro (?r=nonce): sem ele o pedido iria para a home.
       if [ -s "$TMP/HITMANA" ]; then
         read -r _VL_LINK0 < "$TMP/HITMANA"
         _VL_GOLPE0=`date +%s`; _VL_HORA0=`date +%H:%M:%S`
@@ -230,8 +197,7 @@ undying_start() {
       sleep 0.3s
     done
 
-    # O arena_fullmana ja saiu antes da hora cheia (acima). Repetido aqui eram
-    # tres pedidos depois do inicio do Vale, atrasando o primeiro golpe.
+    # O arena_fullmana ja saiu antes da hora cheia.
     undying_fight
     ;;
   esac

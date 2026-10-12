@@ -1,42 +1,24 @@
 sls_play() {
     echo "$RUN" > "$TMP/runmode_file" 2>/dev/null
 
-    # ID DO CLA — A VARIAVEL, NAO SO O ARQUIVO.
-    #
-    # O teste era apenas "arquivo vazio? entao clan_id". Com o arquivo ja
-    # gravado por uma execucao anterior, o clan_id nao rodava e a VARIAVEL
-    # $CLD ficava vazia no processo novo. Como os tres eventos de cla so
-    # entram com "$CLD" preenchido, o primeiro ciclo de cada worker pulava
-    # Coliseu do Cla, Torneio e Altares — e um restart perto da janela fazia
-    # a conta perder o evento inteiro.
-    #
-    # O clan_id carrega a variavel do arquivo e so vai a rede no intervalo
-    # dele (uma hora), com ou sem cla.
+    # Testa a VARIAVEL, nao so o arquivo: os eventos de cla so entram com
+    # "$CLD" preenchido. O clan_id carrega do arquivo e so vai a rede no
+    # intervalo dele (uma hora).
     [ -n "$CLD" ] || clan_id
 
-    # BATALHA PENDENTE VEM ANTES DE TUDO.
-    #
-    # O Android mata worker com SIGKILL e o painel relanca. O worker novo nao
-    # sabia que a conta estava no meio de uma batalha: caia no ramo da hora —
-    # arena, caverna, o descansar com o "Fuja da batalha" — e a conta saia do
-    # evento. Era por isso que umas contas abandonavam e outras nao: so as que
-    # o sistema derrubava. A batalha fica anotada em disco desde a inscricao
+    # BATALHA PENDENTE VEM ANTES DE TUDO: o Android mata worker com SIGKILL e
+    # o painel relanca. A batalha fica anotada em disco desde a inscricao
     # (batalha_marcar), e aqui a conta volta para ela.
     batalha_retomar
 
-    # UM "date" POR VOLTA, DEPOIS DA IDA A REDE. O horario da agenda e os
-    # portoes da rotina saem dele (relogio_sync, em info.sh). Ele vinha no
-    # topo, antes do clan_id e da retomada: um /clan lento (ate 17s) em
-    # 12:29:50 fazia o case ver 12:29 as 12:30:05, entrar no Rei fora da
-    # janela e deixar a conta 10 min parada no evento_espera. Lido aqui, ele
-    # tambem cobre a retomada, que leva minutos (antes era um date a mais so
-    # nesse caso). O clan_id e a retomada usam o relogio da volta anterior
-    # (ou o date, na primeira), como os portoes sempre fizeram.
+    # UM "date" POR VOLTA, DEPOIS DA IDA A REDE (relogio_sync, em info.sh):
+    # um /clan lento antes do case faria a agenda ver o minuto errado e
+    # entrar num evento fora da janela. Cobre tambem a retomada.
     relogio_sync
 
     # CRONOGRAMA DE BATALHAS — ORDEM DE PRIORIDADE
     #
-    # O "case" para no primeiro padrao que casa, entao a ordem dos ramos E a
+    # O "case" para no primeiro padrao que casa: a ordem dos ramos E a
     # prioridade. De cima para baixo:
     #
     #   1. Coliseu do Cla        10:25  14:55
@@ -45,37 +27,21 @@ sls_play() {
     #   4. Vale dos Imortais     09:55  15:55  21:55
     #   5. Altares dos Deuses    13:55  20:55
     #
-    # REGRA DAS BATALHAS DO CRONOGRAMA (as quatro primeiras):
-    #   - a inscricao sai CINCO MINUTOS antes do inicio (o proprio modulo
-    #     pede o enterGame/enterFight e segura a conta ate a hora cheia);
-    #   - da inscricao ate o fim da batalha a conta NAO faz mais nada: o
-    #     evento_espera suspende as atividades e so descansa na Home;
-    #   - terminada a batalha, o start() faz a varredura completa e conclui
-    #     o que estiver disponivel (missoes, arena, caverna, liga, troca...).
+    # REGRA DAS BATALHAS DO CRONOGRAMA:
+    #   - a inscricao sai CINCO MINUTOS antes do inicio (o modulo pede o
+    #     enterGame/enterFight e segura a conta ate a hora cheia);
+    #   - da inscricao ate o fim a conta NAO faz mais nada: o evento_espera
+    #     suspende as atividades e so descansa na Home;
+    #   - terminada a batalha, o start() faz a varredura completa.
     #
-    # A DEDICACAO SO COMECA SE A CONTA FOR PARTICIPAR.
-    #
-    # Antes, o evento_dedicar era chamado ANTES de saber disso: uma conta sem
-    # cla nos tres eventos de cla — ou com o Coliseu do Cla fora de temporada —
-    # marcava o em_evento, nao lutava, e mesmo assim ficava DEZ MINUTOS parada
-    # no evento_espera, com as atividades suspensas a toa. Agora a marcacao
-    # fica dentro do ramo que de fato entra na batalha, e o modulo que desiste
-    # a apaga (evento_cancelar), devolvendo a conta para a rotina na hora.
+    # O evento_dedicar fica dentro do ramo que de fato entra na batalha (conta
+    # sem cla nao fica parada); o modulo que desiste chama evento_cancelar.
     case "$_HH:$_MM" in
 
         # --- 1. Coliseu do Cla
         #
-        # CORRECAO (evento perdido): este ramo chamava so em 10:2[8-9] e
-        # 14:5[8-9] — DOIS minutos —, mas o proprio clancoliseum_start aceita
-        # 10:2[5-9]|14:5[5-9], ou seja foi escrito para CINCO minutos de
-        # antecedencia, como os demais eventos. Os tres primeiros minutos da
-        # inscricao eram descartados pelo agendador.
-        #
-        # Isso importa porque a inscricao (/clancoliseum/enterFight) acontece
-        # DENTRO do modulo: perder a janela nao e chegar atrasado, e nao
-        # participar. Com o worker preso numa atividade longa (campanha ate
-        # 90s, coliseu ate 600s) ou dormindo, dois minutos se perdem com
-        # facilidade — e o Coliseu do Cla passava em branco no dia.
+        # Cinco minutos de janela, como o clancoliseum_start aceita: a
+        # inscricao acontece DENTRO do modulo, perder a janela e nao participar.
         (10:2[5-9]|14:5[5-9])
             if [ -n "$CLD" ]; then
                 evento_dedicar
@@ -85,16 +51,10 @@ sls_play() {
             start
             ;;
 
-        # --- 1b. Torneio de Equipe
+        # --- 1b. Torneio de Equipe (11:30 e 18:00)
         #
-        # Duas batalhas por dia, 11:30 e 18:00 (agenda /fights/: "Torneio de
-        # equipe"). Cinco minutos de antecedencia como os demais eventos.
-        #
-        # A inscricao abre HORAS antes, mas nao e aqui que ela e antecipada: o
-        # clancommand_start le o contador da pagina e, se o inicio ainda esta
-        # longe, inscreve e devolve a conta para a rotina em vez de segurar o
-        # worker. Chamado nesta janela ele cai direto no ramo de luta.
-        #
+        # A inscricao abre horas antes: o clancommand_start le o contador e,
+        # se o inicio esta longe, inscreve e devolve a conta para a rotina.
         # Exige cla: a equipe e de 3 titas do MESMO cla.
         (11:2[5-9]|17:5[5-9])
             if [ -n "$CLD" ]; then
@@ -143,26 +103,13 @@ sls_play() {
 
         # --- Coliseu comum: 00:30 as 04:30, pulsado de 10 em 10 minutos
         #
-        # Antes esta janela casava TODO minuto. A coliseum_fight faz tres
-        # requisicoes de preparacao (/train, /settings/graphics/0,
-        # /coliseum) antes de lutar, entao eram ~720 requisicoes por conta
-        # por noite so de preparo. Com 10 contas, ~7.200; com 20, ~14.400.
-        #
-        # Outro bot do jogo pulsa nos minutos terminados em 5 e roda sem
-        # problema. Mesma ideia aqui, dentro da janela 00:30-04:30: 24
-        # entradas por noite em vez de 241. Os minutos que sobram caem no
-        # ramo (*), que ja chama tarefas_livres, entao a checagem das
-        # missoes do cla e da arena continua na mesma frequencia.
+        # Cada coliseum_fight faz tres requisicoes de preparo; pulsar nos
+        # minutos terminados em 5 evita rajada. Os minutos que sobram caem no
+        # ramo (*), que ja chama tarefas_livres.
         (00:[345]5|0[123]:[0-5]5|04:[012]5)
-            # UM PULSO POR MINUTO QUANDO NAO HA LUTA. Sem luta o
-            # coliseum_fight volta na hora, e o ramo se repetia de 5 em 5s
-            # no mesmo minuto (/coliseum e Home a cada passada, ~10 vezes).
-            # Achou o Coliseu sem luta neste minuto: o resto dele e como um
-            # minuto comum (o ramo (*)). Com luta, nada muda: a luta leva
-            # minutos, e uma luta que acabe ainda no minuto do pulso pode
-            # tentar outra, como antes. A marca leva o dia: o worker vive
-            # dias, e a de uma noite pulava o mesmo minuto na noite seguinte.
-            # No modo -cl (Coliseu o tempo todo) nao ha guarda.
+            # UM PULSO POR MINUTO QUANDO NAO HA LUTA: achou o Coliseu sem luta
+            # neste minuto, o resto dele e como o ramo (*). A marca leva o dia
+            # (o worker vive dias). No modo -cl nao ha guarda.
             if [ "$_COL_PULSO" = "$_DD $_HH:$_MM" ]; then
                 tarefas_livres
                 func_sleep
@@ -173,20 +120,12 @@ sls_play() {
                     *-cl*) ;;
                     *) [ "$COLISEU_SEM_LUTA" = 1 ] && _COL_PULSO="$_DD $_HH:$_MM" ;;
                 esac
-                  # PAUSA PARA CHECAR MISSOES. O Coliseu comum nao esta entre os
-                  # cinco eventos de prioridade, entao entre as lutas o bot
-                  # confere o checklist do cla e roda a arena no intervalo dela.
-                  # Antes, as quatro horas da janela passavam sem nada disso.
+                  # Entre as lutas confere o checklist do cla e a arena.
                 tarefas_livres
-                # Este ramo nao passa pelo func_cat/start(), entao sem isto a
-                # sessao ficava presa na ultima pagina de luta/missao. Descansa na
-                # Home no servidor entre os pulsos (o func_cat ja faz isso nos
-                # demais ramos).
+                # Este ramo nao passa pelo func_cat/start(): descansa na Home.
                 descansar
-                # Quando NAO ha luta, o coliseum_fight retorna na hora e este ramo
-                # (sem func_sleep) reentraria em rajada dentro do mesmo minuto.
-                # Uma pausa curta limita isso sem atrasar o pulso de forma sensivel;
-                # quando HA luta, o coliseum_fight ja consome o tempo.
+                # Sem luta o coliseum_fight volta na hora: a pausa evita rajada
+                # dentro do mesmo minuto.
                 sleep 5
             fi
             ;;
@@ -202,24 +141,14 @@ sls_play() {
         # --- Eventos especiais
         (09:2[5-9]|21:2[5-9])
             specialEvent
-            # Marca o portao: sem isto o tarefas_livres do start() logo abaixo
-            # chamava o specialEvent de novo.
+            # Marca o portao: sem isto o tarefas_livres do start() chamaria
+            # o specialEvent de novo.
             ativ_marcar evento
             start
             ;;
 
-        # --- Rotina comum
-        #
-        # Madrugada alinhada com esse outro bot: rotina completa a cada
-        # :00 e :30. Antes so havia :00 das 00 as 03, porque a janela do
-        # Coliseu casava todo minuto e nao sobrava espaco. Com o Coliseu
-        # pulsado nos minutos terminados em 5, :00 e :30 ficam livres.
-        # CORRECAO: faltavam 10:00, 10:30, 12:30, 16:00, 16:30, 21:00 e 21:30.
-        # Nesses vaos o start() nunca rodava, e as atividades que so existiam
-        # nele (Liga, Troca, Eventos, Missoes do Cla) ficavam de fora — em
-        # 16:00-16:30, por exemplo, havia mais de uma hora sem varredura
-        # completa. Nenhum dos minutos adicionados colide com os ramos de
-        # evento acima (que usam :10, :25, :28, :55, :58).
+        # --- Rotina comum: varredura completa a cada :00 e :30, sem colidir
+        # com os ramos de evento acima (:10, :25, :55).
         (00:00|00:30|01:00|01:30|02:00|02:30|03:00|03:30|04:00|04:30|05:00|05:30|06:00|06:30|07:00|07:30|08:00|08:30|09:00|10:00|10:30|11:00|11:30|12:00|12:30|13:00|13:30|14:00|14:30|15:00|15:30|16:00|16:30|17:00|17:30|18:00|18:30|19:00|19:30|20:00|20:30|21:00|21:30|22:00|23:00|23:30)
             start
             ;;
@@ -229,9 +158,8 @@ sls_play() {
             if [ "$_rn_cl" = 1 ]; then
                 printf "Running in coliseum mode: %s\n" "$RUN"
                 sleep 5
-                # A arena fica com o tarefas_livres logo abaixo, no portao
-                # dela (arena_liberada): aqui ela saia a cada volta, de 15 em
-                # 15s ou de 60 em 60s, sem energia na maioria das vezes.
+                # A arena fica com o tarefas_livres, no portao dela
+                # (arena_liberada).
                 coliseum_start
                 messages_info
             fi

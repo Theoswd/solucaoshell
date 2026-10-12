@@ -1,24 +1,14 @@
 # shellcheck disable=SC2154
 # shellcheck disable=SC2317
 # ============================================================
-#  RELOGIO DA VOLTA: UM "date" POR VOLTA DO LACO, NAO TRINTA E NOVE
-#
-#  Medido no laco real do worker parado (strace, 4 min): 95 processos por
-#  minuto por conta, e 39 deles so para perguntar a hora - cada portao de
-#  atividade (arena, caverna, liga, troca, missoes...), cada conferencia do
-#  minuto de inscricao e o log chamavam o seu "date". Com 18 contas eram
-#  ~1.900 processos por minuto com o bot sem fazer nada.
+#  RELOGIO DA VOLTA: UM "date" POR VOLTA DO LACO
 #
 #  relogio_sync (inicio de cada volta, no sls_play) pergunta ao date uma vez
-#  e anota quanto o /proc/uptime marcava naquele instante. Dai em diante a
-#  hora e o date da volta mais o que o /proc/uptime andou, lido com "read",
-#  sem processo. A diferenca para um "date" de verdade e de no maximo 1s, e
-#  os portoes da rotina contam minutos.
-#
-#  Sem relogio_sync (fora do laco: a entrada do bot, os testes) ou sem
-#  /proc/uptime legivel, cada funcao faz as MESMAS chamadas ao date de antes.
-#  Nas lutas nada disso e usado: os relogios de golpe e esquiva seguem com o
-#  date.
+#  e anota o /proc/uptime daquele instante. Dai em diante a hora e o date da
+#  volta mais o que o uptime andou, lido com "read", sem processo (erro de
+#  no maximo 1s; os portoes contam minutos).
+#  Sem relogio_sync (fora do laco, testes) ou sem /proc/uptime, cada funcao
+#  chama o date. As lutas nao usam isto: golpe e esquiva seguem com o date.
 # ============================================================
 relogio_sync() {
     set -- `date '+%s %H %M %S %d'`
@@ -43,7 +33,7 @@ agora_s() {
     unset _rl_u _rl_x
 }
 
-# Minuto local de agora em _MIN, sem zero a esquerda (era date +%M | sed).
+# Minuto local de agora em _MIN, sem zero a esquerda.
 minuto_atual() {
     if [ -n "$_rl_up" ]; then
         agora_s
@@ -53,7 +43,7 @@ minuto_atual() {
     fi
 }
 
-# Hora local de agora em _HOR, sem zero a esquerda (era date +%H | sed).
+# Hora local de agora em _HOR, sem zero a esquerda.
 hora_atual() {
     if [ -n "$_rl_up" ]; then
         agora_s
@@ -63,7 +53,7 @@ hora_atual() {
     fi
 }
 
-# Dia do mes da volta em _DIA (era date +%d).
+# Dia do mes da volta em _DIA.
 dia_atual() {
     if [ -n "$_rl_up" ] && [ -n "$_DD" ]; then _DIA="$_DD"; else _DIA=`date +%d`; fi
 }
@@ -73,8 +63,6 @@ func_crono() { # [-q]: so atualiza HOUR/MIN, sem escrever no log
     HOUR="$_HOR"; MIN="$_MIN"
     [ -z "$HOUR" ] && HOUR=0
     [ -z "$MIN" ] && MIN=0
-    # Depois do func_sleep a hora saia duas vezes seguidas no log (aqui e no
-    # func_cat da volta seguinte). Com -q, so as variaveis.
     [ "$1" = -q ] && return 0
     if [ -n "$_rl_up" ]; then
         printf "%s %02d:%02d\n" "$URL" "$HOUR" "$MIN"
@@ -83,41 +71,17 @@ func_crono() { # [-q]: so atualiza HOUR/MIN, sem escrever no log
     fi
 }
 
-# Pausa entre ciclos.
-#
-# CORRECAO CRITICA (multi-contas): a versao anterior fazia
-#     read -r -t "$i" cmd
-# para "dormir" $i segundos esperando um comando do usuario. Mas o worker e
-# lancado com stdin em /dev/null (play.sh) — o read retorna EOF na hora, a
-# pausa nunca acontecia, e o laco "while true; do sls_start; done" do sls.sh
-# virava busy-loop de 100% de CPU POR CONTA, com o sls.log crescendo sem
-# limite e o start() sendo reexecutado centenas de vezes dentro do mesmo
-# minuto (rajada de requisicoes identicas).
-#
-# Agora dorme de verdade, em fatias (espera_interrompivel).
 # ============================================================
-#  "AGORA": varredura sob demanda, sem esperar o ciclo
+#  PAUSA ENTRE CICLOS E "AGORA" (varredura sob demanda)
 #
-#  No master bastava apertar ENTER: o func_cat lia o stdin com prazo e
-#  qualquer tecla quebrava a espera, entao o laco voltava na hora e a
-#  varredura rodava. Aqui isso nao funciona — os workers sobem com
-#  "< /dev/null" (nohup+setsid), justamente para sobreviverem ao fechamento
-#  do Termux, entao NENHUM ENTER chega neles. O terminal tambem esta ocupado
-#  pelo painel, e com 15 contas nao ha um stdin para cada uma.
+#  O worker sobe com stdin em /dev/null (nohup+setsid): nao da para "dormir"
+#  com read -t (voltaria na hora, busy-loop) nem esperar ENTER. Dorme de
+#  verdade, em fatias, e atende ao arquivo-sinal por conta:
 #
-#  O equivalente multi-conta e um arquivo-sinal, como ja e feito com o
-#  PAUSED: quem quer a varredura agora cria o arquivo, e o worker o encontra
-#  durante a espera.
+#     touch ~/.sls/BR_<usuario>/RUNNOW      ($TMP/RUNNOW)
 #
-#     $TMP/RUNNOW    (um por conta)
-#
-#  Para pedir a varredura agora, crie o arquivo na conta desejada:
-#
-#     touch ~/.sls/BR_<usuario>/RUNNOW
-#
-#  O sinal e SEMPRE por conta, nunca global. Um arquivo global so poderia
-#  ser apagado por um dos workers, e os demais continuariam a encontra-lo —
-#  disparando varredura em laco para sempre. Cada worker apaga o seu.
+#  O sinal e SEMPRE por conta: um global so seria apagado por um worker e os
+#  demais o achariam para sempre. Cada worker apaga o seu.
 # ============================================================
 
 # Ha pedido de varredura imediata para esta conta?
@@ -125,17 +89,10 @@ runnow_pedido() {
     [ -f "$TMP/RUNNOW" ]
 }
 
-# Consome o pedido e abre os portoes das atividades.
-#
-# So quebrar a espera nao bastaria: cada atividade tem portao proprio
-# (arena 30 min, carreira 15 min, liga 30 min...), entao a varredura
-# encontraria tudo fechado e nao faria nada — que e justamente o oposto do
-# que se espera ao pedir "agora". Apagando os marcadores, tudo que estiver
-# DISPONIVEL no jogo roda na volta seguinte.
-#
-# Ficam de fora, de proposito, os portoes que espelham regra do jogo e nao
-# preferencia nossa: a masmorra, a caverna e a campanha (relogios lidos do
-# jogo) e a estatua (bonus de 48h).
+# Consome o pedido e apaga os marcadores das atividades, para que tudo que
+# estiver disponivel no jogo rode na volta seguinte. Ficam de fora os portoes
+# que espelham regra do jogo: masmorra, caverna e campanha (relogios do jogo)
+# e a estatua (bonus de 48h).
 runnow_consumir() {
     rm -f "$TMP/RUNNOW" 2>/dev/null
     rm -f "$TMP/last_arena"  "$TMP/last_carreira" "$TMP/last_campanha" \
@@ -146,18 +103,9 @@ runnow_consumir() {
     printf "Varredura sob demanda: portoes liberados\n"
 }
 
-# Dorme em fatias, atendendo ao pedido de varredura no meio do caminho.
-#
-# Antes era um "sleep $i" unico: um pedido feito logo apos o inicio da
-# espera so seria visto ate 60s depois. Em fatias a resposta sai no meio da
-# espera, e continua sendo UM processo de sleep por vez — o que importa no
-# Android, onde cada processo conta para o limite de 32.
-#
-# FATIAS DE 15S (ERAM 5S). Cada fatia e um "sleep" e acorda a CPU: eram 12
-# por minuto por conta, agora 4 — no celular, bateria e aquecimento. O
-# RUNNOW responde em ate 15s. A espera total e a mesma: perto das janelas
-# de evento ela ja e de 15s (uma fatia), e a de 60s vira quatro. A ultima
-# fatia dorme so o que falta (antes uma espera de 47s dormia 50).
+# Dorme $1 segundos em fatias de ate 15s, atendendo ao RUNNOW no meio.
+# Um sleep por vez (limite de ~32 processos no Android); fatias de 15s para
+# nao acordar a CPU a toa. A ultima fatia dorme so o que falta.
 espera_interrompivel() {
     _ei_total="$1"
     case "$_ei_total" in ''|*[!0-9]*) _ei_total=60 ;; esac
@@ -184,35 +132,25 @@ func_cat() {
     _i="${i:-60}"
     case "$_i" in ''|*[!0-9]*) _i=60 ;; esac
 
-    # DESCANSO REAL NA HOME.
-    #
-    # Antes aqui so gravava pagina="/" (mentira): a SESSAO no jogo continuava
-    # na ultima pagina de verdade — tipicamente /user (stats) ou /clan
-    # (checklist), buscadas pelo tarefas_livres no ciclo ocioso. Por isso a
-    # "atividade" que os outros jogadores viam era sempre Perfil/Cla, enquanto
-    # o painel dizia "Pagina Principal". Agora faz um GET real em "/", entao a
-    # conta descansa de fato na home e o pagina="/" passa a ser verdade.
+    # GET real em "/": a sessao no jogo descansa de fato na home (senao os
+    # outros jogadores viam a conta em Perfil/Cla).
     descansar
 
-    # O worker sobe com stdin em /dev/null: nao ha terminal para ler comando.
     printf "Sem batalhas agora, aguardando %ss\n" "$_i"
     espera_interrompivel "$_i"
     return 0
 }
 
-# CORRECAO: "reset" foi removido. Ele executa "stty sane" no TTY que os
-# workers herdam do play.sh, o que corrompia o monitor multi-contas na tela
-# e enchia o sls.log de sequencias de escape. O "clear" so faz sentido com
-# terminal, entao passou a ser condicional.
+# Sem "reset": o stty sane no TTY herdado do play.sh corrompia o monitor.
+# O "clear" so com terminal.
 func_sleep() {
     [ -t 1 ] && clear
 
-    # O dia e o da volta (relogio_sync); fora do laco, o date.
     dia_atual
     if [ "$_DIA" -eq 01 ] 2>/dev/null; then
         if [ "${HOUR:-99}" -lt 9 ] 2>/dev/null; then
-            # Missao 11 do dia 1: o coliseum_start pede /quest/ mesmo sem ela.
-            # A cada volta eram ~500 pedidos na madrugada; 15 min bastam.
+            # Missao 11 do dia 1: o coliseum_start pede /quest/ mesmo sem ela;
+            # 15 min bastam.
             if ativ_liberada missao11 15; then
                 coliseum_start
                 ativ_marcar missao11
@@ -223,34 +161,17 @@ func_sleep() {
         fi
     fi
 
-    # ESPERA CURTA NA APROXIMACAO DAS JANELAS DE EVENTO.
-    #
-    # CORRECAO: com i=60 o worker so reavaliava o relogio uma vez por minuto,
-    # e a volta do laco ainda gasta tempo em requisicoes. Janelas estreitas —
-    # Coliseu do Cla (:28-:29), Bandeiras (:10-:14), Rei (:25-:29), Torneio e
-    # Altares (:55-:59) — podiam ser puladas inteiras: o bot acordava com a
-    # janela ja fechada e o evento passava em branco.
-    #
-    # Perto desses minutos a espera cai para 15s, o que da 4 chances por
-    # minuto de entrar na janela. Fora deles segue 60s, sem custo extra.
-    #
-    # O minuto e lido AQUI, e nao do $MIN: no ramo ocioso do run.sh o
-    # func_sleep e chamado ANTES do func_crono, entao o $MIN esta defasado de
-    # um ciclo (e vazio na primeira volta) — justamente o erro que faria a
-    # espera curta cair no minuto errado.
-    minuto_atual
-    _fs_min="$_MIN"
-    case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
-    # A espera curta (15s) tem de cobrir TODA a janela de entrada de cada
-    # evento, senao uma espera de 60s iniciada perto do fim da janela acorda
-    # com ela ja fechada e o evento passa em branco:
+    # ESPERA CURTA (15s) NA APROXIMACAO DAS JANELAS DE EVENTO, senao uma
+    # espera de 60s iniciada perto do fim da janela acorda com ela fechada.
+    # Tem de cobrir TODA a janela de entrada:
     #   Bandeiras    :10-:14   (com :09 de folga)
     #   Rei/Especiais/Coliseu do Cla  :25-:29
     #   Torneio/Altares/Vale/Coliseu do Cla  :55-:59
-    # CORRECAO: a lista anterior parava em 13, 30 e 57 — deixava de fora os
-    # minutos 14, 58 e 59, justamente as bordas onde a espera longa engolia a
-    # janela (ex.: dormir 60s em :58:10 acorda em :59:10, com a inscricao do
-    # evento de :00 ja perdida).
+    # O minuto e lido aqui, nao do $MIN: no ramo ocioso do run.sh o func_sleep
+    # vem ANTES do func_crono, e o $MIN esta defasado (vazio na primeira volta).
+    minuto_atual
+    _fs_min="$_MIN"
+    case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
     case "$_fs_min" in
         9|1[0-4]|2[4-9]|30|5[4-9]) i=15 ;;
         *)                         i=60 ;;
@@ -263,39 +184,25 @@ func_sleep() {
 cq_liberado()    { ativ_liberada cq    "${FUNC_cq_min:-15}"; }
 cq_marcar() { ativ_marcar cq; }
 
-# Atualizacao dos numeros do painel (HP, energia, nivel, ouro, prata).
-#
-# O stats so era gravado dentro do start(), que roda nos minutos da
-# agenda — com vaos de mais de uma hora. O painel exibia valores
-# velhos: ouro 128 quando ja era 28, HP 583 quando ja era 656.
-# Uma requisicao a /user a cada 5 minutos por conta (FUNC_stats_min; eram 3).
+# Numeros do painel (HP, energia, nivel, ouro, prata): /user a cada
+# FUNC_stats_min minutos por conta.
 stats_liberado() { ativ_liberada stats "${FUNC_stats_min:-5}"; }
 
 atualiza_stats() {
-    # Preserva a aba atual em TODOS os caminhos de saida. O run_curl
-    # registra cada pagina acessada, entao a consulta a /user (e a /train,
-    # para a energia) sobrescreve $TMP/pagina.
-    #
-    # CORRECAO (descanso preso em "Meu Heroi"): a versao anterior so
-    # restaurava a aba no caminho de sucesso. Uma falha de rede ou de sessao
-    # fazia o `return 1` sair deixando "/user" gravado — e o painel exibia
-    # "Meu Heroi" durante o descanso, a cada 3 minutos, ate a proxima escrita.
+    # O run_curl grava cada pagina em $TMP/pagina: a aba atual e restaurada
+    # em TODOS os caminhos de saida.
     _aba_ant=`cat "${TMP}/pagina" 2>/dev/null`
 
-    # CORRECAO (energia congelada): energia e HP maximo so aparecem em /train
-    # e regeneram com o tempo. Sem esta chamada, o painel repetia a energia
-    # da ultima entrada em start() — que tem vaos de mais de uma hora —,
-    # entao ela parecia travada.
+    # Energia e HP maximo so aparecem em /train (e regeneram com o tempo).
     fetch_train_stats 2>/dev/null
 
     # A HOME DO DESCANSO NO LUGAR DO /user, SO DEPOIS DE CONFERIDA.
     #
-    # O descanso le a Home a cada volta, e o /user era um pedido a mais a
-    # cada 5 min so para o painel. A Home lida ha menos de 2 min, viva e com
-    # os cinco icones do cabecalho, serve no lugar dele — mas so depois de o
-    # worker ver, uma vez, que ela da os mesmos numeros que o /user (nivel,
-    # ouro e prata iguais, HP e energia presentes). Sem bater em 3 conferencias,
-    # ou sem os cinco icones, segue tudo pelo /user, como antes. O nome da
+    # A Home lida ha menos de 2 min, viva e com os cinco icones do cabecalho,
+    # serve no lugar do /user, mas so depois de o worker ver uma vez que ela da
+    # os mesmos numeros (nivel, ouro e prata iguais, HP e energia presentes).
+    # Sem bater em 3 conferencias, ou sem os icones, segue pelo /user.
+    # HOME_STATS: vazio = conferindo, 1 = Home serve, 0 = so /user. O nome da
     # conta (ACC) continua vindo do /user do login.
     _st_home=""
     if [ "${HOME_STATS:-}" != 0 ]; then
@@ -325,23 +232,10 @@ atualiza_stats() {
 
     # SESSAO CAIDA NO OCIO: RECONECTA EM VEZ DE DESISTIR.
     #
-    # Este era o motivo de a conta "aparecer no painel mas nao no jogo". O
-    # login_logoff — unica funcao que revalida a sessao — so era chamado
-    # dentro do start(), que roda apenas nos minutos da agenda. No ocio, que
-    # e a maior parte do tempo, ninguem checava nada: aqui a sessao morta era
-    # detectada e a funcao apenas devolvia 1, em silencio.
-    #
-    # Com a sessao morta o bot continua pedindo paginas, mas o servidor ve um
-    # visitante anonimo — a conta NAO aparece online para os outros jogadores.
-    # Ela so voltava quando o start() rodava num minuto da agenda e
-    # reconectava, o que dava exatamente o sintoma: a conta so aparecia
-    # durante os eventos do cronograma.
-    #
-    # Com muitas contas isso e bem mais frequente, porque o servidor derruba
-    # sessao com mais facilidade quando ha varias do mesmo IP.
-    #
-    # So reconecta com a pagina do jogo dizendo que a conta saiu. Resposta
-    # vazia ou que nao e do jogo e servidor mudo (ver sessao_estado).
+    # Com a sessao morta o servidor ve um visitante anonimo e a conta NAO
+    # aparece online, embora o painel a mostre rodando. So reconecta com a
+    # pagina do jogo dizendo que a conta saiu; resposta vazia ou que nao e do
+    # jogo e servidor mudo (ver sessao_estado).
     if ! is_logged_in "$_pg"; then
         if [ "`printf '%s' "$_pg" | sessao_estado -`" = deslogado ]; then
             printf "Sessao caiu no ocio - reconectando\n"
@@ -396,31 +290,16 @@ atualiza_stats() {
 
 # MASMORRA DO CLA: QUEM DECIDE E A PAGINA, NAO O RELOGIO.
 #
-# CORRECAO: a masmorra era a UNICA atividade presa a uma hora fixa do dia.
-# O portao masmorra_na_janela so deixava passar nas horas 02, 10 e 18 e,
-# junto com ele, a execucao era marcada como cumprida mesmo quando nenhum
-# golpe saia. Bastava a conta estar ocupada, a pagina falhar ou o link nao
-# ser reconhecido dentro daquela hora para a janela inteira de 8h ser
-# perdida em silencio — no jogo os golpes seguiam disponiveis e o bot nao
-# voltava la. E exatamente o sintoma relatado: a atividade disponivel, a
-# conta passando por ali e nada sendo feito.
-#
-# Agora o marcador guarda a PROXIMA TENTATIVA, e ela depende do resultado:
-#
+# $TMP/next_masmorra guarda a PROXIMA TENTATIVA (epoch):
 #   masmorra_marcar   golpe saiu -> volta quando o relogio da pagina zerar
 #   masmorra_adiar    nao saiu   -> idem; sem relogio, FUNC_masmorra_min
 #
-# O RELOGIO E O DA PAGINA. Gastos os 10 golpes, o jogo mostra quando voltam:
+# Gastos os 10 golpes, o jogo mostra quando voltam (28800000 ms = 8h):
 #
 #   Não há mais golpes<br/><span class='grey medium'>+10 golpes em
 #   <span id='time_28800000'>08:00:00</span></span>
-#
-# (as 17 contas em 13/09, logo depois dos golpes: 28800000 ms = 8h). Antes o
-# bot voltava em 7h e, dali, a cada 45 min ate achar golpe — numa conta,
-# 17:23 e 18:08 foram visitas a toa antes dos golpes das 18:54.
 masmorra_liberada() {
-    # A chave existia no config.cfg desde sempre e NINGUEM a lia: quem
-    # desligasse a masmorra ali continuava com ela ligada.
+    # Masmorra so com FUNC_masmorra=y (o padrao) no config.cfg.
     [ "${FUNC_masmorra:-y}" = "y" ] || return 1
     _u=; { read -r _u < "$TMP/next_masmorra"; } 2>/dev/null
     case "$_u" in ''|*[!0-9]*) _u=0 ;; esac
@@ -455,25 +334,21 @@ masmorra_adiar() {
 # ---------------------------------------------------------------------------
 #  CAVERNA E CAMPANHA TAMBEM PELO RELOGIO DO JOGO
 #
-#  CAVERNA. O menu da pagina inicial — que o descansar() ja baixa ao fim de
-#  cada ciclo — diz quanto falta:
+#  CAVERNA. O menu da pagina inicial (que o descansar() ja baixa) diz quanto
+#  falta; nao ha tempo fixo:
 #
 #     <a href='/cave/'>... Caverna <span class='grey'>(21:04)</span></a>
 #     <a href='/cave/'>... Caverna<span class='green'> (+)</span></a>
 #
-#  Em 13/09 as contas mostravam de (16:33) a (46:06): nao ha um tempo fixo.
-#  O bot entrava a cada 20-30 min e quase sempre saia com "Cave limit
-#  reached" (mineracao em andamento). Agora entra quando o menu da (+) ou o
-#  relogio zera. Sem leitura do menu, volta ao intervalo de 20 min.
+#  Entra quando o menu da (+) ou o relogio zera; sem leitura do menu, 20 min.
 #
-#  CAMPANHA. A pagina da campanha, feita, mostra "Nova campanha em 7 h 38
-#  min" — uma a cada 8h. O bot olhava a cada 15 min. Agora le esse relogio;
-#  sem ele, concluida a campanha, espera as 8h.
+#  CAMPANHA. Feita, a pagina mostra "Nova campanha em 7 h 38 min" (uma a
+#  cada 8h). Le esse relogio; sem ele, concluida a campanha, espera as 8h.
 #
 #     $TMP/next_caverna   $TMP/next_campanha   (epoch em que a atividade volta)
 # ---------------------------------------------------------------------------
 
-# "21:04" ou "1:02:03" -> segundos, sem processo (o awk abaixo fazia o mesmo).
+# "21:04" ou "1:02:03" -> segundos, sem processo.
 relogio_seg_sh() {
     _rs_ifs=$IFS; IFS=:; set -- $1; IFS=$_rs_ifs; unset _rs_ifs
     _rs_a=${1#0}; _rs_b=${2#0}; _rs_c=${3#0}
@@ -484,12 +359,11 @@ relogio_seg_sh() {
     unset _rs_a _rs_b _rs_c
 }
 
-relogio_liberado() { # nome -> 0 se o relogio da atividade venceu
+relogio_liberado() { # nome -> 0 vencido, 1 ainda nao, 2 sem marca
     _rl=; { read -r _rl < "$TMP/next_$1"; } 2>/dev/null
     case "$_rl" in ''|*[!0-9]*) unset _rl; return 2 ;; esac
     # Nenhum relogio do jogo passa de 1 dia. Mais de 2 dias adiante e marca
-    # gravada com o relogio do aparelho errado (o WSL ja pulou anos para a
-    # frente): vale como vencido, senao a atividade fecharia ate aquela data.
+    # gravada com o relogio do aparelho errado: vale como vencido.
     agora_s
     _rl=$(( _rl - _AGORA ))
     if [ "$_rl" -le 0 ] || [ "$_rl" -gt 172800 ]; then unset _rl; return 0; fi
@@ -508,8 +382,6 @@ relogio_anotar() { # nome segundos
 # sai do link da caverna: o item seguinte do menu (Rei dos Imortais) tambem
 # tem relogio entre parenteses.
 caverna_ler_menu() {
-    # O grep e o mesmo; o corte do "(21:04)" e a conta dos segundos sao do
-    # shell (eram head, grep, tr e o awk do relogio_segundos a cada descanso).
     _cv=`grep -o -m 1 -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null`
     _cv=${_cv%%"
 "*}; _cv=${_cv##*\(}; _cv=${_cv%\)}
@@ -531,7 +403,7 @@ caverna_liberada() {
 }
 
 # Depois de mexer na caverna o relogio muda. Ate o proximo descanso reler o
-# menu, vale o intervalo antigo — se a pagina inicial nao vier, a caverna nao
+# menu, vale o intervalo antigo: se a pagina inicial nao vier, a caverna nao
 # e reaberta a cada minuto.
 caverna_marcar() {
     ativ_marcar caverna
@@ -558,32 +430,15 @@ campanha_liberada() {
     [ $? -ne 1 ]
 }
 
-# Tarefas que NAO dependem da agenda de eventos.
+# Tarefas que NAO dependem da agenda de eventos (arena, checklist do cla,
+# masmorra, carreira, caverna, liga...). Cada bloco tem portao proprio, entao
+# rodar a cada volta do laco (~1 min) nao executa tudo a cada minuto.
 #
-# A arena deve sair a cada 30 minutos, mas o start() so era chamado nos
-# minutos da agenda — que tem vaos de 60 a 120 minutos, e nenhum durante
-# as 4 horas do Coliseu. Medido em producao: a arena saia a cada ~52
-# minutos, e contas recem-cadastradas ficavam com 1 unica execucao
-# enquanto as antigas tinham 9.
-#
-# Aqui tambem entra o CHECKLIST DE MISSOES DO CLA. Durante a janela do
-# Coliseu o bot passa a pausar entre as lutas para conferir a lista:
-# recolhe as concluidas, apoia as dos companheiros e conclui com ouro as
-# que estao paradas. Antes, essas quatro horas passavam sem nada disso.
-#
-# Cada bloco tem temporizador proprio, entao rodar a cada volta do laco
-# (~1 min) nao significa executar a cada minuto.
-#
-# NAO e chamado durante os cinco eventos de prioridade: enquanto a conta
-# esta aplicada num deles nada mais deve competir. Ao terminar o evento,
-# o start() chama esta mesma varredura (so o que venceu o proprio portao).
+# NAO e chamado durante os cinco eventos de prioridade: a conta aplicada num
+# deles nao faz mais nada. Ao fim do evento o start() chama esta varredura.
 tarefas_livres() {
-    # BATALHA PENDENTE: NADA DA ROTINA. A anotacao so fica depois de uma
-    # retomada quando a sessao caiu no meio da luta. Todo caminho ate aqui
-    # acabou de tentar a retomada (o sls_play no inicio da volta, o start()
-    # depois do login_logoff), entao tentar de novo aqui era um terceiro
-    # par de pedidos por volta num servidor que ja recusava. So nao roda a
-    # rotina, que tambem cairia na sessao fora.
+    # Batalha pendente (sessao caiu no meio da luta): quem chegou aqui acabou
+    # de tentar a retomada; nao tenta de novo nem roda a rotina.
     batalha_pendente && return 0
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
@@ -592,13 +447,9 @@ tarefas_livres() {
         atualiza_stats 2>/dev/null
     fi
 
-    # SERVIDOR MUDO: NENHUMA ATIVIDADE NESTA VOLTA.
-    #
-    # Cada atividade faz varios pedidos, e cada pedido sem resposta espera ate
-    # 17s: com o servidor fora, uma volta passava minutos presa em falhas
-    # (nos logs, 6.404 falhas so na pagina de missoes do cla), inclusive
-    # perto das inscricoes dos eventos. O descanso do fim da volta confere a
-    # sessao de novo e, respondendo, a proxima volta faz tudo.
+    # SERVIDOR MUDO: NENHUMA ATIVIDADE NESTA VOLTA. Cada pedido sem resposta
+    # espera ate 17s e a volta ficaria minutos presa, inclusive perto das
+    # inscricoes. O descanso confere a sessao de novo para a proxima volta.
     if servidor_mudo; then
         printf "Servidor sem resposta - atividades na proxima volta\n"
         return 0
@@ -616,26 +467,19 @@ tarefas_livres() {
         cq_marcar
     fi
 
-    # --- Masmorra do cla
+    # --- Masmorra do cla (a pagina diz se ha golpe)
     #
-    # Sem hora marcada: a pagina diz se ha golpe. Deu certo, so volta na
-    # proxima leva de 8h; nao deu, volta em minutos.
-    #
-    # ENTRE OS BLOCOS PESADOS, O RELOGIO. Masmorra (ate 180s), Liga (ate
-    # 300s), caverna e campanha somadas passavam dos 5 min de inscricao, e o
-    # run.sh ja nao pegava o evento. No minuto de inscricao, o resto fica para
-    # a proxima volta.
+    # ENTRE OS BLOCOS PESADOS, O RELOGIO: masmorra, liga, caverna e campanha
+    # somadas passam dos 5 min de inscricao. No minuto de inscricao, o resto
+    # fica para a proxima volta.
     liga_fora_da_inscricao || return 0
     if [ -n "$CLD" ] && masmorra_liberada; then
         if clanDungeon; then masmorra_marcar; else masmorra_adiar; fi
     fi
 
-    # --- Torneio de Equipe: o lider inscreve a equipe no proximo torneio
-    #
-    # A inscricao abre horas antes do inicio e so o lider tem o botao. Logo
-    # depois da batalha o clancommand_start ja tenta; aqui fica a repescagem
-    # de hora em hora, para quando a inscricao abre mais tarde. Membro, ou
-    # lider ja inscrito, le a pagina uma vez e para ate o inicio do torneio.
+    # --- Torneio de Equipe: o lider inscreve a equipe no proximo torneio.
+    # A inscricao abre horas antes e so o lider tem o botao; o
+    # clancommand_start ja tenta logo depois da batalha, aqui e a repescagem.
     liga_fora_da_inscricao || return 0
     if [ -n "$CLD" ] && ativ_liberada torneq 60; then
         clancommand_inscrever 2>/dev/null
@@ -650,11 +494,8 @@ tarefas_livres() {
         arena_marcar
     fi
 
-    # --- Carreira, campanha, caverna e cabana do sabio: executa o que
-    # estiver disponivel sem esperar os minutos :00/:30 do start(). Cada
-    # uma so refaz apos o proprio intervalo (marcador em disco), entao a
-    # varredura e barata. As proprias funcoes ja saem rapido quando nao ha
-    # nada disponivel (sem link = sem acao).
+    # --- Carreira, campanha, caverna e cabana do sabio, cada uma no seu
+    # intervalo (marcador em disco).
     if ativ_liberada carreira 15; then
         cq_antes carreira 2>/dev/null
         career_func
@@ -681,22 +522,15 @@ tarefas_livres() {
 
     # --- Liga, Troca, Missoes do Cla e Eventos especiais.
     #
-    # CORRECAO: estas quatro so existiam dentro do start(), que roda apenas
-    # nos minutos exatos da agenda. Quando um evento de prioridade vencia o
-    # case, ou quando o minuto simplesmente nao estava na lista, elas ficavam
-    # de fora — a Liga chegava a passar o dia sem lutar. Agora tambem entram
-    # na varredura ociosa, cada uma no seu intervalo.
-    #
-    # UMA VISITA POR DIA, AS 00:30 (liga_do_dia, em league.sh). Aqui ela so
-    # volta antes disso quando uma luta nao contou e ainda ha lutas no dia.
+    # Liga: uma visita por dia, as 00:30 (liga_do_dia, em league.sh); aqui so
+    # volta antes quando uma luta nao contou e ainda ha lutas no dia.
     liga_fora_da_inscricao || return 0
     if ativ_liberada liga 30; then
         liga_do_dia
     fi
 
-    # O func_trade tem portao proprio de uma vez ao dia, entao esta chamada
-    # sai barata nas demais voltas; o intervalo aqui e so para nao reabrir a
-    # pagina da troca a cada minuto.
+    # O func_trade tem portao proprio de uma vez ao dia; o intervalo aqui e
+    # so para nao reabrir a pagina da troca a cada minuto.
     if ativ_liberada troca 60; then
         func_trade 2>/dev/null
         ativ_marcar troca
@@ -712,18 +546,9 @@ tarefas_livres() {
         ativ_marcar evento
     fi
 
-    # --- Lista de aliados, a cada 12h
-    #
-    # Sem isto as listas ficavam VAZIAS para sempre: o worker nao tem
-    # teclado para perguntar o modo. As cinco batalhas de cla liam a lista
-    # a cada golpe e ela nunca tinha ninguem dentro.
-    #
-    # 12h porque a lista muda de vez em quando: sao as paginas de amigos e as
-    # de membros do cla (ver allies.sh).
-    #
-    # A chave e "aliados2": a lista mudou de regra (amigos + cla, sempre os
-    # dois), e a conta que atualizar o bot refaz a sua no primeiro intervalo,
-    # sem esperar as 12h da lista velha.
+    # --- Lista de aliados (amigos + cla, ver allies.sh), a cada 12h. Sem
+    # isto as listas das batalhas de cla ficariam vazias: o worker nao tem
+    # teclado. A chave "aliados2" faz quem atualizar refazer a lista ja.
     if ativ_liberada aliados2 720; then
         if allies_refresh 2>/dev/null; then
             ativ_marcar aliados2
@@ -734,25 +559,17 @@ tarefas_livres() {
     fi
 }
 
-# Arena a cada 30 minutos, controlada por marcador em disco para
-# sobreviver a reinicios do worker.
+# Arena a cada 30 minutos (marcador em disco, sobrevive a reinicios).
 arena_liberada() { ativ_liberada arena "${FUNC_arena_min:-30}"; }
 arena_marcar() { ativ_marcar arena; }
 
-# Varredura periodica de atividades no ciclo ocioso.
-#
-# O sweep completo (start) so roda em :00 e :30. Entre esses minutos o bot
-# ficava esperando, mesmo com carreira/campanha/caverna/cabana disponiveis.
-# Agora o tarefas_livres tambem verifica e executa essas atividades, cada
-# uma no seu proprio intervalo (marcador last_<nome> em disco, por conta,
-# como a arena) — assim executa o que estiver disponivel sem esperar o :00/
-# :30 e sem refazer a cada minuto (o que pesaria no Android/E22). O start()
-# chama o proprio tarefas_livres, entao ha um so conjunto de portoes.
+# Portao de atividade: ativ_liberada nome [minutos] -> 0 se o marcador
+# $TMP/last_<nome> (epoch, gravado por ativ_marcar) tem mais que os minutos.
 ativ_liberada() {
     _an="$1"; _am="${2:-15}"
     case "$_am" in ''|*[!0-9]*) _am=15 ;; esac
     # read (interno do shell) no lugar do cat: um processo a menos por
-    # portao, uns 12 por volta do laco — conta no limite de 32 do Android.
+    # portao, conta no limite de 32 do Android.
     _au=; { read -r _au < "$TMP/last_$_an"; } 2>/dev/null
     case "$_au" in ''|*[!0-9]*) _au=0 ;; esac
     # Marcador no futuro (relogio do aparelho voltou, NTP no Android): vencido.
@@ -768,27 +585,17 @@ ativ_marcar() { agora_s; echo "$_AGORA" > "$TMP/last_$1" 2>/dev/null; }
 # ============================================================
 #  PERIODO DEDICADO AO EVENTO
 #
-#  Durante os cinco eventos de prioridade — Torneio dos Clas, Coliseu do
-#  Cla, Altares, Rei dos Imortais e Vale dos Imortais — nenhuma atividade
-#  comum deve rodar: da inscricao ate o fim do evento a conta e so daquilo.
-#
-#  A varredura (tarefas_livres) ja nao e chamada nesses ramos do run.sh, e
-#  enquanto o modulo do evento esta lutando ele bloqueia, entao nada mais
-#  acontece. O furo esta no RETORNO ANTECIPADO: quando a conta cai da luta
-#  antes da hora — o que se via no painel como a conta trocando o evento por
-#  "Cla" no meio do horario —, o modulo devolve o controle e o start() logo
-#  abaixo dispara a varredura inteira COM O EVENTO AINDA EM ANDAMENTO.
-#
-#  Aqui o inicio do evento e anotado antes de entrar, e depois do modulo a
-#  conta espera o evento terminar antes de voltar as atividades. Durante a
-#  espera ela descansa na pagina inicial, o que ainda mantem a sessao viva.
+#  Durante os cinco eventos de prioridade (Torneio dos Clas, Coliseu do Cla,
+#  Altares, Rei dos Imortais e Vale dos Imortais), da inscricao ate o fim a
+#  conta e so daquilo. Se o modulo devolve cedo (a conta caiu da luta), o
+#  start() logo abaixo varreria tudo com o evento em andamento: por isso o
+#  inicio e anotado antes ($TMP/em_evento) e o evento_espera segura a conta,
+#  descansando na pagina inicial, ate o fim.
 # ============================================================
 
-# Epoch do inicio do evento: o proximo :00 ou :30 a partir de agora.
-# Os ramos de prioridade entram em :55-:59 (evento em :00) ou :25-:29
-# (evento em :30), entao a conta e direta.
+# Anota em $TMP/em_evento o epoch do inicio do evento: o proximo :00 ou :30.
+# Os ramos de prioridade entram em :55-:59 ou :25-:29.
 evento_dedicar() {
-    # Minuto e segundo de um date so (eram dois date|sed).
     _ed_s=`date +%M%S`
     _ed_m=${_ed_s%??}; _ed_m=${_ed_m#0}; _ed_s=${_ed_s#??}; _ed_s=${_ed_s#0}
     case "$_ed_m" in ''|*[!0-9]*) _ed_m=0 ;; esac
@@ -798,23 +605,12 @@ evento_dedicar() {
     else _ed_f=0
     fi
 
-    # ENTRADA ESCALONADA ENTRE AS CONTAS — MAS NUNCA A CUSTA DA JANELA.
+    # ENTRADA ESCALONADA ENTRE AS CONTAS, MAS NUNCA A CUSTA DA JANELA.
     #
-    # Todas as contas aplicam no MESMO segundo: o ramo do run.sh dispara no
-    # mesmo minuto para todas, e o modulo pede /enterGame na hora. Do lado do
-    # servidor sao N inscricoes simultaneas do mesmo IP — o mesmo padrao de
-    # rajada que ja obrigou a serializar o login.
-    #
-    # CORRECAO (conta saindo do evento): a primeira versao dormia antes de
-    # olhar o relogio. Cada modulo RE-VERIFICA a janela por dentro — o
-    # king_start so age em 12:2[5-9] —, entao uma conta que entrasse em
-    # 12:29:52 acordava em 12:30:01 e o modulo devolvia sem fazer nada. Em
-    # seguida o evento_espera assumia e ficava chamando descansar por dez
-    # minutos: no painel a conta aparecia na Pagina Principal bem no meio do
-    # evento, como se tivesse abandonado.
-    #
-    # Agora o deslocamento e limitado pelo tempo que AINDA RESTA de janela,
-    # com 5 segundos de folga. Perto do fim ele simplesmente nao acontece.
+    # Sem isto todas as contas aplicam no mesmo segundo (rajada do mesmo IP).
+    # O deslocamento ($$ % 10) e limitado pelo que AINDA RESTA de janela, com
+    # 5s de folga: cada modulo re-verifica a janela por dentro (king_start so
+    # age em :2[5-9]) e devolveria sem fazer nada se acordasse depois dela.
     _ed_resta=$(( _ed_f * 60 - _ed_s - 5 ))
     _ed_esp=$(( $$ % 10 ))
     [ "$_ed_esp" -gt "$_ed_resta" ] && _ed_esp=0
@@ -825,12 +621,9 @@ evento_dedicar() {
     unset _ed_m _ed_s _ed_f _ed_resta _ed_esp
 }
 
-# Desiste da dedicacao ao evento.
-#
-# O modulo que decide NAO participar (Coliseu do Cla fora de temporada, por
-# exemplo) chama isto: sem o marcador, o evento_espera devolve na hora e a
-# conta volta para a rotina em vez de ficar dez minutos parada por um evento
-# que nao vai acontecer.
+# Desiste da dedicacao ao evento: o modulo que decide NAO participar (Coliseu
+# do Cla fora de temporada, por exemplo) chama isto, e a conta volta para a
+# rotina em vez de ficar parada.
 evento_cancelar() { # [SECAO]
     rm -f "$TMP/em_evento" 2>/dev/null
     # Sem inscricao nao ha batalha a retomar. Com a secao, so apaga a anotacao
@@ -842,12 +635,9 @@ evento_cancelar() { # [SECAO]
     return 0
 }
 
-# Segura a conta ate o evento acabar. Volta na hora se o modulo ja tiver
-# consumido o tempo todo lutando, que e o caso normal.
-#
-# A duracao vem de FUNC_evento_min (padrao 10). Se os eventos do seu
-# servidor durarem mais ou menos que isso, e so ajustar essa chave no
-# config.cfg da conta — nao ha como o bot descobrir a duracao sozinho.
+# Segura a conta ate o evento acabar (volta na hora se o modulo ja consumiu o
+# tempo lutando). Duracao: FUNC_evento_min (padrao 10) no config.cfg; o bot
+# nao tem como descobri-la sozinho.
 evento_espera() {
     _ee_ini=`cat "$TMP/em_evento" 2>/dev/null`
     rm -f "$TMP/em_evento" 2>/dev/null
@@ -869,28 +659,18 @@ evento_espera() {
     return 0
 }
 
-# Apaga os marcadores de combate ao vivo deixados no disco.
-#
-# Os modulos de batalha (king, altares, torneio, masmorra, bandeiras,
-# coliseu do cla) gravam HP/old_HP/FULL/USH no diretorio da conta durante a
-# luta, e o painel os le para desenhar o "ao vivo das batalhas". Eles NAO
-# eram apagados ao fim da luta, entao o painel continuava mostrando
-# "-142 de dano recebido" com a conta ja parada na pagina inicial —
-# combate fantasma. Apagados aqui (no descanso), o ao vivo passa a refletir
-# apenas batalha de verdade em andamento.
+# Apaga os marcadores de combate ao vivo (HP/old_HP/FULL/USH) que os modulos
+# de batalha gravam e o painel le; sem isto o painel mostraria combate
+# fantasma com a conta ja parada.
 limpar_combate() {
-    # So chama o rm quando ha o que apagar: no descanso de todo minuto, quase
-    # sempre nao ha (o teste [ -e ] e do proprio shell).
+    # So chama o rm quando ha o que apagar (o [ -e ] e do proprio shell).
     [ -e "$TMP/HP" ] || [ -e "$TMP/old_HP" ] || [ -e "$TMP/FULL" ] || [ -e "$TMP/USH" ] || return 0
     rm -f "$TMP/HP" "$TMP/old_HP" "$TMP/FULL" "$TMP/USH" 2>/dev/null
 }
 
-# Volta para a batalha pendente desta conta, se houver.
-#
-# Cobre as contas que saem do laco de luta sem o jogo declarar o fim: o
-# worker morto pelo Android e relancado pelo painel, ou um modulo que
-# devolveu o controle cedo. Em vez de cair na rotina — e no "Fuja da
-# batalha" —, a conta rele a pagina do evento e segue lutando.
+# Volta para a batalha pendente desta conta, se houver (worker relancado,
+# modulo que devolveu cedo): em vez de cair na rotina e no "Fuja da batalha",
+# rele a pagina do evento e segue lutando.
 #
 # Devolve 0 se havia batalha (e ela foi retomada), 1 se nao havia.
 batalha_retomar() {
@@ -921,34 +701,26 @@ batalha_retomar() {
         clandmgfight) fetch_page "/clandmgfight" "$TMP/SRC";      clandmgfight_fight ;;
         clancoliseum) fetch_page "/clancoliseum" "$TMP/ccol_src"; clancoliseum_fight ;;
         flagfight)    fetch_page "/flagfight" "$TMP/flag_src";    flagfight_fight ;;
-        # O clancommand_start ja anotava a batalha (batalha_marcar), mas sem
-        # este ramo a retomada caia no "*)" e so apagava a anotacao: o worker
-        # relancado no meio do torneio deixava a luta.
         clancommand)  fetch_page "/clancommand" "$TMP/ccmd_src";  clancommand_fight ;;
         coliseum)
-            # O coliseum_fight tambem INSCREVE: chamado com a luta ja
-            # encerrada, ele entraria numa luta NOVA — ate fora da janela
-            # das 00:30-04:30. Na retomada ele so roda se a pagina mostrar
-            # luta em andamento.
+            # O coliseum_fight tambem INSCREVE: com a luta ja encerrada ele
+            # entraria numa NOVA, ate fora da janela das 00:30-04:30. So roda
+            # se a pagina mostrar luta em andamento.
             fetch_page "/coliseum" "$TMP/col_src"
             case "`estado_luta "$TMP/col_src" coliseum`" in
                 luta)      coliseum_fight ;;
                 # Sem sessao ou sem resposta nao da para saber: fica para
-                # depois. Apagar aqui fazia o descanso confirmar a fuga quando
-                # a rede voltasse. A anotacao ainda expira no teto (30 min).
+                # depois (apagar faria o descanso confirmar a fuga). A
+                # anotacao ainda expira no teto (30 min).
                 deslogado|invalida) LUTA_SESSAO_CAIU=1 ;;
             esac
             ;;
         *)            : ;;
     esac
 
-    # UMA TENTATIVA POR BATALHA ANOTADA.
-    #
-    # A funcao de luta que termina pelo jogo ja apaga a anotacao. Se ela voltou
-    # sem isso — o coliseu sem luta para retomar, o teto de seguranca —, a
-    # anotacao ficava, e CADA volta do laco (sls_play) e cada descanso tentavam
-    # retomar de novo, por ate 30 minutos. So a queda de sessao mantem a
-    # anotacao: e o caso em que a luta deve continuar quando a sessao voltar.
+    # UMA TENTATIVA POR BATALHA ANOTADA: senao cada volta e cada descanso
+    # tentariam de novo por ate 30 min. So a queda de sessao mantem a
+    # anotacao, para a luta continuar quando a sessao voltar.
     [ "${LUTA_SESSAO_CAIU:-0}" = 1 ] || batalha_limpar
     unset _br_full
     _BR_ATIVO=0
@@ -956,29 +728,19 @@ batalha_retomar() {
 }
 
 # Volta para a pagina inicial. As contas devem descansar ali entre os
-# ciclos, e nao numa pagina de combate ou de evento — o jogo mantem o
+# ciclos, e nao numa pagina de combate ou de evento: o jogo mantem o
 # personagem "em batalha" e a navegacao seguinte cai em "Fuja da batalha".
 descansar() {
-    # ANTES DE IR PARA CASA: HA BATALHA PENDENTE?
-    #
-    # O evento_espera chama o descansar de 30 em 30s logo depois do modulo de
-    # luta, e o start()/func_cat ao fim de cada ciclo. Com batalha pendente,
-    # a conta volta para ela em vez de ir para a Home.
+    # Com batalha pendente, a conta volta para ela em vez de ir para a Home.
     batalha_retomar
 
     # HOME REPETIDA NAO E PEDIDA DE NOVO.
     #
-    # Perto das janelas de evento o laco ocioso volta a cada 15s, e cada volta
-    # pedia a Home: numa conta, em 13/09, foram 641 dessas voltas, quatro
-    # Homes por minuto. Se a ultima pagina pedida ja foi a Home e ESTE descanso
-    # a confirmou com sessao viva ha menos de 50s, a leitura anterior ainda
-    # vale: a conta esta em casa e nada foi pedido desde entao. A volta de 60s
-    # pede sempre.
-    #
-    # A prova e o $TMP/.home_ok, gravado so no fim feliz do descanso. O
-    # last_ok nao serve: as lutas e o link_acao tambem o carimbam, e ai uma
-    # Home que falhou (servidor mudo) ou que mostrou o personagem ainda preso
-    # na batalha passaria por "em casa e tudo certo".
+    # Se a ultima pagina pedida ja foi a Home e ESTE descanso a confirmou com
+    # sessao viva ha menos de 50s, a leitura anterior ainda vale (voltas de
+    # 15s perto das janelas). A prova e o $TMP/.home_ok, gravado so no fim
+    # feliz do descanso; o last_ok nao serve, as lutas e o link_acao tambem o
+    # carimbam.
     # ponytail: a queda de sessao pode levar ate 50s a mais para ser vista.
     _ds_req=; _ds_ok=0
     { read -r _ds_req < "$TMP/.ult_req"; read -r _ds_ok < "$TMP/.home_ok"; } 2>/dev/null
@@ -996,15 +758,10 @@ descansar() {
 
     # "FUJA DA BATALHA" SO DEPOIS DE O JOGO DECLARAR O FIM.
     #
-    # Aqui havia um /?out_gate_confirm=true INCONDICIONAL, a cada descanso:
-    # a confirmacao de fuga. Toda conta que saia do laco de luta antes da
-    # hora — rede, sessao, SIGKILL — fugia da batalha na chamada seguinte.
-    #
-    # Agora a Home e pedida primeiro. So se o jogo ainda segurar o
-    # personagem (a pagina oferece o out_gate_confirm) E nao houver batalha
-    # pendente — ou seja, o jogo ja declarou a morte ou o fim, ou a pagina do
-    # evento passou LUTA_FORA_MAX segundos sem luta (LUTA_FORA_LUTOU se a conta
-    # ja tinha lutado) — a saida e confirmada.
+    # A Home e pedida primeiro. So se o jogo ainda segurar o personagem (a
+    # pagina oferece o out_gate_confirm) E nao houver batalha pendente (o jogo
+    # ja declarou a morte ou o fim, ou a pagina do evento passou LUTA_FORA_MAX
+    # segundos sem luta, LUTA_FORA_LUTOU se ja lutou) a saida e confirmada.
     if grep -q 'out_gate_confirm' "$TMP/REST" 2>/dev/null; then
         if batalha_pendente; then
             printf "Ainda em batalha (%s) - a conta nao foge\n" "$_bp_sec"
@@ -1021,25 +778,12 @@ descansar() {
     # O menu desta pagina traz o relogio da caverna: de graca, sem requisicao.
     caverna_ler_menu "$TMP/REST"
 
-    # SESSAO CONFERIDA AQUI, DE GRACA.
-    #
-    # Esta pagina ja foi baixada acima e era descartada sem ninguem olhar.
-    # Ela diz na hora se a sessao esta viva, entao a checagem nao custa
-    # nenhuma requisicao nova.
-    #
-    # Antes a sessao so era verificada pelo atualiza_stats, a cada 3 minutos
-    # e ao preco de duas requisicoes extras (/train e /user). No intervalo, a
-    # conta seguia pedindo paginas com cookie morto: o servidor a via como
-    # visitante anonimo e ela NAO aparecia online para os outros jogadores,
-    # embora o painel a mostrasse rodando — porque o worker estava vivo.
-    #
-    # Como o descansar() roda ao fim de cada ciclo, a janela em que a conta
-    # fica invisivel cai de ~3 minutos para ~1, sem custo.
+    # SESSAO CONFERIDA AQUI, DE GRACA: com cookie morto a conta nao aparece
+    # online para os outros jogadores, embora o worker esteja vivo.
     #
     # SERVIDOR MUDO NAO E SESSAO CAIDA. Pagina vazia, cortada ou que nao e
     # do jogo nao prova que a conta saiu: tratar como queda apagava o cookie
-    # e refazia o login no pior momento (ver sessao_estado, em info.sh). A
-    # sessao fica como esta e o proximo descanso confere de novo.
+    # e refazia o login no pior momento (ver sessao_estado, em info.sh).
     case "`sessao_estado "$TMP/REST"`" in
         viva)
             agora_s; _ds_ok="$_AGORA"
@@ -1055,19 +799,11 @@ descansar() {
             ;;
     esac
 
-    # NAO RECONECTA EM BLOCO.
-    #
-    # Com muitas contas no mesmo IP, uma queda costuma atingir varias ao
-    # mesmo tempo — e se todas reconectam juntas, o servidor estrangula a
-    # rajada e ainda pode derrubar sessao de quem estava bem, criando um
-    # ciclo em que as contas se expulsam uma a outra. E o padrao que aparece
-    # como "algumas online, outras nao, alternando".
-    #
-    # O intervalo minimo entre tentativas leva um deslocamento fixo por
-    # conta, derivado do PID: cada uma tenta num segundo diferente dentro da
-    # janela, em vez de todas no mesmo instante. Sem isso o intervalo apenas
-    # adia a rajada, nao a dispersa. O descanso e a luta usam o mesmo portao
-    # (luta_pode_reconectar, em info.sh), entao as duas nao somam tentativas.
+    # NAO RECONECTA EM BLOCO. Com muitas contas no mesmo IP, se todas
+    # reconectam juntas o servidor estrangula a rajada e derruba sessao de
+    # quem estava bem. O portao (luta_pode_reconectar, em info.sh) tem
+    # deslocamento por conta derivado do PID e e o mesmo da luta, entao as
+    # duas nao somam tentativas.
     luta_pode_reconectar || return 1
     date +%s > "$TMP/last_reconn" 2>/dev/null
 
@@ -1080,13 +816,8 @@ descansar() {
 }
 
 start() {
-    # UMA VARREDURA POR MINUTO.
-    #
-    # No minuto :30 a espera do func_sleep e de 15s (janela do Coliseu do
-    # Cla). Quando a varredura acabava antes de :30:45, o laco voltava ao
-    # ramo das :30 e rodava tudo de novo — medido numa conta em 13/09:
-    # carreira, caverna, liga e campanha duas vezes as 17:30 e as 18:30. A
-    # segunda chamada no mesmo minuto so espera o minuto virar.
+    # UMA VARREDURA POR MINUTO: no :30 a espera e de 15s e o laco voltaria ao
+    # ramo das :30. A segunda chamada no mesmo minuto so espera o minuto virar.
     _st_min=`date +%Y%m%d%H%M`
     if [ "`cat "$TMP/last_start" 2>/dev/null`" = "$_st_min" ]; then
         _st_s=`date +%S`; _st_s=${_st_s#0}
@@ -1112,12 +843,8 @@ start() {
     # Sessao de volta: a batalha que ficou pendente vem antes da varredura.
     batalha_retomar
 
-    # CLAN_ID DUPLICADO.
-    #
-    # O login_logoff, chamado logo acima, ja executa o clan_id quando a
-    # sessao esta viva (o clan_id tem portao proprio de 60 min, clanid.sh).
-    # O `||` mantem o caminho para quando o login_logoff nao existe ou nao
-    # chegou a rodar.
+    # O login_logoff ja executa o clan_id com a sessao viva; o `||` cobre
+    # quando ele nao existe ou nao rodou.
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
     # Lider do cla: mantem a estatua ativa (bonus de PRATA e de OURO do cla,
@@ -1125,10 +852,9 @@ start() {
     # conta, nunca e ativado). Portao proprio de 6h (estatua_liberada).
     clan_statue
 
-    # Agenda oficial do jogo (painel) e elixir das batalhas: so aqui, uma vez
-    # por varredura das :00/:30. 25 min deixa passar as duas.
-    # A agenda e uma so para o aparelho (~/.sls/agenda): outra conta que a
-    # baixou ha menos de 25 min ja serve.
+    # Agenda oficial do jogo (painel) e elixir das batalhas: uma vez por
+    # varredura das :00/:30 (25 min deixa passar as duas). A agenda e uma so
+    # para o aparelho (~/.sls/agenda): baixada ha menos de 25 min ja serve.
     if ativ_liberada agenda 25; then
         [ -n "`find "$HOME/.sls/agenda" -mmin -25 2>/dev/null`" ] || atualiza_agenda 2>/dev/null
         ativ_marcar agenda
@@ -1139,14 +865,8 @@ start() {
         ativ_marcar elixir
     fi
 
-    # O RESTO E A VARREDURA DO OCIOSO, COM OS MESMOS PORTOES.
-    #
-    # Eram duas copias das mesmas atividades, e a do start() nao conferia
-    # portao nenhum. Quando o Coliseu do Cla ou o Torneio nao tinha
-    # inscricao, o ramo do evento chamava o start() a cada minuto da janela:
-    # numa conta, 13/09 10:25 e 10:26, carreira, missoes, eventos e
-    # missoes do cla refeitas em sequencia. Agora cada atividade so volta no
-    # proprio intervalo (ou pelo relogio do jogo) e o RUNNOW libera todas.
+    # O resto e a varredura do ocioso, com os mesmos portoes (o RUNNOW libera
+    # todos).
     tarefas_livres
 
     messages_info

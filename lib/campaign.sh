@@ -20,19 +20,16 @@ campaign_func() {
         done
     fi
 
-    # QUANDO VOLTAR: O RELOGIO DA PAGINA (ver campanha_relogio, em crono.sh).
-    #
-    # Ainda com link de acao (o teto de 90s cortou a campanha): volta na
-    # proxima varredura. Sem link, a pagina diz "Nova campanha em 7 h 38 min";
-    # se a ultima resposta nao for essa pagina, ela e relida uma vez. Sem
-    # relogio legivel: campanha feita agora espera as 8h do jogo; sem nada
-    # feito, a pagina fica guardada e a campanha volta em 1h.
+    # QUANDO VOLTAR: o relogio da pagina (campanha_relogio, em crono.sh),
+    # "Nova campanha em 7 h 38 min", relida uma vez se preciso. Ainda com
+    # link de acao: proxima varredura. Sem relogio: feita agora espera as 8h
+    # do jogo; sem nada feito, a pagina fica guardada e volta em 1h.
     if [ -n "$CAMPAIGN" ]; then
         relogio_anotar campanha 900
     else
         _cp=`campanha_relogio "$TMP/SRC"`
         # So a releitura que RESPONDEU diz se a campanha acabou: um clique sem
-        # resposta tambem tira o link de acao, e duas falhas davam 8h.
+        # resposta tambem tira o link de acao.
         _cp_ok=1
         if [ -z "$_cp" ] && [ -n "$RESULT" ]; then
             if fetch_page "/campaign/" && [ -s "$TMP/SRC" ]; then
@@ -43,8 +40,7 @@ campaign_func() {
             fi
         fi
         # Sem relogio numa pagina que nao e do jogo com a conta logada (sessao
-        # caida, erro do servidor): nao diz se a campanha acabou. Sem isto a de
-        # login virava as 8h de campanha feita.
+        # caida, erro do servidor): nao diz se a campanha acabou.
         [ -n "$_cp" ] || [ "`sessao_estado "$TMP/SRC"`" = viva ] || _cp_ok=0
         if [ -n "$_cp" ]; then
             relogio_anotar campanha $(( _cp + 60 ))

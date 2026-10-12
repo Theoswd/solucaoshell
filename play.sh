@@ -1,14 +1,11 @@
 #!/bin/sh
 # play.sh - Orquestrador multi-contas do solucaoshell
 
-# CORRECAO (seguranca): sem umask, ~/.sls e o accounts.conf nasciam 755/644.
+# Seguranca: sem umask, ~/.sls e o accounts.conf nasceriam 755/644.
 umask 077
 
-# Resolve o caminho real do script, seguindo links simbolicos.
-#
-# CORRECAO: era so "dirname $0". Chamado por um link simbolico (ou por um
-# atalho em $PREFIX/bin), o SLSDIR apontava para a pasta do LINK e nao para
-# a do repositorio — e o accounts.conf lido era outro.
+# Resolve o caminho real do script, seguindo links simbolicos: chamado por
+# um atalho em $PREFIX/bin, o SLSDIR tem de ser a pasta do repositorio.
 _self="$0"
 _hops=0
 while [ -L "$_self" ] && [ "$_hops" -lt 20 ]; do
@@ -22,8 +19,7 @@ done
 _dir=$(dirname "$_self")
 SLSDIR=$(cd "$_dir" && pwd -P)
 
-# O motor mora em lib/. Os comandos do usuario ficam na raiz; tudo que e
-# biblioteca (worker, painel, modulos de batalha) e carregado daqui.
+# Comandos do usuario na raiz; o motor (worker, painel, batalhas) em lib/.
 LIBDIR="$SLSDIR/lib"
 export LIBDIR
 
@@ -59,14 +55,9 @@ RESET='\033[00m'
 
 mkdir -p "$STATUS_DIR"
 
-# PID do proprio orquestrador. Sem isto o stop.sh nao conseguia
-# encerrar o monitor: ele roda como "./play.sh" (caminho relativo) e
-# um pgrep por caminho absoluto nao casa. Cada ./play.sh deixava mais
-# um monitor vivo, todos supervisionando as mesmas contas.
-#
-# Um painel so: o ./play.sh novo encerra o anterior (outra aba, sessao do
-# Termux esquecida em segundo plano). Os workers seguem rodando; o play.sh
-# nao tem trap que derrube conta.
+# PID do orquestrador para o stop.sh (roda como "./play.sh", um pgrep por
+# caminho absoluto nao casa). Um painel so: o ./play.sh novo encerra o
+# anterior; os workers seguem rodando (o play.sh nao tem trap que derrube conta).
 _orq=$(cat "$STATUS_DIR/orchestrator.pid" 2>/dev/null)
 case "$_orq" in
     ''|*[!0-9]*|"$$") ;;
@@ -79,9 +70,8 @@ chmod 700 "$HOME/.sls" 2>/dev/null
 
 chmod +x "$LIBDIR/worker.sh" "$LIBDIR/sls.sh" 2>/dev/null
 
-# setsid torna o worker lider de grupo de processos. Sem isso, matar o worker
-# deixa o sls.sh filho ORFAO e vivo, e ao rodar ./play.sh de novo a conta
-# passa a ter duas sessoes simultaneas disputando o mesmo cookie.
+# setsid torna o worker lider de grupo: sem isso, matar o worker deixa o
+# sls.sh filho orfao e vivo, e a conta fica com duas sessoes no mesmo cookie.
 if command -v setsid > /dev/null 2>&1; then
     SETSID="setsid"
 else
@@ -93,20 +83,15 @@ clean_field() {
     printf '%s' "$1" | tr -d '\r' | tr -d '\000-\037'
 }
 
-# Mata o worker E seus filhos, mas so se o PID ainda for realmente um worker.
-#
-# CORRECAO: antes era "kill -0 PID && kill -9 PID". O kill -0 verifica
-# EXISTENCIA, nao IDENTIDADE: com o PID reciclado pelo kernel, o kill -9
-# acertava um processo inocente. Alem disso matava so o pai, deixando o
-# sls.sh filho orfao e ativo.  $1=PID  $2=pasta da conta
+# Mata o worker E seus filhos (grupo), so se o PID ainda for o worker desta
+# conta (kill -0 ve existencia, nao identidade: PID reciclado).
+# $1=PID  $2=pasta da conta. Retorna 1 se nao era o worker.
 kill_worker_tree() {
     kw_pid="$1"
-    # So o worker DESTA conta: um PID reciclado por outra conta nao morre.
     worker_vivo "$kw_pid" "$2" || return 1
 
     kill -TERM "-$kw_pid" 2>/dev/null || kill -TERM "$kw_pid" 2>/dev/null
-    # Ate 2s, saindo assim que o worker terminar (eram 2s fixos por conta:
-    # 36s com 18 contas no --restart).
+    # Ate 2s, saindo assim que o worker terminar.
     _kw_n=0
     while [ "$_kw_n" -lt 10 ] && kill -0 "$kw_pid" 2>/dev/null; do
         sleep 0.2; _kw_n=$((_kw_n + 1))
@@ -141,10 +126,8 @@ launch_worker() {
     [ ! -f "$lw_dir/userAgent.txt" ] && [ -f "$LIBDIR/userAgent.txt" ] && \
         cp "$LIBDIR/userAgent.txt" "$lw_dir/userAgent.txt"
 
-    # CORRECAO (seguranca): a credencial era passada como argv[3] do
-    # worker.sh e ficava legivel em /proc/PID/cmdline durante toda a vida do
-    # processo (o worker roda para sempre). Agora e gravada aqui, em arquivo
-    # modo 600, e o worker recebe apenas o caminho do diretorio da conta.
+    # Seguranca: a credencial nunca vai no argv (ficaria em /proc/PID/cmdline);
+    # vai para arquivo modo 600 e o worker recebe so a pasta da conta.
     if [ -n "$lw_enc" ]; then
         printf '%s\n' "$lw_enc" > "$lw_dir/cript_file"
         chmod 600 "$lw_dir/cript_file"
@@ -155,21 +138,9 @@ launch_worker() {
         return 1
     fi
 
-    # NAO derruba um worker que esta vivo e saudavel.
-    #
-    # CORRECAO (este era o defeito): o launch_worker matava incondicionalmente
-    # o worker daquela conta antes de subir outro. Como o painel so existia
-    # dentro do play.sh, a UNICA forma de voltar a ver as contas depois que o
-    # Termux era fechado (ou morto com SIGKILL) era rodar ./play.sh de novo —
-    # e isso derrubava as 6 contas que estavam jogando normalmente, forcando
-    # 6 logins simultaneos do mesmo IP. O servidor recusa essa rajada com a
-    # mesma mensagem de "senha incorreta", e as contas caiam no backoff de
-    # 30s ate 15min: painel inteiro em [..], tudo em "-", "0 online".
-    #
-    # Ou seja: o ato de olhar quebrava o que estava funcionando.
-    #
-    # Agora o worker vivo e MANTIDO e o play.sh apenas se acopla ao painel.
-    # Para forcar o reinicio de tudo: ./play.sh --restart
+    # NAO derruba um worker vivo: rodar ./play.sh so para ver o painel nao
+    # pode forcar varios logins simultaneos do mesmo IP (o servidor recusa a
+    # rajada como "senha incorreta"). Reiniciar tudo: ./play.sh --restart
     if [ -f "$lw_pidf" ]; then
         lw_old=$(cat "$lw_pidf" 2>/dev/null)
         if [ "$FORCE_RESTART" != "1" ] && worker_vivo "$lw_old" "$lw_dir"; then
@@ -202,38 +173,24 @@ if [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ]; then
     exit 1
 fi
 
-# CORRECAO: era "grep -c '|' ... || echo 0". Quando o grep nao acha nada ele
-# imprime 0 E sai com status 1, entao o "|| echo 0" acrescentava um segundo 0
-# e a variavel virava "0\n0". Alem disso contava linhas comentadas.
+# Conta so linhas de conta (nao as comentadas). Sem "|| echo 0": o grep -c
+# ja imprime 0 ao sair com status 1.
 total=$(grep -c -E '^[0-9]+\|' "$ACCOUNTS_FILE" 2>/dev/null)
 case "$total" in *[!0-9]*) total=0 ;; esac
 [ -z "$total" ] && total=0
 
 printf "${CYAN}solucaoshell - %s conta(s)${RESET}\n" "$total"
-# O caminho do accounts.conf so aparece quando NAO e o do proprio
-# repositorio. No uso normal e uma linha que nao informa nada — o arquivo
-# esta onde deveria. Fora do lugar, e a primeira coisa que se quer saber:
-# o resolve_accounts_file procura em outras pastas e ja aconteceu de o bot
-# subir lendo um arquivo antigo de outra instalacao.
+# Mostra o accounts.conf so quando nao e o do repositorio: o
+# resolve_accounts_file procura em outras pastas (pode ser de outra instalacao).
 [ "$ACCOUNTS_FILE" = "$SLSDIR/accounts.conf" ] || \
     printf "${GOLD}Contas:${RESET} %s\n" "$ACCOUNTS_FILE"
 printf "\n"
 
-# Android 12+ derruba a sessao inteira com SIGKILL.
-#
-# O sistema classifica como "processo fantasma" todo filho do Termux que
-# ele nao reconhece e, passando de 32 simultaneos, mata sem aviso — o
-# "[Process completed (signal 9)]" no meio do lancamento das contas. O
-# consumo por conta foi cortado (veja info.sh: fetch_page e time_exit nao
-# gastam mais um fork de "sleep" por segundo de espera), mas com muitas
-# contas ainda vale desligar o monitor.
-# Limpa workers orfaos de execucoes anteriores.
-#
-# Os workers sobem com nohup+setsid: quando o Android mata a sessao com
-# SIGKILL, eles SOBREVIVEM. A cada nova tentativa sobra mais uma leva, e
-# esses processos contam para o limite de 32 do Android 12 — o bot vai
-# ficando cada vez mais perto do teto sem ninguem perceber. Aqui morrem os
-# que nao correspondem a nenhuma conta em execucao registrada.
+# Android 12+ mata a sessao inteira (SIGKILL) acima de ~32 processos filhos
+# do Termux ("processos fantasma").
+# Limpa workers orfaos de execucoes anteriores: com nohup+setsid eles
+# sobrevivem ao SIGKILL da sessao e contam para esse limite. Morrem os que
+# nenhum .pid em $STATUS_DIR conhece.
 limpa_orfaos() {
     _lo_n=0
     for _lo_p in /proc/[0-9]*; do
@@ -261,23 +218,17 @@ limpa_orfaos() {
 }
 limpa_orfaos
 
-# Modo economico de processos.
-#
-# O Android 12+ mata a sessao inteira acima de 32 processos filhos. Medido
-# num Moto E22 (Android 12): o Termux marcava 26 processos com apenas duas
-# contas no ar — com seis nao havia como caber. Acima de 3 contas o
-# espacamento entre requisicoes passa a ser o proprio tempo de rede, o que
-# dispensa um "sleep" parado por conta.
+# Modo economico de processos (limite de ~32 do Android): acima de 3 contas
+# o espacamento entre requisicoes e o proprio tempo de rede, sem um "sleep"
+# parado por conta.
 if [ -d /data/data/com.termux ] && [ "$total" -gt 3 ] && [ -z "$SLS_PACING" ]; then
     SLS_PACING=0
     export SLS_PACING
 fi
 
 if [ -d /data/data/com.termux ] && [ "$total" -gt 3 ]; then
-    # Texto quebrado em ate 44 colunas: e a largura util da tela de um
-    # celular no Termux (346-360 dpi, fonte padrao). Antes eram tres linhas
-    # de 70 a 80 colunas que o terminal quebrava no meio das palavras.
-    # A linha do adb fica inteira de proposito: e para copiar.
+    # Ate 44 colunas (tela de celular no Termux). A linha do adb fica
+    # inteira de proposito: e para copiar.
     printf "${YELLOW}AVISO (Android 12+)${RESET}\n"
     printf "  O sistema pode matar o bot com\n"
     printf "  SIGKILL (signal 9).\n"
@@ -290,14 +241,8 @@ fi
 n=0
 n_kept=0
 
-# CORRECAO (contas que nao aparecem conectadas): o `read` devolve 1 ao
-# encontrar EOF sem quebra de linha final, entao a ULTIMA linha era lida
-# para as variaveis mas o laco terminava sem processa-la. O accounts.conf
-# perde essa quebra com facilidade — editado a mao, copiado entre
-# aparelhos ou gerado por versao antiga. O contador acima usa `grep -c`,
-# que CONTA essa linha: o play.sh anunciava "6 conta(s)" e subia 5, sem
-# nenhum erro. O `|| [ -n "$srv" ]` processa a linha final tambem quando
-# ela chega sem quebra.
+# O `read` devolve 1 no EOF sem quebra de linha final; o `|| [ -n "$srv" ]`
+# processa essa ultima linha (que o grep -c acima conta).
 while IFS='|' read -r srv user encoded <&3 || [ -n "$srv" ]; do
     srv=$(clean_field "$srv")
     user=$(clean_field "$user")
@@ -333,9 +278,7 @@ while IFS='|' read -r srv user encoded <&3 || [ -n "$srv" ]; do
 
     pid=""
     _w=0
-    # 5s bastam: o worker grava o PID como primeira acao. Com 20 contas,
-    # o limite antigo de 10s somava ate 200s de espera no pior caso.
-    # De 0,2 em 0,2s (os mesmos 5s): o PID costuma estar la no primeiro.
+    # Ate 5s, de 0,2 em 0,2s: o worker grava o PID como primeira acao.
     while [ -z "$pid" ] && [ "$_w" -lt 25 ]; do
         sleep 0.2
         { read -r pid < "$pid_file"; } 2>/dev/null
@@ -344,15 +287,11 @@ while IFS='|' read -r srv user encoded <&3 || [ -n "$srv" ]; do
     printf "   PID: %s | Log: %s\n" "${pid:-FALHOU}" "$log_file"
     [ -z "$pid" ] && printf "   ${RED}AVISO: worker nao iniciou. Verifique %s${RESET}\n" "$log_file"
 
-    # Espacamento entre contas. Sem isso todas autenticavam no mesmo segundo,
-    # do mesmo IP: o rate-limit derrubava quase todas e o backoff exponencial
-    # (ate 300s) mantinha as contas sincronizadas reincidindo em bloco.
+    # Espacamento entre contas: o servidor limita login por IP, e contas
+    # autenticando juntas caem e reincidem em bloco no backoff.
     if [ "$n" -lt "$total" ]; then
-        # Escalonamento adaptativo. O valor fixo de 5-20s por conta
-        # levaria ate 6,7 minutos so para subir 20 contas. Agora a
-        # janela total fica em torno de 3 minutos, qualquer que seja o
-        # numero de contas, com um piso de 3s para nao autenticar todas
-        # no mesmo instante (o servidor limita login por IP).
+        # Janela total de ~3 min qualquer que seja o numero de contas,
+        # entre 3s e 15s por conta.
         _base=$(( 180 / total ))
         [ "$_base" -lt 3 ] && _base=3
         [ "$_base" -gt 15 ] && _base=15
@@ -372,12 +311,9 @@ fi
 printf "\n${GREEN}%s conta(s): %s iniciada(s), %s ja rodando.${RESET}\n\n" \
     "$n" "$((n - n_kept))" "$n_kept"
 
-# O numero de contas processadas tem de bater com o que o arquivo declara.
-# Divergir aqui e o sintoma de uma conta invisivel: cadastrada, contada, e
-# nunca iniciada — foi o que acontecia com a ultima linha quando o arquivo
-# nao terminava em quebra de linha. O laco acima ja trata esse caso; este
-# aviso existe para que qualquer outra causa (linha malformada, nome com
-# barra, servidor desconhecido) apareca em vez de passar em silencio.
+# Contas processadas tem de bater com as do arquivo: divergir e uma conta
+# cadastrada e nunca iniciada (linha malformada, nome com barra, servidor
+# desconhecido); avisa em vez de passar em silencio.
 if [ "$n" -lt "$total" ]; then
     printf "${RED}AVISO: %s conta(s) do arquivo nao foram iniciadas.${RESET}\n" \
         "$((total - n))"
@@ -390,9 +326,8 @@ printf "Reiniciar:     ${CYAN}./play.sh --restart${RESET}\n"
 printf "Parar tudo:    ${CYAN}./stop.sh${RESET}\n\n"
 
 # ============================================================
-#  PAINEL
-#  Mora no panel.sh, compartilhado com o status.sh. Aqui ele
-#  roda em modo supervisor: relanca worker que morrer.
+#  PAINEL (panel.sh, compartilhado com o status.sh). Aqui em
+#  modo supervisor: relanca worker que morrer.
 # ============================================================
 . "$LIBDIR/panel.sh"
 PANEL_SUPERVISE=1

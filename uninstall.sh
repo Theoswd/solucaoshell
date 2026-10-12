@@ -1,10 +1,7 @@
 #!/bin/sh
 # uninstall.sh - Remove COMPLETAMENTE o solucaoshell do sistema
-#
-# Apaga: processos, os dados das contas (~/.sls) e o proprio diretorio do bot.
-#
-# ATENCAO: isto apaga o accounts.conf. As contas cadastradas serao perdidas
-# e voce tera de cadastra-las de novo. As contas no JOGO nao sao afetadas.
+# Apaga processos, ~/.sls e o proprio diretorio do bot (inclusive o
+# accounts.conf). As contas no JOGO nao sao afetadas.
 
 _dir=$(dirname "$0")
 SLSDIR=$(cd "$_dir" && pwd)
@@ -13,11 +10,8 @@ SLSDIR=$(cd "$_dir" && pwd)
 # e o "rm -rf" do fim a apagaria inteira.
 [ -f "$SLSDIR/lib/sls.sh" ] || { printf "Rode o uninstall.sh de dentro da pasta do bot.\n"; exit 1; }
 
-# O motor mora em lib/. Os comandos do usuario ficam na raiz; tudo que e
-# biblioteca (worker, painel, modulos de batalha) e carregado daqui.
 LIBDIR="$SLSDIR/lib"
 export LIBDIR
-
 
 R='\033[0;31m'; G='\033[32m'; Y='\033[1;33m'; C='\033[01;36m'; N='\033[00m'
 

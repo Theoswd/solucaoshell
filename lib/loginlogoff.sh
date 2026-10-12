@@ -1,15 +1,14 @@
 # shellcheck disable=SC2148
 # loginlogoff.sh - relogin automatico quando sessao expira
 
-# A AUTENTICACAO, UMA SO PARA O LOGIN E A RECONEXAO.
+# A AUTENTICACAO, UMA SO PARA O LOGIN (do_login) E A RECONEXAO.
 #
-# Era a mesma sequencia em duas copias, o do_login (sls.sh) e o login_logoff
-# abaixo: credencial do cript_file, trava global de login, GET da pagina de
-# login (vindo de outra pagina o servidor recusa a senha certa), POST com a
-# senha pelo stdin (fora do argv, que aparece no ps) e o /user.
+# Credencial do cript_file, trava global de login, GET de /?sign_in=1 (vindo
+# de outra pagina o servidor recusa a senha certa), POST com a senha pelo
+# stdin (fora do argv, que aparece no ps) e o /user.
 #   0 = os pedidos sairam. PAGE = o /user. LOGIN_ERRO=rede quando o POST ou
-#       o /user ficou sem resposta (o curl falhou ou veio vazio), senao
-#       LOGIN_ERRO=credencial: quem chama le a pagina e decide.
+#       o /user ficou sem resposta, senao LOGIN_ERRO=credencial: quem chama
+#       le a pagina e decide.
 #   1 = credencial ilegivel. Nada sai: um POST vazio contaria no limite de
 #       logins por IP e seria lido como senha recusada.
 login_autenticar() {
@@ -34,9 +33,8 @@ login_autenticar() {
         --data-urlencode "login=${luser}" \
         --data-urlencode "pass@-" \
         "${URL}/?sign_in=1" > /dev/null
-    # O $? colado no POST: com outro comando no meio ele era o desse comando
-    # (sempre 0), e uma falha de rede no POST virava senha recusada, que
-    # escala a espera ate 15 min.
+    # O $? colado no POST: com outro comando no meio, uma falha de rede no
+    # POST viraria senha recusada.
     _la_rc=$?
     unset luser lpass
     PAGE=`run_curl "${URL}/user" 2>/dev/null`
@@ -56,34 +54,24 @@ login_logoff() {
     PAGE=`run_curl "${URL}/user"`
 
     if is_logged_in "$PAGE"; then
-        # Sessao confirmada: libera a varredura que vem logo depois (ver
-        # servidor_mudo) mesmo que o ultimo descanso tenha ficado sem resposta.
+        # Sessao confirmada: libera a varredura logo depois (ver servidor_mudo).
         sessao_marcar
         _acc=`extract_username "$PAGE"`
         [ -n "$_acc" ] && ACC=`echo "$_acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
-        # A pagina /user ja esta em maos: aproveita para atualizar HP/MP
-        # antes de descarta-la. Antes o PAGE era descartado aqui e o
-        # messages_info imprimia campos vazios.
-        # Energia e HP maximo so existem em /train: uma requisicao por
-        # ciclo de start(), nao por minuto.
+        # Aproveita o /user em maos para HP/MP; energia e HP maximo so
+        # existem em /train (uma requisicao por ciclo de start()).
         fetch_train_stats 2>/dev/null
         parse_status "$PAGE"
         unset _acc PAGE
         messages_info
-        # Painel ja atualizado com esta leitura: o atualiza_stats da varredura
-        # logo depois pedia /user e /train de novo.
+        # Painel ja atualizado: poupa o /user e /train do atualiza_stats.
         date +%s > "$TMP/last_stats" 2>/dev/null
         clan_id
         return 0
     fi
 
-    # SERVIDOR MUDO NAO E SESSAO EXPIRADA.
-    #
-    # O /user vazio (curl sem conexao) ou uma pagina que nao e do jogo caia
-    # aqui como "sessao expirada": o cookie era APAGADO e o login refeito
-    # contra um servidor que nao respondia — 557 "falha ao reconectar" nos
-    # logs de 12/09, todas com erro de curl. So a pagina do jogo sem conta
-    # (sessao_estado = deslogado) prova que a sessao caiu.
+    # SERVIDOR MUDO NAO E SESSAO EXPIRADA: so a pagina do jogo sem conta
+    # (sessao_estado = deslogado) prova que a sessao caiu. Senao o cookie fica.
     if [ "`printf '%s' "$PAGE" | sessao_estado -`" != deslogado ]; then
         printf "[%s] %s — servidor sem resposta, sessao mantida (sem novo login)\n" \
             "$SLS_TAG" "$SLS_USER"
@@ -98,15 +86,11 @@ login_logoff() {
     cript_file="$TMP/cript_file"
     [ ! -f "$cript_file" ] && return 1
 
-    # A TRAVA GLOBAL DE LOGIN TAMBEM NA RECONEXAO (ver login_autenticar).
-    # Quando o servidor derruba varias sessoes de uma vez (15 contas no mesmo
-    # IP), todas reconectavam no mesmo instante; o servidor estrangula a
-    # rajada com a MESMA mensagem de "senha incorreta", e contas boas caiam
-    # no backoff longo justo quando precisavam voltar.
+    # A trava global de login vale tambem na reconexao (login_autenticar):
+    # sessoes derrubadas juntas reconectariam no mesmo instante.
     login_autenticar || return 1
 
-    # Rede (POST ou /user sem resposta) nao e senha recusada: o log diz qual
-    # foi, como o do_login separa.
+    # Rede nao e senha recusada: o log diz qual foi.
     if [ "$LOGIN_ERRO" = rede ]; then _ll_porque="sem resposta do servidor"; else _ll_porque="login recusado"; fi
 
     if is_logged_in "$PAGE"; then
@@ -115,8 +99,6 @@ login_logoff() {
         printf "[%s] %s — reconectado\n" "$SLS_TAG" "$SLS_USER"
         _acc=`extract_username "$PAGE"`
         [ -n "$_acc" ] && ACC=`echo "$_acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
-        # Energia e HP maximo so existem em /train: uma requisicao por
-        # ciclo de start(), nao por minuto.
         fetch_train_stats 2>/dev/null
         parse_status "$PAGE"
         unset _acc

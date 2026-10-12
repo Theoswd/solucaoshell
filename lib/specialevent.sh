@@ -2,8 +2,7 @@
 specialEvent() {
     # A chave vale aqui: o horario das 09:25 e 21:25 (run.sh) chama direto.
     [ "${FUNC_auto_events:-y}" = "y" ] || return 0
-    # O worker nao reinicia: sem isto, com a Home ja sem evento, o ramo e o
-    # link do ultimo evento eram repetidos.
+    # O worker nao reinicia: limpa o evento e o link da volta anterior.
     unset EVENT event_link
     # A Home que o descanso gravou ha menos de 5 min (com a sessao viva) ja
     # traz o banner do evento: sem pedir de novo.
@@ -42,8 +41,7 @@ specialEvent() {
             fetch_page "${event_link}"
             printf "Event fault\n"
             click=`grep -o -E "/fault/attack/\?r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
-            # Limite de tempo: se o link de ataque continuar presente,
-            # o laco nao terminava sozinho.
+            # Teto de tempo: o link de ataque pode continuar presente.
             SE_BREAK=$(($(date +%s) + 90))
             while [ "$(date +%s)" -lt "$SE_BREAK" ]; do
                 if [ -n "${click}" ]; then

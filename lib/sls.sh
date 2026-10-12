@@ -5,9 +5,8 @@
 
 umask 077
 
-# Normalmente SLSDIR e LIBDIR chegam prontos do worker.sh. O calculo aqui
-# e a rede de seguranca de quem chamar o sls.sh direto: o arquivo vive em
-# lib/, entao a raiz e o diretorio de cima.
+# SLSDIR e LIBDIR chegam do worker.sh; o calculo e para quem chamar o sls.sh
+# direto (o arquivo vive em lib/).
 if [ -z "$LIBDIR" ]; then
     _d=$(dirname "$0")
     LIBDIR=$(cd "$_d" && pwd)
@@ -41,15 +40,9 @@ chmod 700 "$TMP" 2>/dev/null
 . "$LIBDIR/info.sh"
 . "$LIBDIR/session_check.sh"
 
-# Modo de execucao.
-#
-# CORRECAO (multi-contas): a versao anterior IGNORAVA o "$1" que o worker.sh
-# passa e lia "$SLSDIR/runmode_file" — um arquivo unico, compartilhado por
-# TODAS as contas. Resultado: "./play.sh -cv" e "-cl" nao tinham efeito, e
-# uma conta trocando de modo trocava o modo de todas as outras.
-# Agora: o runmode_file e por conta (escrito pelo run.sh/cave.sh em runtime)
+# Modo de execucao: o runmode_file e por conta (escrito pelo run.sh/cave.sh)
 # e tem prioridade; o play.sh o apaga a cada lancamento, entao a flag de
-# linha de comando vence num inicio limpo.
+# linha de comando ("$1") vence num inicio limpo.
 if [ -s "$TMP/runmode_file" ]; then
     RUN=$(cat "$TMP/runmode_file" 2>/dev/null)
 elif [ -n "$1" ]; then
@@ -76,11 +69,7 @@ do
 done
 unset _lib
 
-
-# CORRECAO: a ordem era language_setup depois load_config. Como o
-# language_setup criava o config.cfg contendo so LANGUAGE=, o load_config
-# encontrava o arquivo "ja existente" e nunca gravava os defaults. Agora o
-# load_config vem primeiro e garante todas as chaves.
+# load_config antes de qualquer language_setup: garante todas as chaves.
 load_config
 
 if [ ! -f "$TMP/userAgent.txt" ] && [ -f "$LIBDIR/userAgent.txt" ]; then
@@ -95,30 +84,18 @@ export vUserAgent
 
 printf "[%s] %s — iniciando (modo %s)\n" "$SLS_TAG" "$SLS_USER" "$RUN"
 
-# Login com retry — delay crescente com jitter, nunca mata o worker
 # TRAVA GLOBAL DE LOGIN
 #
-# O servidor limita autenticacao por IP e, quando estrangula,
-# responde com a MESMA mensagem de "senha incorreta". Com varias
-# contas subindo juntas, viram dezenas de POSTs de login em poucos
-# minutos: contas boas passam a parecer contas com senha errada e
-# caem no backoff longo.
-#
-# Medido com 10 contas: 5 a 8 recusas por conta, inclusive nas que
-# depois entraram normalmente.
-#
-# Aqui so uma conta autentica por vez. O mkdir e atomico em POSIX,
-# entao serve de trava sem precisar de flock (que o toybox nao tem).
-# O PID de quem segura fica gravado: se o dono morrer, a trava e
-# liberada em vez de bloquear todo mundo para sempre.
+# O servidor limita autenticacao por IP e, quando estrangula, responde com a
+# MESMA mensagem de "senha incorreta". Aqui so uma conta autentica por vez.
+# O mkdir e atomico em POSIX (o toybox nao tem flock). O PID de quem segura
+# fica gravado: se o dono morrer, a trava e liberada.
 LOCKDIR="$HOME/.sls/.login.lock"
 
 login_lock() {
     _n=0
     _lk_meu=0
-    # De 3 em 3s, e o PID lido sem processo (era um cat por segundo em cada
-    # conta esperando). O login_espacar ja impoe 10s entre logins, entao a
-    # espera nao fica mais longa; o teto continua 180s.
+    # De 3 em 3s, teto de 180s; o login_espacar ja impoe 10s entre logins.
     while [ "$_n" -lt 60 ]; do
         if mkdir "$LOCKDIR" 2>/dev/null; then
             _lk_meu=1
@@ -129,26 +106,22 @@ login_lock() {
         fi
         _dono=; { read -r _dono < "$LOCKDIR/pid"; } 2>/dev/null
         case "$_dono" in
-            # PID ainda nao gravado: o dono acabou de criar a trava e
-            # esta a caminho de escrever. Apagar aqui era uma corrida —
-            # dois processos entravam ao mesmo tempo. So espera.
+            # PID ainda nao gravado: o dono esta a caminho de escrever.
+            # Apagar aqui seria corrida (dois entrariam juntos). So espera.
             ''|*[!0-9]*) : ;;
             *) kill -0 "$_dono" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null ;;
         esac
         sleep 3
         _n=$((_n + 1))
     done
-    # Nao conseguiu em 3 minutos: segue assim mesmo, para uma trava
-    # presa nunca impedir a conta de tentar. Sem a trava, mantem ao menos o
-    # intervalo do ultimo login. Com 10s de espacamento mais tres pedidos
-    # dentro da trava, uma queda que derruba muitas contas juntas chega aqui.
+    # Nao conseguiu em 3 minutos: segue assim mesmo, para uma trava presa
+    # nunca impedir a conta de tentar, mantendo ao menos o espacamento.
     type login_espacar > /dev/null 2>&1 && login_espacar
     return 0
 }
 
-# So apaga a trava quem a criou. A conta que seguiu sem trava (3 min de
-# espera) apagava a de quem estava autenticando, e o proximo da fila entrava
-# junto: logins colados de novo.
+# So apaga a trava quem a criou: senao o proximo da fila entraria junto com
+# quem esta autenticando.
 login_unlock() {
     type login_espacar_marcar > /dev/null 2>&1 && login_espacar_marcar
     [ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null
@@ -156,25 +129,11 @@ login_unlock() {
 }
 
 do_login() {
-    # REAPROVEITA A SESSAO EXISTENTE.
-    #
-    # O servidor manda Set-Cookie: PHPSESSID com Max-Age de 30 dias.
-    # A versao anterior fazia um POST de login a cada inicializacao,
-    # mesmo com a sessao ainda valida no cookie.txt. Com varias contas
-    # reiniciando, isso gerava rajadas de autenticacao do mesmo IP — e o
-    # servidor passa a recusar com a MESMA mensagem de "senha incorreta",
-    # o que faz o problema parecer credencial errada quando nao e.
-    #
-    # Testar a sessao custa uma requisicao GET; autenticar custa duas e
-    # conta para o limite. Na pratica isso elimina quase todos os logins.
+    # REAPROVEITA A SESSAO EXISTENTE (PHPSESSID vale 30 dias): testar custa
+    # um GET; autenticar custa dois e conta para o limite por IP.
     if [ -s "$TMP_COOKIE" ]; then
-        # Distingue FALHA DE REDE de CREDENCIAL RECUSADA.
-        #
-        # O curl devolve codigo != 0 quando nao conseguiu falar com o
-        # servidor (28 = timeout, 7 = conexao recusada, 6 = DNS). Isso
-        # nao diz nada sobre a senha — e so o servidor tropecando ou a
-        # rede oscilando. Tratar os dois casos igual fazia um soluco de
-        # 10 segundos jogar a conta para 5 ou 15 minutos de espera.
+        # Distingue FALHA DE REDE (curl != 0) de CREDENCIAL RECUSADA: um
+        # soluco de rede nao pode escalar a espera.
         PAGE=$(run_curl "${URL}/user" 2>/dev/null)
         _rc=$?
         if [ "$_rc" -ne 0 ] || [ -z "$PAGE" ]; then
@@ -196,9 +155,7 @@ do_login() {
             return 0
         fi
         # Resposta que nao e pagina do jogo (erro do servidor, pagina
-        # cortada) nao prova sessao morta: e rede. Sem isto a conta ia para
-        # o POST de login com o servidor tropecando — e uma recusa ali conta
-        # como credencial, que escala a espera ate 15 min.
+        # cortada) nao prova sessao morta: e rede, nao escala o backoff.
         if [ "`printf '%s' "$PAGE" | sessao_estado -`" != deslogado ]; then
             LOGIN_ERRO=rede
             unset PAGE
@@ -210,24 +167,14 @@ do_login() {
     cript_file="$TMP/cript_file"
     if [ ! -s "$cript_file" ]; then
         printf "[%s] %s — ERRO: sem credenciais\n" "$SLS_TAG" "$SLS_USER"
-        # Explicito para nao herdar o LOGIN_ERRO da tentativa anterior: sem
-        # credencial nao adianta reencurtar a espera como se fosse rede.
+        # Explicito para nao herdar o LOGIN_ERRO da tentativa anterior.
         LOGIN_ERRO=credencial
         return 1
     fi
 
-    # Autenticacao (login_autenticar, em loginlogoff.sh): o GET da pagina de
-    # login antes do POST e obrigatorio.
-    #
-    # Esta sequencia ja comecou com "run_curl ${URL}/" e isso quebrou a
-    # autenticacao de todas as contas: vindo da home, o servidor responde
-    # "Nome de usuario ou senha digitado incorretamente" mesmo com a senha
-    # certa. Comprovado alternando as duas formas com a mesma credencial:
-    #   GET /            -> recusado   (2 de 2)
-    #   GET /?sign_in=1  -> LOGOU      (2 de 2)
-    # A versao original enviava o POST DUAS vezes; o primeiro era o que
-    # inicializava o fluxo, e o GET cumpre esse papel sem mandar a senha duas
-    # vezes.
+    # Autenticacao (login_autenticar, em loginlogoff.sh): o GET de
+    # /?sign_in=1 antes do POST e obrigatorio; vindo da home, o servidor
+    # recusa a senha certa.
     login_autenticar || return 1
 
     if [ "$LOGIN_ERRO" = rede ]; then
@@ -241,10 +188,7 @@ do_login() {
         # HP maximo muda pouco: busca uma vez por login, para o percentual.
         fetch_train_stats 2>/dev/null
         parse_status "$PAGE"
-        # Grava a linha de status ja no login. Antes o msg_file so era
-        # escrito dentro de start(), que roda apenas em minutos
-        # especificos — entao o func_cat nao tinha o que exibir por
-        # muito tempo, ou exibia um arquivo antigo.
+        # Grava a linha de status ja no login, para o func_cat ter o que exibir.
         messages_info
         printf "[%s] %s — login OK\n" "$SLS_TAG" "$ACC"
         unset PAGE
@@ -266,13 +210,7 @@ while true; do
         break
     fi
 
-    # FALHA DE REDE nao escala o backoff.
-    #
-    # O curl devolve codigo != 0 quando nao conseguiu falar com o servidor
-    # (28 timeout, 7 recusado, 6 DNS). Isso nao diz nada sobre a senha.
-    # Tratar igual a uma credencial recusada fazia um soluco de poucos
-    # segundos no servidor jogar a conta para 5 ou 15 minutos parada — e,
-    # com varias contas subindo juntas, todas caiam nisso ao mesmo tempo.
+    # FALHA DE REDE nao escala o backoff: nao diz nada sobre a senha.
     if [ "${LOGIN_ERRO:-credencial}" = "rede" ]; then
         _wait=$(( 20 + ($$ % 20) ))
         printf "[%s] %s — servidor nao respondeu, nova tentativa em %ss\n" \
@@ -282,22 +220,17 @@ while true; do
         sleep "$_wait"
         login_delay=30
         login_try=0
-        # O COOKIE FICA. Apagar aqui transformava cada soluco de rede num
-        # login completo na tentativa seguinte: com o servidor voltando, as
-        # 16 contas faziam POST de login em vez de reaproveitar a sessao de
-        # 30 dias (visto em 12/09 18:18: 16 "login OK", 0 "reaproveitada").
-        # Se o cookie estiver mesmo morto, o GET /user da proxima tentativa
+        # O COOKIE FICA: apagar transformaria cada soluco de rede num login
+        # completo. Se estiver mesmo morto, o GET /user da proxima tentativa
         # mostra a pagina sem conta e o POST acontece normalmente.
         continue
     fi
 
-    # CREDENCIAL RECUSADA: aqui sim o backoff cresce, porque insistir de
-    # segundo em segundo com senha errada so alimenta o rate-limit do IP.
+    # CREDENCIAL RECUSADA: aqui sim o backoff cresce (insistir alimenta o
+    # rate-limit do IP).
     login_try=$((login_try + 1))
 
-    # Jitter: sem ele todas as contas que falham reincidem EM BLOCO no
-    # mesmo instante, do mesmo IP. Backoff sem aleatoriedade nao dispersa
-    # carga, apenas a agenda.
+    # Jitter: sem ele as contas que falham reincidem em bloco no mesmo instante.
     _half=$(( login_delay / 2 ))
     _wait=$(( _half + ( ($$ + login_try) % (_half + 1) ) ))
 
@@ -306,19 +239,9 @@ while true; do
     [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
     sleep "$_wait"
 
-    # A partir da 4a recusa o teto sobe para 15 min.
-    # ESCALADA SUAVE NO INICIO.
-    #
-    # Medido: uma conta com credencial CORRETA e recusada em cerca de
-    # 1 de cada 3 tentativas. Tres diagnosticos seguidos na mesma conta
-    # deram recusado / funcionou / funcionou. Ou seja, uma recusa
-    # isolada nao prova senha errada — o servidor simplesmente nega as
-    # vezes quando ha varias contas do mesmo IP no ar.
-    #
-    # Escalar para 5 ou 15 minutos ja na segunda recusa deixava uma
-    # conta boa parada por muito tempo a toa. As tres primeiras
-    # recusas agora tem espera curta; a escalada so vale para o caso
-    # em que a recusa e mesmo persistente.
+    # Escalada suave: o servidor recusa as vezes credencial correta com
+    # varias contas no IP. Tres primeiras recusas: 60s; ate a 6a: 5 min;
+    # depois 15 min.
     if   [ "$login_try" -le 3 ]; then _cap=60
     elif [ "$login_try" -le 6 ]; then _cap=300
     else                               _cap=900
@@ -346,13 +269,9 @@ func_unset() {
 
 [ -n "$SLS_STATUS_FILE" ] && echo "running" > "$SLS_STATUS_FILE"
 
-# LIGA DO DIA NA ENTRADA.
-#
-# A visita da Liga e as 00:30 (league.sh). Com o bot desligado nesse
-# horario, ela e feita aqui, logo depois do login: recompensa e cinco lutas.
-# Ja feita no dia, o marcador fecha a Liga e nada acontece. Batalha para
-# retomar e minuto de inscricao de evento vem primeiro — nesses casos a
-# varredura seguinte faz a Liga. Modo caverna nao joga a Liga.
+# LIGA DO DIA NA ENTRADA: a visita da Liga e as 00:30 (league.sh); com o bot
+# desligado nesse horario, ela e feita aqui. Batalha para retomar e minuto de
+# inscricao de evento vem primeiro. Modo caverna nao joga a Liga.
 case "$RUN" in
     *-cv*) ;;
     *) if ! batalha_pendente && liga_fora_da_inscricao; then
@@ -362,21 +281,13 @@ esac
 
 printf "[%s] %s — loop principal iniciado\n" "$SLS_TAG" "$ACC"
 
-# PAUSA
-#
-# Pausar nao desloga: o worker apenas deixa de agir e continua vivo,
-# com a sessao intacta. Ao retomar, ele volta de onde parou sem
-# precisar autenticar de novo.
-#
+# PAUSA: nao desloga, o worker so deixa de agir e mantem a sessao.
 #   $HOME/.sls/PAUSED   pausa todas as contas
 #   $TMP/PAUSED         pausa somente esta conta
 
-# Limite dos logs da conta, conferido a cada ciclo: o sls.sh roda por meses
-# sem reiniciar. Copia e esvazia no lugar, sem mv: o sls.log e o arquivo que
-# o play.sh abriu com ">>", e o processo continua escrevendo no que abriu.
-# Com mv o log seguia crescendo no .1 e o sls.log ficava vazio.
-# O tamanho e conferido a cada 10 voltas (~10 min): eram dois "wc" por
-# volta, e o log cresce poucos KB por minuto ate o limite de 5 MB.
+# Limite dos logs da conta (5 MB), conferido a cada 10 voltas. Copia e
+# esvazia no lugar, sem mv: o processo continua escrevendo no arquivo que o
+# play.sh abriu com ">>".
 _rl_voltas=0
 rotate_log() {
     _rl_voltas=$(( _rl_voltas + 1 ))

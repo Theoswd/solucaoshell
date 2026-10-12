@@ -1,27 +1,12 @@
 #!/bin/sh
-# requeriments.sh
-# No modelo multi-conta, servidor/URL/TMP sao injetados pelo play.sh
-# via variaveis de ambiente (SLS_SRV, SLS_URL, SLS_ACC_DIR, etc)
-# Aqui fica so o User-Agent da conta.
+# requeriments.sh - User-Agent da conta (servidor/URL/TMP vem do play.sh
+# pelas variaveis SLS_SRV, SLS_URL, SLS_ACC_DIR).
 
-# USER-AGENT DA CONTA — SORTEADO UMA VEZ, DEPOIS FIXO.
-#
-# CORRECAO 1 (a conta trocava de navegador a cada reinicio): o sorteio
-# acontecia em TODO arranque do worker. Do outro lado, a mesma sessao —
-# mesmo cookie, mesmo IP — aparecia ora como Chrome no Windows, ora como
-# Safari no Mac. Um navegador de verdade nao faz isso. Agora o agente e
-# sorteado na primeira vez e gravado em $TMP/ua: cada conta passa a ser um
-# aparelho constante. Para sortear outro, basta apagar esse arquivo.
-#
-# CORRECAO 2 (todas as contas com o mesmo agente): "srand()" sem argumento
-# e semeado pelo RELOGIO em varios awk (busybox, mawk antigo). Como as
-# contas sobem no mesmo segundo, todas sorteavam o MESMO numero — a lista
-# de 72 agentes virava um so. A semente agora leva o PID, o mesmo padrao
-# que o cq_sorteia ja usava por este motivo.
-#
-# CORRECAO 3: "wc -l" nao conta a ultima linha quando o arquivo nao termina
-# em quebra de linha, e o ultimo agente da lista nunca era sorteado. O
-# "grep -c ''" conta linha por linha.
+# USER-AGENT DA CONTA — SORTEADO UMA VEZ, DEPOIS FIXO em $TMP/ua: a mesma
+# sessao nao troca de navegador a cada reinicio. Para sortear outro, basta
+# apagar esse arquivo. A semente leva o PID (srand() sem argumento e o
+# relogio, e as contas sobem no mesmo segundo). "grep -c ''" conta tambem a
+# ultima linha sem quebra, que o "wc -l" perde.
 random_ua() {
     # Ja sorteado: reusa. Leitura embutida, sem nenhum processo.
     if [ -s "$TMP/ua" ]; then

@@ -1,11 +1,9 @@
 #!/bin/sh
 # lib/batalhas.sh - Resumo das ultimas batalhas de cada conta, SOMENTE LEITURA
 #
-# Le o sls.log de cada conta (e o sls.log.1, da rotacao) e mostra, por
-# evento, a ultima batalha: a hora em que comecou, quantas paginas de luta
-# leu (cada acao do laco relê a pagina: e quase o numero de acoes), o menor
-# HP visto, as trocas por aliado, o fogo amigo e por que a luta acabou.
-# Nao toca em processo nenhum.
+# Le o sls.log (e o sls.log.1) de cada conta e mostra, por evento, a ultima
+# batalha: hora de inicio, paginas de luta lidas (~ numero de acoes), menor
+# HP, trocas por aliado, fogo amigo e por que acabou. Nao toca em processo.
 #
 # Uso (pelo status.sh):
 #   ./status.sh -batalhas             todas as contas, todos os eventos
