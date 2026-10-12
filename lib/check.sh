@@ -11,6 +11,35 @@
 # func_sleep, que define o i logo antes (conferido: a espera sai 15s, nao
 # 17s). Mas basta alguem chamar o func_cat de outro lugar para o bot passar
 # a descansar 12 segundos em vez de 60.
+
+# UM GREP POR PAGINA, NAO UM POR INDICE.
+#
+# As missoes (0 a 16) e as reliquias (0 a 11) eram procuradas com um
+# grep|sed por indice, ~90 processos a cada 20 min por conta, quase sempre
+# sem link nenhum. Agora _ck_lista guarda os links da pagina numa linha
+# cada, e _ck_lista volta a ler so depois de um clique (a pagina mudou). O
+# _ck_link acha o primeiro link do indice na lista, como o grep|sed achava.
+_ck_lista() {
+    _ck_l=`grep -o -E "${1}[?]r=[0-9]+" "$TMP/SRC"`
+}
+
+# _ck_link PREFIXO_COM_INDICE? -> click (vazio e 1 quando nao ha)
+_ck_link() {
+    click=""
+    _ck_t="
+$_ck_l"
+    case "$_ck_t" in
+        *"
+$1"*) ;;
+        *) unset _ck_t; return 1 ;;
+    esac
+    _ck_t=${_ck_t#*"
+$1"}
+    click="$1${_ck_t%%"
+"*}"
+    unset _ck_t
+}
+
 check_missions() {
     printf "Checking Missions\n"
 
@@ -21,12 +50,13 @@ check_missions() {
     # O SRC passa a ser a pagina de resultado do bau (ou da missao), entao o
     # proximo link era procurado na pagina errada: saia um por passagem. Cada
     # clique rele /quest/, que tambem traz o nonce novo.
+    _ck_lista "/quest/openChest/[0-9]+/"
     for _ck_i in 1 2; do
-        click=`grep -o -E "/quest/openChest/$_ck_i/[?]r=[0-9]+" "$TMP/SRC" | head -n1`
-        if [ -n "$click" ]; then
+        if _ck_link "/quest/openChest/$_ck_i/?"; then
             fetch_page "$click"
             printf "Chest %s opened\n" "$_ck_i"
             fetch_page "/quest/"
+            _ck_lista "/quest/openChest/[0-9]+/"
         fi
     done
 
@@ -35,12 +65,13 @@ check_missions() {
     fi
 
     _ck_i=0
+    _ck_lista "/quest/end/[0-9]+"
     while [ "$_ck_i" -le 16 ]; do
-        click=`grep -o -E "/quest/end/${_ck_i}[?]r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
-        if [ -n "$click" ]; then
+        if _ck_link "/quest/end/${_ck_i}?"; then
             fetch_page "$click"
             printf "Mission %s Completed\n" "$_ck_i"
             fetch_page "/quest/"
+            _ck_lista "/quest/end/[0-9]+"
         fi
         _ck_i=$((_ck_i + 1))
     done
@@ -65,15 +96,17 @@ check_rewards() {
     fetch_page "/relic/reward/"
 
     _ck_i=0
+    _ck_lista "/relic/reward/[0-9]+/"
     while [ "$_ck_i" -le 11 ]; do
-        click=`grep -o -E "/relic/reward/${_ck_i}/[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
-        if [ -n "$click" ]; then
+        if _ck_link "/relic/reward/${_ck_i}/?"; then
             fetch_page "$click"
             printf "Relic %s collected\n" "$_ck_i"
             fetch_page "/relic/reward/"
+            _ck_lista "/relic/reward/[0-9]+/"
         fi
         _ck_i=$((_ck_i + 1))
     done
+    unset _ck_l
 }
 
 apply_event() {

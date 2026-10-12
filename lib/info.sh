@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.84"
+versionNum="3.9.85"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -1223,18 +1223,38 @@ parse_status() {
     # numero, contanto que nenhum deles seja digito. Como "[^0-9]" nao casa
     # digito, o numero capturado e sempre o PRIMEIRO depois do icone — a
     # folga nao deixa o seletor pular para um numero vizinho.
-    ACC_HP=`printf '%s' "$_pg" | grep -o -E "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
-    ACC_MP=`printf '%s' "$_pg" | grep -o -E "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
+    #
+    # UM GREP PARA OS CINCO. Eram cinco grep|grep|head (25 processos a cada
+    # leitura do cabecalho). Os mesmos cinco padroes vao num grep so, e o
+    # numero sai do fim de cada achado no proprio shell: vale o primeiro de
+    # cada icone, como o head -n1. Os marcadores nao tem digito, entao o
+    # numero e o que vem depois do ultimo nao-digito (HP, MP, nivel) ou do
+    # primeiro digito em diante (ouro e prata, guardados como o jogo mostra:
+    # pode vir "408,1M").
     _lvl_ant="$ACC_LVL"
-    ACC_LVL=`printf '%s' "$_pg" | grep -o -E "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" | grep -o -E '[0-9]{1,4}$' | head -n1`
+    ACC_HP=""; ACC_MP=""; ACC_LVL=""; ACC_GOLD=""; ACC_SILVER=""
+    _ps_l=`printf '%s' "$_pg" | grep -o -E \
+        -e "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" \
+        -e "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" \
+        -e "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?"`
+    while IFS= read -r _ps_x; do
+        case "$_ps_x" in
+            health*) [ -n "$ACC_HP" ]     || ACC_HP=${_ps_x##*[!0-9]} ;;
+            mana*)   [ -n "$ACC_MP" ]     || ACC_MP=${_ps_x##*[!0-9]} ;;
+            level*)  [ -n "$ACC_LVL" ]    || ACC_LVL=${_ps_x##*[!0-9]} ;;
+            gold*)   [ -n "$ACC_GOLD" ]   || ACC_GOLD=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+            silver*) [ -n "$ACC_SILVER" ] || ACC_SILVER=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+        esac
+    done <<EOF
+$_ps_l
+EOF
+    unset _ps_l _ps_x
     # Subiu de nivel: HP maximo e teto de energia mudaram (ver fetch_train_stats).
     [ -n "$_lvl_ant" ] && [ -n "$ACC_LVL" ] && [ "$_lvl_ant" != "$ACC_LVL" ] && \
         rm -f "$TMP/last_train" 2>/dev/null
     unset _lvl_ant
-
-    # Ouro e prata: guarda o texto como o jogo mostra (pode vir "408,1M").
-    ACC_GOLD=`printf '%s' "$_pg" | grep -o -E "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
-    ACC_SILVER=`printf '%s' "$_pg" | grep -o -E "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
 
     NOWHP="$ACC_HP"; NOWMP="$ACC_MP"
 
@@ -1268,7 +1288,11 @@ parse_status() {
     # O teto do /train, quando maior. A energia so vale como numero inteiro:
     # separador de milhar sai, valor com sufixo (K/M) fica de fora.
     case "$FIXHP" in ''|*[!0-9]*) ;; *) [ "$FIXHP" -gt "$_mx_h" ] && _mx_h="$FIXHP" ;; esac
-    _mx_t=`printf '%s' "$ACC_ENE" | tr -d ".,'"` 2>/dev/null
+    # Sem separador (o caso comum), sem tr.
+    case "$ACC_ENE" in
+        *[.,\']*) _mx_t=`printf '%s' "$ACC_ENE" | tr -d ".,'"` 2>/dev/null ;;
+        *)        _mx_t="$ACC_ENE" ;;
+    esac
     case "$_mx_t" in ''|*[!0-9]*) ;; *) [ "$_mx_t" -gt "$_mx_e" ] && _mx_e="$_mx_t" ;; esac
 
     if [ -n "$ACC_HP" ] && [ "$_mx_h" -gt 0 ]; then

@@ -52,8 +52,23 @@ is_logged_in() {
 extract_username() {
     page="$1"
 
-    acc=`printf '%s' "$page" | grep -o -E "<title>[^<]{1,40}" | head -n1 | sed 's/<title>//'`
-    acc=`printf '%s' "$acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
+    # O caso de toda pagina do jogo sem processo nenhum: o texto depois do
+    # primeiro <title>, ate o "<" ou o fim da linha, com ate 40 caracteres.
+    # Fora disso (titulo vazio, comprido ou com outro <title> antes), o
+    # grep de sempre.
+    acc=""
+    case "$page" in
+        *"<title>"*)
+            acc=${page#*"<title>"}; acc=${acc%%"<"*}; acc=${acc%%"
+"*}
+            [ "${#acc}" -le 40 ] || acc="" ;;
+    esac
+    if [ -n "$acc" ]; then
+        acc=${acc#"${acc%%[![:space:]]*}"}; acc=${acc%"${acc##*[![:space:]]}"}
+    else
+        acc=`printf '%s' "$page" | grep -o -E "<title>[^<]{1,40}" | head -n1 | sed 's/<title>//'`
+        acc=`printf '%s' "$acc" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'`
+    fi
     # Descarta titulos de erro (pagina 404/deslogada), que nao sao nome de conta.
     case "$acc" in
         *[Ee]rror*|*404*|*[Nn]ot*found*|"") acc="" ;;

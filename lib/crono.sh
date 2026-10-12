@@ -731,9 +731,10 @@ ativ_marcar() { agora_s; echo "$_AGORA" > "$TMP/last_$1" 2>/dev/null; }
 # Os ramos de prioridade entram em :55-:59 (evento em :00) ou :25-:29
 # (evento em :30), entao a conta e direta.
 evento_dedicar() {
-    _ed_m=`date +%M | sed 's/^0//'`
+    # Minuto e segundo de um date so (eram dois date|sed).
+    _ed_s=`date +%M%S`
+    _ed_m=${_ed_s%??}; _ed_m=${_ed_m#0}; _ed_s=${_ed_s#??}; _ed_s=${_ed_s#0}
     case "$_ed_m" in ''|*[!0-9]*) _ed_m=0 ;; esac
-    _ed_s=`date +%S | sed 's/^0//'`
     case "$_ed_s" in ''|*[!0-9]*) _ed_s=0 ;; esac
     if   [ "$_ed_m" -ge 50 ]; then _ed_f=$(( 60 - _ed_m ))
     elif [ "$_ed_m" -ge 20 ] && [ "$_ed_m" -lt 30 ]; then _ed_f=$(( 30 - _ed_m ))
@@ -1031,7 +1032,7 @@ start() {
     # segunda chamada no mesmo minuto so espera o minuto virar.
     _st_min=`date +%Y%m%d%H%M`
     if [ "`cat "$TMP/last_start" 2>/dev/null`" = "$_st_min" ]; then
-        _st_s=`date +%S | sed 's/^0//'`
+        _st_s=`date +%S`; _st_s=${_st_s#0}
         case "$_st_s" in ''|*[!0-9]*) _st_s=0 ;; esac
         unset _st_min
         espera_interrompivel $(( 60 - _st_s ))

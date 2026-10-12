@@ -2970,6 +2970,7 @@ check "fetch_page sem link: nao pede a Home, esvazia a pagina e diz a origem" "f
 # linha, em qualquer forma: `...`, $(...), "> ARQUIVO", "if grep -o",
 # com ou sem outros comandos no pipe e com continuacao de linha.
 # Contar (wc -l, grep -c) e testar (grep -q) nao pedem uma linha so.
+# A lista do check.sh (_ck_l=) tambem nao: o _ck_link tira dela um link so.
 _soltos=$(awk '
     FNR == 1 { buf = "" }
     /^[ \t]*#/ { next }
@@ -2980,7 +2981,7 @@ _soltos=$(awk '
         buf = ""
     }
     l ~ /grep -o/ && (l ~ /r\[=\]|r=/ || l ~ /\(\[0-9\]\+\)/) {
-        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q/) next
+        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q|_ck_l=/) next
         f = FILENAME; sub(/.*\//, "", f); printf "%s:%s ", f, FNR
     }' "$LIB"/*.sh)
 check "grep -o de link ou HP maximo sempre com uma linha so" "" "$_soltos"
@@ -4117,6 +4118,49 @@ check "fim de luta sem pausa morta (fora o Duelo, entre as rodadas)" 0 \
     "`cat "$LIB/flagfight.sh" "$LIB/king.sh" "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clancoliseum.sh" "$LIB/clancommand.sh" "$LIB/undying.sh" | grep -c '^  sleep 1[05]s$'`"
 check "play.sh: espera o worker sair em vez de 2s fixos por conta" 0 \
     "`sed -n '/^kill_worker_tree() {/,/^}/p' "$ROOT/play.sh" | grep -c '^    sleep 2$'`"
+
+# ---- 3.9.85: menos processos na rotina, o mesmo resultado ----
+# Os comandos externos viram funcoes que anotam a chamada e repassam.
+_cnt85() { for _c in grep sed head tr awk cat date; do eval "$_c() { echo $_c >> \"\$TMP/cmd\"; command $_c \"\$@\"; }"; done; }
+_r=`( TMP="$_td20/f85a"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; _cnt85; : > "$TMP/cmd"
+      FIXHP=""; ACC_ENE=1555; ACC_LVL=""
+      parse_status "<title>X</title><img src='/images/icon/health.png' alt='hp'/>
+<img src='/images/icon/health.png' alt='hp'/> <span class='white'>65312</span> | <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>809</span>
+<img src='/images/icon/level.png' alt='lvl'/> 90 <img src='/images/icon/gold.png' alt='g'/> 1.234 <img src='/images/icon/silver.png' alt='s'/> 408,1M
+<img src='/images/icon/gold.png' alt='g'/> 7"
+      unset -f grep sed head tr awk cat date
+      printf '%s/%s/%s/%s/%s ' "$ACC_HP" "$ACC_MP" "$ACC_LVL" "$ACC_GOLD" "$ACC_SILVER"; grep -c '^grep$' "$TMP/cmd"; grep -c '^tr$' "$TMP/cmd" )`
+check "parse_status: os cinco numeros num grep so, energia sem tr" "65312/809/90/1.234/408,1M 1
+0" "$_r"
+_r=`( TMP="$_td20/f85b"; mkdir -p "$TMP"; . "$LIB/session_check.sh" > /dev/null 2>&1; _cnt85; : > "$TMP/cmd"
+      _cr=\`printf '\\r'\`; printf '[%s]' "\`extract_username "<head><title>  gatuno $_cr</title>"\`"; command wc -l < "$TMP/cmd"
+      printf '[%s]' "\`extract_username "<title></title><title>Outra</title>"\`"
+      printf '[%s]' "\`extract_username "<title>NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN</title>"\`" )`
+check "extract_username: titulo comum sem processo; vazio e comprido pelo grep" "[gatuno]0
+[Outra][NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN]" "$_r"
+_r=`( TMP="$_td20/f85c"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1; _cnt85
+      printf 'FUNC_trade=n\r\nFUNC_trade_dias\nALLIES=a:b\n' > "$TMP/config.cfg"; : > "$TMP/cmd"
+      load_config; unset -f grep sed head tr awk cat date; printf '%s %s %s ' "$FUNC_trade" "$FUNC_trade_dias" "$ALLIES"; grep -c '^grep$' "$TMP/cmd"
+      grep -c '^FUNC_trade_dias=365$' "$TMP/config.cfg"; grep -c '=' "$TMP/config.cfg" )`
+check "load_config: chaves que faltam num awk so (era um grep por chave)" "n 365 a:b 1
+1
+22" "$_r"
+_r=`( TMP="$_td20/f85d"; mkdir -p "$TMP/p"; . "$LIB/check.sh" > /dev/null 2>&1; _cnt85
+      FUNC_collect_mission_rewards=y; FUNC_check_rewards=y
+      fetch_page() { echo "$1" >> "$TMP/req"; case "$1" in
+          /quest/) [ -f "$TMP/q1" ] && echo "<a href='/quest/end/10?r=5'>" > "$TMP/SRC" || echo "<a href='/quest/end/012?r=9'><a href='/quest/end/1?r=3'> <a href='/quest/end/1?r=4'>
+<a href='/quest/openChest/2/?r=8'>" > "$TMP/SRC" ;;
+          /quest/end/1*) : > "$TMP/q1"; : > "$TMP/SRC" ;;
+          /relic/reward/) echo "<a href='/relic/reward/3?r=1'><a href='/relic/reward/11/?r=2'>" > "$TMP/SRC"; : > "$TMP/r" ;;
+          *) : > "$TMP/SRC" ;; esac; }
+      : > "$TMP/cmd"; check_missions > /dev/null; check_rewards > /dev/null; unset -f grep sed head tr awk cat date; tr '\n' ' ' < "$TMP/req"; grep -c '^grep$' "$TMP/cmd" )`
+check "missoes e reliquias: um grep por pagina, os mesmos cliques" "/quest/ /quest/openChest/2/?r=8 /quest/ /quest/end/1?r=3 /quest/ /quest/end/10?r=5 /quest/ /collector/ /relic/reward/ /relic/reward/11/?r=2 /relic/reward/ 8" "$_r"
+_r=`( TMP="$_td20/f85e"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { echo "$1" >> "$TMP/d"; case "$1" in +%M%S) echo 5602 ;; +%M) echo 56 ;; +%S) echo 02 ;; +%s) echo 1000 ;; esac; }
+      sleep() { :; }; evento_dedicar
+      [ "\`cat "$TMP/em_evento"\`" = $(( 1000 + 240 - $$ % 10 )) ] && printf 'hora_certa '; wc -l < "$TMP/d" )`
+check "evento_dedicar: minuto e segundo de um date so" "hora_certa 2" "$_r"
+unset -f _cnt85
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83
