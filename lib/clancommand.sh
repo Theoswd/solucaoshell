@@ -255,24 +255,32 @@ clancommand_fight() {
     if [ -s HEAL ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
+      _saiu=0
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cc_access
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_heal
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_heal
+      fi
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
+      _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cc_access
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_dodge
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_dodge
+      fi
 
     # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE (troca_aliado,
     # em allies.sh, com o fogo amigo). So por aliado, como nas outras
@@ -352,7 +360,9 @@ clancommand_start() {
   if [ "`estado_luta "$src_ram" clancommand`" = luta ]; then
     printf "Torneio de equipe em andamento - voltando para a luta\n"
     batalha_marcar clancommand
-    full_atualizar "$TMP/FULL"
+    # O /train, se sair, vem depois desta pagina: a luta comeca com ela
+    # relida (os links dela ja nao valeriam).
+    full_relendo "$TMP/FULL" /clancommand/ "$src_ram"
     clancommand_fight
     clancommand_inscrever
     return 0
@@ -404,7 +414,11 @@ clancommand_start() {
   fi
 
   # FASE B — O INICIO ESTA PERTO: ENTRA E LUTA.
-  full_atualizar "$TMP/FULL"
+  # O link da inscricao tem nonce: saindo o /train depois desta pagina, ela e
+  # relida e o link sai dela de novo.
+  if full_relendo "$TMP/FULL" /clancommand/ "$src_ram"; then
+    _cc_link=`_cc_inscricao "$src_ram"`
+  fi
   batalha_marcar clancommand
   if [ -n "$_cc_link" ]; then
     (

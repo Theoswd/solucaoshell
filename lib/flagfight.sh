@@ -109,27 +109,35 @@ flagfight_fight() {
     if [ -s SHIELD ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
+      _saiu=0
       (
         read -r _l < SHIELD; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
       # HP maximo (full_ram) preservado: vem do /train e nao pode ser trocado
       # pelo HP atual pos-escudo, senao o limiar HLHP cai a cada golpe e a
       # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_heal
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat USH > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_heal
+      fi
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
+      _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
-      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_dodge
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat USH > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_dodge
+      fi
 
     # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
     #

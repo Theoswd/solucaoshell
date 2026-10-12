@@ -52,7 +52,8 @@ for _d in "$BASE"/BR_*; do
         /King of the Immortals will be started/ { inicio("Rei"); next }
         /Valley of the Immortals will be started/ { inicio("Vale"); next }
         /Torneio de equipe: (entrando|.*aguardando a luta|em andamento)/ { inicio("Equipe"); next }
-        /^  Entering\.\.\.$/ || /Luta do coliseu em andamento/ { if (!v) inicio("Coliseu"); next }
+        # O inicio() fecha o evento que ficou aberto (sem a linha "ok").
+        /^  Entering\.\.\.$/ || /Luta do coliseu em andamento/ { inicio("Coliseu"); next }
         !v { next }
         /Em batalha/ {
             n++
@@ -68,7 +69,9 @@ for _d in "$BASE"/BR_*; do
         /Battle (is )?over|Undying: luta encerrada/ {
             m = $0; sub(/^[^(]*\(/, "", m); sub(/\)\.?$/, "", m); motivo = m; next
         }
-        /nenhuma luta na pagina/ { motivo = "nenhuma luta na pagina"; next }
+        # Sem luta o evento termina aqui, sem a linha "ok": fecha, senao o
+        # Coliseu seguinte entrava na conta dele.
+        /nenhuma luta na pagina/ { fecha("nenhuma luta na pagina"); next }
         /It was not possible to start the battle/ { motivo = "nao conseguiu entrar"; next }
         /^(ClanFight|Clan duel|Altars|Clancoliseum|Flagfight|Clancommand|King|Undying) ok$/ { fecha(""); next }
         /^The battle is over!$/ { if (e == "Coliseu") fecha(""); next }

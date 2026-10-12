@@ -1,26 +1,14 @@
-# HP maximo (full_atualizar) e, se ele pediu alguma pagina (o /train), o
-# /coliseum relido: os links (?r=) da pagina de antes ja nao valem.
+# HP maximo e, se o /train saiu, o /coliseum relido (full_relendo, info.sh).
 # 0 = releu a pagina, 1 = nada saiu e a pagina e a mesma.
-coliseum_hpmax() {
-    _col_ur=""; { read -r _col_ur < "$TMP/.ult_req"; } 2>/dev/null
-    full_atualizar "$full_ram"
-    _col_ur2=""; { read -r _col_ur2 < "$TMP/.ult_req"; } 2>/dev/null
-    if [ "$_col_ur2" = "$_col_ur" ]; then
-        unset _col_ur _col_ur2
-        return 1
-    fi
-    unset _col_ur _col_ur2
-    (
-        run_curl_exec "$URL/coliseum" > "$src_ram"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
-    return 0
-}
+coliseum_hpmax() { full_relendo "$full_ram" /coliseum "$src_ram"; }
 
 # shellcheck disable=SC2155
 coliseum_fight() {
     # A chave vale aqui, e nao so no coliseum_start: o horario da madrugada
     # (run.sh) chama esta funcao direto.
+    # 1 = este pulso nao achou luta (nem inscricao nem luta em andamento): o
+    # ramo da madrugada (run.sh) nao repete o pulso no mesmo minuto.
+    COLISEU_SEM_LUTA=1
     [ "$FUNC_coliseum" = "n" ] && return 0
     # Arquivos de batalha gravados no diretorio da conta (sem mktemp)
     src_ram="$TMP/col_src"
@@ -84,6 +72,7 @@ coliseum_fight() {
     _col_estado=`estado_luta "$src_ram" coliseum`
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
+      COLISEU_SEM_LUTA=0
       if [ -n "$go_stop" ]; then
         # Inscricao: a batalha fica anotada para o worker relancado voltar.
         batalha_marcar coliseum
@@ -225,12 +214,14 @@ coliseum_fight() {
                 (
                     run_curl_exec "${URL}${HEAL}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
-                time_exit 17
+                time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
                 cl_access
                 # HP maximo (full_ram) preservado: vem do /train. Troca-lo
                 # pelo HP atual pos-cura fazia o limiar HLHP cair a cada
                 # golpe e a conta "achar" que continuava com HP cheio.
-                last_heal=$now
+                # Pedido que nem chegou ao servidor: a cura nao valeu (ver
+                # pedido_nao_saiu). O relogio do ataque marca do mesmo jeito.
+                [ "$_saiu" = 1 ] && last_heal=$now
                 last_atk=$now
 
             elif [ -n "$DODGE" ] && [ "$_grey" = 0 ] && \
@@ -239,10 +230,12 @@ coliseum_fight() {
                 (
                     run_curl_exec "${URL}${DODGE}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
-                time_exit 17
+                time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
                 cl_access
-                OLDHP=$USH; _caiu=0
-                last_dodge=$now
+                if [ "$_saiu" = 1 ]; then
+                    OLDHP=$USH; _caiu=0
+                    last_dodge=$now
+                fi
                 last_atk=$now
 
             elif [ -n "$ATKRND" ] && \

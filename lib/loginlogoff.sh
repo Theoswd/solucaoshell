@@ -1,6 +1,57 @@
 # shellcheck disable=SC2148
 # loginlogoff.sh - relogin automatico quando sessao expira
 
+# A AUTENTICACAO, UMA SO PARA O LOGIN E A RECONEXAO.
+#
+# Era a mesma sequencia em duas copias, o do_login (sls.sh) e o login_logoff
+# abaixo: credencial do cript_file, trava global de login, GET da pagina de
+# login (vindo de outra pagina o servidor recusa a senha certa), POST com a
+# senha pelo stdin (fora do argv, que aparece no ps) e o /user.
+#   0 = os pedidos sairam. PAGE = o /user. LOGIN_ERRO=rede quando o POST ou
+#       o /user ficou sem resposta (o curl falhou ou veio vazio), senao
+#       LOGIN_ERRO=credencial: quem chama le a pagina e decide.
+#   1 = credencial ilegivel. Nada sai: um POST vazio contaria no limite de
+#       logins por IP e seria lido como senha recusada.
+login_autenticar() {
+    _la_creds=`base64 -d "$TMP/cript_file" 2>/dev/null`
+    if [ -z "$_la_creds" ]; then
+        printf "[%s] %s — ERRO: cript_file ilegivel\n" "$SLS_TAG" "$SLS_USER"
+        LOGIN_ERRO=credencial
+        unset _la_creds
+        return 1
+    fi
+    # Sem echo|sed: o echo do dash interpreta "\", e uma senha com "\n" ou
+    # "\c" chegava alterada ao servidor.
+    luser=${_la_creds#login=}; luser=${luser%%"&pass="*}
+    lpass=${_la_creds#"login=${luser}&pass="}
+    unset _la_creds
+
+    # A trava cobre so a autenticacao: sai antes de qualquer decisao, em todo
+    # caminho (sucesso, recusa ou rede).
+    type login_lock > /dev/null 2>&1 && login_lock
+    run_curl "${URL}/?sign_in=1" > /dev/null 2>&1
+    printf %s "$lpass" | run_curl \
+        --data-urlencode "login=${luser}" \
+        --data-urlencode "pass@-" \
+        "${URL}/?sign_in=1" > /dev/null
+    # O $? colado no POST: com outro comando no meio ele era o desse comando
+    # (sempre 0), e uma falha de rede no POST virava senha recusada, que
+    # escala a espera ate 15 min.
+    _la_rc=$?
+    unset luser lpass
+    PAGE=`run_curl "${URL}/user" 2>/dev/null`
+    _la_rc2=$?
+    type login_unlock > /dev/null 2>&1 && login_unlock
+
+    if [ "$_la_rc" -ne 0 ] || [ "$_la_rc2" -ne 0 ] || [ -z "$PAGE" ]; then
+        LOGIN_ERRO=rede
+    else
+        LOGIN_ERRO=credencial
+    fi
+    unset _la_rc _la_rc2
+    return 0
+}
+
 login_logoff() {
     PAGE=`run_curl "${URL}/user"`
 
@@ -47,63 +98,16 @@ login_logoff() {
     cript_file="$TMP/cript_file"
     [ ! -f "$cript_file" ] && return 1
 
-    # TRAVA GLOBAL DE LOGIN TAMBEM NA RECONEXAO.
-    #
-    # O do_login (sls.sh) ja serializa a autenticacao inicial, mas esta
-    # reconexao nao pegava a trava. Com muitas contas isso importa: quando o
-    # servidor derruba varias sessoes ao mesmo tempo — o caso comum com 15
-    # contas no mesmo IP — todas reconectavam no mesmo instante. O servidor
-    # estrangula essa rajada e responde com a MESMA mensagem de "senha
-    # incorreta", entao contas boas caem no backoff longo e ficam fora do ar
-    # justamente quando mais precisavam voltar.
-    _ll_lock=0
-    if type login_lock > /dev/null 2>&1; then
-        login_lock
-        _ll_lock=1
-    fi
-
-    # Mesmo motivo do do_login: a sessao precisa passar pela pagina de
-    # login antes do POST, senao o servidor recusa a credencial correta.
-    run_curl "${URL}/?sign_in=1" > /dev/null 2>&1
-
-    creds=`base64 -d "$cript_file" 2>/dev/null`
-    # Credencial ilegivel: um POST vazio contaria no limite de logins por IP
-    # e seria lido como senha recusada (o do_login ja confere isto).
-    if [ -z "$creds" ]; then
-        [ "$_ll_lock" = "1" ] && login_unlock
-        unset _ll_lock
-        printf "[%s] %s — ERRO: cript_file ilegivel\n" "$SLS_TAG" "$SLS_USER"
-        return 1
-    fi
-    # Sem echo|sed: ver do_login (sls.sh).
-    luser=${creds#login=}; luser=${luser%%"&pass="*}
-    lpass=${creds#"login=${luser}&pass="}
-    unset creds
-
-    # Senha pelo stdin, fora do argv (ver sls.sh).
-    printf %s "$lpass" | run_curl \
-        --data-urlencode "login=${luser}" \
-        --data-urlencode "pass@-" \
-        "${URL}/?sign_in=1" > /dev/null
-    _ll_rc=$?
-
-    unset luser lpass
-
-    # Um /user so, como no do_login. Aqui havia um "sleep 1" e um /user
-    # descartado antes deste, com a trava global de login presa.
-    PAGE=`run_curl "${URL}/user"`
-    _ll_rc2=$?
-    [ "$_ll_rc" -eq 0 ] && _ll_rc=$_ll_rc2
-
-    # A trava cobre so a autenticacao. Liberar aqui garante que ela sai em
-    # qualquer caminho — sucesso, recusa ou erro de rede.
-    [ "$_ll_lock" = "1" ] && login_unlock
-    unset _ll_lock
+    # A TRAVA GLOBAL DE LOGIN TAMBEM NA RECONEXAO (ver login_autenticar).
+    # Quando o servidor derruba varias sessoes de uma vez (15 contas no mesmo
+    # IP), todas reconectavam no mesmo instante; o servidor estrangula a
+    # rajada com a MESMA mensagem de "senha incorreta", e contas boas caiam
+    # no backoff longo justo quando precisavam voltar.
+    login_autenticar || return 1
 
     # Rede (POST ou /user sem resposta) nao e senha recusada: o log diz qual
     # foi, como o do_login separa.
-    if [ "$_ll_rc" -ne 0 ] || [ -z "$PAGE" ]; then _ll_porque="sem resposta do servidor"; else _ll_porque="login recusado"; fi
-    unset _ll_rc _ll_rc2
+    if [ "$LOGIN_ERRO" = rede ]; then _ll_porque="sem resposta do servidor"; else _ll_porque="login recusado"; fi
 
     if is_logged_in "$PAGE"; then
         unset _ll_porque

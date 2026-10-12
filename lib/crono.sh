@@ -288,6 +288,39 @@ atualiza_stats() {
     # entao ela parecia travada.
     fetch_train_stats 2>/dev/null
 
+    # A HOME DO DESCANSO NO LUGAR DO /user, SO DEPOIS DE CONFERIDA.
+    #
+    # O descanso le a Home a cada volta, e o /user era um pedido a mais a
+    # cada 5 min so para o painel. A Home lida ha menos de 2 min, viva e com
+    # os cinco icones do cabecalho, serve no lugar dele — mas so depois de o
+    # worker ver, uma vez, que ela da os mesmos numeros que o /user (nivel,
+    # ouro e prata iguais, HP e energia presentes). Sem bater em 3 conferencias,
+    # ou sem os cinco icones, segue tudo pelo /user, como antes. O nome da
+    # conta (ACC) continua vindo do /user do login.
+    _st_home=""
+    if [ "${HOME_STATS:-}" != 0 ]; then
+        _st_ok=0; { read -r _st_ok < "$TMP/.home_ok"; } 2>/dev/null
+        case "$_st_ok" in ''|*[!0-9]*) _st_ok=0 ;; esac
+        agora_s
+        _st_ok=$(( _AGORA - _st_ok ))
+        if [ "$_st_ok" -ge 0 ] && [ "$_st_ok" -lt 120 ]; then
+            _st_home=`cat "$TMP/REST" 2>/dev/null`
+            for _st_m in "health.png' alt='hp'/>" "mana.png' alt='mp'/>" "level.png' alt=" \
+                         "gold.png' alt='g'/>" "silver.png' alt='s'/>"; do
+                case "$_st_home" in *"$_st_m"*) ;; *) _st_home=""; break ;; esac
+            done
+        fi
+        unset _st_ok _st_m
+    fi
+    if [ "$HOME_STATS" = 1 ] && [ -n "$_st_home" ]; then
+        parse_status "$_st_home"
+        messages_info
+        ativ_marcar stats
+        printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
+        unset _st_home _aba_ant
+        return 0
+    fi
+
     _pg=`run_curl "${URL}/user" 2>/dev/null`
 
     # SESSAO CAIDA NO OCIO: RECONECTA EM VEZ DE DESISTIR.
@@ -322,18 +355,39 @@ atualiza_stats() {
 
     if [ -z "$_pg" ] || ! is_logged_in "$_pg"; then
         printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
-        unset _pg _aba_ant
+        unset _pg _aba_ant _st_home
         return 1
     fi
     _a=`extract_username "$_pg"`
     [ -n "$_a" ] && ACC="$_a"
     # Pagina logada: a sessao respondeu (libera a varredura, ver servidor_mudo).
     sessao_marcar
+    # Conferencia da Home (acima): os numeros dela antes, os do /user depois.
+    if [ -z "$HOME_STATS" ] && [ -n "$_st_home" ]; then
+        status_ler "$_st_home"
+        _st_h="$ACC_HP|$ACC_MP|$ACC_LVL|$ACC_GOLD|$ACC_SILVER"
+    fi
     parse_status "$_pg"
+    if [ -n "$_st_h" ]; then
+        case "$_st_h" in
+            ?*'|'?*"|$ACC_LVL|$ACC_GOLD|$ACC_SILVER")
+                if [ -n "$ACC_LVL" ] && [ -n "$ACC_GOLD" ] && [ -n "$ACC_SILVER" ]; then
+                    HOME_STATS=1
+                    printf "Painel: a Home traz os mesmos numeros do /user - o /user deixa de ser pedido\n"
+                fi ;;
+        esac
+        if [ -z "$HOME_STATS" ]; then
+            _st_n=$(( ${_st_n:-0} + 1 ))
+            if [ "$_st_n" -ge 3 ]; then
+                HOME_STATS=0
+                printf "Painel: a Home nao bate com o /user - os numeros seguem pelo /user\n"
+            fi
+        fi
+    fi
     messages_info
     ativ_marcar stats
     printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
-    unset _pg _a _aba_ant
+    unset _pg _a _aba_ant _st_home _st_h
 }
 
 # MASMORRA DO CLA: QUEM DECIDE E A PAGINA, NAO O RELOGIO.

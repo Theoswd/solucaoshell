@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.86"
+versionNum="3.9.87"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -72,6 +72,16 @@ time_exit() {
     fi
     unset _te_rc
     return 0
+}
+
+# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35: nome, conexao ou
+# TLS recusados, depois de um time_exit.) So nesses casos uma acao com
+# recarga (cura, escudo, esquiva) e tratada como nao feita e pode sair de
+# novo: com tempo esgotado ou pagina cortada o servidor pode ja ter usado o
+# elixir, e repetir gastaria outro.
+pedido_nao_saiu() {
+    case "${TE_RC:-0}" in 6|7|35) return 0 ;; esac
+    return 1
 }
 
 # Funcao central de requisicao via curl.
@@ -1065,6 +1075,29 @@ full_atualizar() { # arquivo_do_HP_maximo
     return 0
 }
 
+# HP MAXIMO ANTES DE AGIR NUMA PAGINA JA LIDA.   full_relendo FULL CAMINHO ARQ
+#
+# O full_atualizar pode pedir o /train (leitura com mais de 10 min). Saindo
+# esse pedido entre a leitura da pagina e o clique, o nonce (?r=) dela ja nao
+# vale e o servidor recusa a acao (ver clanquest.sh). Quando algum pedido
+# saiu (o .ult_req mudou), rele CAMINHO em ARQ.
+#   0 = releu (quem chama tira os links de novo), 1 = nada saiu.
+full_relendo() {
+    _fr_ur=""; { read -r _fr_ur < "$TMP/.ult_req"; } 2>/dev/null
+    full_atualizar "$1"
+    _fr_ur2=""; { read -r _fr_ur2 < "$TMP/.ult_req"; } 2>/dev/null
+    if [ "$_fr_ur2" = "$_fr_ur" ]; then
+        unset _fr_ur _fr_ur2
+        return 1
+    fi
+    unset _fr_ur _fr_ur2
+    (
+        run_curl_exec "${URL}$2" > "$3"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    return 0
+}
+
 # Alvo da inscricao, escalonado por conta: MMSS base mais 0 a VAO-1 segundos
 # (VAO padrao 30).
 #
@@ -1148,11 +1181,23 @@ ressuscitar() {
 hpmp() {
     # INICIO DO VALE: HP e mana maximos conferidos como no inicio das outras
     # batalhas (ver full_atualizar): relidos se a leitura tem mais de 10 min.
+    # O /train de baixo so sai se o fetch_train_stats nao acabou de ler um:
+    # com a pagina recem-lida e sem a mana nela, pedir de novo dava a mesma
+    # pagina. Sem resposta (ou sem pedido, leitura em dia), sai como antes.
+    _hp_fix=0; _hp_leu=0
     case " $* " in
-        *" -fix "*) SLS_MAXTIME=17; fetch_train_stats 10 2>/dev/null; unset SLS_MAXTIME ;;
+        *" -fix "*)
+            _hp_fix=1
+            _hp_ur=""; { read -r _hp_ur < "$TMP/.ult_req"; } 2>/dev/null
+            SLS_MAXTIME=17
+            if fetch_train_stats 10 2>/dev/null; then
+                _hp_ur2=""; { read -r _hp_ur2 < "$TMP/.ult_req"; } 2>/dev/null
+                [ "$_hp_ur2" = "$_hp_ur" ] || _hp_leu=1
+            fi
+            unset SLS_MAXTIME _hp_ur _hp_ur2 ;;
     esac
     # HP e mana maximos ja lidos neste processo: sem outro /train.
-    if echo "$@" | grep -q '\-fix' && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
+    if [ "$_hp_fix" = 1 ] && [ "$_hp_leu" = 0 ] && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
         (
             run_curl_exec "$URL/train" > "$TMP/TRAIN"
         ) </dev/null > /dev/null 2>&1 &
@@ -1161,6 +1206,7 @@ hpmp() {
         [ -n "$_fx" ] && FIXHP=$_fx
         FIXMP=`grep -o -E ': [0-9]+' "$TMP/TRAIN" | sed -n '5s/: //p'`
     fi
+    unset _hp_fix _hp_leu
 
     # Mesma leitura do parse_status. O " | " dos padroes antigos era
     # alternancia do ERE: a mana dentro de <span> saia vazia (MPPER 0).
@@ -1208,6 +1254,32 @@ hpmp() {
 #   icon/gold.png' alt='g'/> 396
 #   icon/silver.png' alt='s'/> 408,1M
 # Energia so aparece em /train: mana.png' alt=''/> Energia: 2125
+# Os cinco numeros do cabecalho (HP, energia, nivel, ouro, prata) de uma
+# pagina em ACC_HP, ACC_MP, ACC_LVL, ACC_GOLD e ACC_SILVER, sem gravar nada.
+# E a leitura do parse_status (ver os comentarios dele); o atualiza_stats a
+# usa tambem para conferir a Home contra o /user.
+status_ler() {
+    ACC_HP=""; ACC_MP=""; ACC_LVL=""; ACC_GOLD=""; ACC_SILVER=""
+    _ps_l=`printf '%s' "$1" | grep -o -E \
+        -e "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" \
+        -e "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" \
+        -e "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?"`
+    while IFS= read -r _ps_x; do
+        case "$_ps_x" in
+            health*) [ -n "$ACC_HP" ]     || ACC_HP=${_ps_x##*[!0-9]} ;;
+            mana*)   [ -n "$ACC_MP" ]     || ACC_MP=${_ps_x##*[!0-9]} ;;
+            level*)  [ -n "$ACC_LVL" ]    || ACC_LVL=${_ps_x##*[!0-9]} ;;
+            gold*)   [ -n "$ACC_GOLD" ]   || ACC_GOLD=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+            silver*) [ -n "$ACC_SILVER" ] || ACC_SILVER=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+        esac
+    done <<EOF
+$_ps_l
+EOF
+    unset _ps_l _ps_x
+}
+
 parse_status() {
     _pg="$1"
     [ -n "$_pg" ] || return 1
@@ -1236,25 +1308,7 @@ parse_status() {
     # primeiro digito em diante (ouro e prata, guardados como o jogo mostra:
     # pode vir "408,1M").
     _lvl_ant="$ACC_LVL"
-    ACC_HP=""; ACC_MP=""; ACC_LVL=""; ACC_GOLD=""; ACC_SILVER=""
-    _ps_l=`printf '%s' "$_pg" | grep -o -E \
-        -e "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" \
-        -e "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" \
-        -e "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" \
-        -e "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" \
-        -e "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?"`
-    while IFS= read -r _ps_x; do
-        case "$_ps_x" in
-            health*) [ -n "$ACC_HP" ]     || ACC_HP=${_ps_x##*[!0-9]} ;;
-            mana*)   [ -n "$ACC_MP" ]     || ACC_MP=${_ps_x##*[!0-9]} ;;
-            level*)  [ -n "$ACC_LVL" ]    || ACC_LVL=${_ps_x##*[!0-9]} ;;
-            gold*)   [ -n "$ACC_GOLD" ]   || ACC_GOLD=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
-            silver*) [ -n "$ACC_SILVER" ] || ACC_SILVER=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
-        esac
-    done <<EOF
-$_ps_l
-EOF
-    unset _ps_l _ps_x
+    status_ler "$_pg"
     # Subiu de nivel: HP maximo e teto de energia mudaram (ver fetch_train_stats).
     [ -n "$_lvl_ant" ] && [ -n "$ACC_LVL" ] && [ "$_lvl_ant" != "$ACC_LVL" ] && \
         rm -f "$TMP/last_train" 2>/dev/null

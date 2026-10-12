@@ -279,5 +279,8 @@ troca_aliado() {
         return 1
     fi
     _al_trocou=1
+    # No log de todos os eventos (era so o Rei que escrevia): o resumo do
+    # status.sh -batalhas conta as trocas por esta linha.
+    printf "Alvo aliado — trocando de alvo\n"
     return 0
 }
