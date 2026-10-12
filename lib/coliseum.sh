@@ -250,6 +250,8 @@ coliseum_fight() {
                         run_curl_exec "${URL}/coliseum" > "$src_ram"
                     ) </dev/null > /dev/null 2>&1 &
                     time_exit 17
+                    # A releitura acima ja e a reconfirmacao (ver clanfight.sh).
+                    _reconf=1
                     cl_access
                     # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
                     sleep 1

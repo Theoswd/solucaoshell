@@ -517,6 +517,14 @@ campanha_liberada() {
 # esta aplicada num deles nada mais deve competir. Ao terminar o evento,
 # o start() chama esta mesma varredura (so o que venceu o proprio portao).
 tarefas_livres() {
+    # BATALHA PENDENTE ANTES DAS ATIVIDADES. Com a sessao caida no meio da
+    # luta a batalha fica anotada; quando a sessao volta, a rotina (arena,
+    # missoes...) rodava antes e a retomada so vinha no descanso do fim da
+    # volta, minutos depois. Sem retomar (sessao ainda fora), nada aqui.
+    if batalha_pendente; then
+        batalha_retomar
+        batalha_pendente && return 0
+    fi
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
     # --- Numeros do painel, a cada 5 min
@@ -762,10 +770,14 @@ evento_dedicar() {
 # exemplo) chama isto: sem o marcador, o evento_espera devolve na hora e a
 # conta volta para a rotina em vez de ficar dez minutos parada por um evento
 # que nao vai acontecer.
-evento_cancelar() {
+evento_cancelar() { # [SECAO]
     rm -f "$TMP/em_evento" 2>/dev/null
-    # Sem inscricao nao ha batalha a retomar.
-    batalha_limpar 2>/dev/null
+    # Sem inscricao nao ha batalha a retomar. Com a secao, so apaga a anotacao
+    # dela: uma batalha de OUTRO evento ainda pendente (sessao caida) fica,
+    # senao o descanso confirmaria a fuga dela.
+    if [ -z "$1" ] || ! batalha_pendente || [ "$_bp_sec" = "$1" ]; then
+        batalha_limpar 2>/dev/null
+    fi
     return 0
 }
 
@@ -1036,6 +1048,8 @@ start() {
             return 1
         fi
     fi
+    # Sessao de volta: a batalha que ficou pendente vem antes da varredura.
+    batalha_retomar
 
     # CLAN_ID DUPLICADO.
     #

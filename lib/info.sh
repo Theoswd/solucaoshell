@@ -743,6 +743,10 @@ batalha_pendente() {
     [ -n "$_bp_sec" ] || return 1
     _bp_min="$LUTA_TETO_MIN"
     case "$_bp_min" in ''|*[!0-9]*) _bp_min=30 ;; esac
+    # A anotacao conta da INSCRICAO e o teto da luta (luta_teto) do inicio da
+    # luta: no Rei, inscricao as :25 e luta podendo ir alem das :55. Com 10
+    # min de folga a anotacao nao vence com a luta ainda permitida.
+    _bp_min=$(( _bp_min + 10 ))
     _bp_t=$(( `date +%s` - _bp_t ))
     # Marca mais no futuro que o teto: o relogio voltou muito (data errada
     # corrigida) e ela nao vale. Um ajuste pequeno do NTP no meio da luta
@@ -857,6 +861,7 @@ luta_inicio() {
     _lt_lutou=0
     _lt_hp0=0
     _reviveu=0
+    _rs_falhas=0
     LUTA_MOTIVO=""
     LUTA_SESSAO_CAIU=0
     # Troca por aliado e fogo amigo (allies.sh).
@@ -880,6 +885,11 @@ luta_inicio() {
 luta_hp() {
     # Chamada so com a luta na tela: a conta lutou (ver LUTA_FORA_LUTOU).
     _lt_lutou=1
+    # A LUTA VOLTOU: a contagem do "fora" recomeca. Sem isto a marca de uma
+    # transicao antiga ficava valendo, e a segunda transicao da luta (15s ou
+    # 90s depois da primeira) ja encerrava na hora, com a conta viva. O
+    # mesmo para as leituras invalidas seguidas.
+    _lt_fora_desde=""; _lt_invalidas=0
     # So o primeiro numero: o arquivo de HP de alguns modulos traz uma linha
     # por ocorrencia na pagina, e espaco a esquerda sobra do sed.
     _lh="$1"
@@ -1119,7 +1129,14 @@ ressuscitar() {
     (
         run_curl_exec "${URL}${_rs_l}" > "$2"
     ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    # PEDIDO SEM RESPOSTA NAO GASTA A RESSURREICAO. A trava valia mesmo com o
+    # unrip cortado pela rede: a releitura ainda mostrava o unrip, o
+    # ressuscitar recusava e o luta_acabou declarava a conta morta. Ate duas
+    # novas tentativas por luta.
+    if ! time_exit 17 || [ ! -s "$2" ]; then
+        _rs_falhas=$(( ${_rs_falhas:-0} + 1 ))
+        [ "$_rs_falhas" -le 2 ] && _reviveu=0
+    fi
     unset _rs_l
     return 0
 }

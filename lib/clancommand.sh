@@ -307,6 +307,9 @@ clancommand_fight() {
           run_curl_exec "$URL/clancommand/" > "$src_ram"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao: sem a marca, o cc_access
+        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        _reconf=1
         cc_access
         sleep 1
       else
@@ -317,6 +320,8 @@ clancommand_fight() {
         # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
+        # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
+        [ "$_resta" -le "$LA" ] || _resta=$LA
         sleep "$_resta"
       fi
     fi
@@ -380,7 +385,7 @@ clancommand_start() {
     # pagina, nao ha o que esperar. Libera a conta em vez de deixa-la dez
     # minutos parada (mesmo criterio do clancoliseum_start).
     printf "Torneio de equipe: sem inscricao disponivel agora - pulando\n"
-    evento_cancelar 2>/dev/null
+    evento_cancelar clancommand 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
   fi
@@ -392,7 +397,7 @@ clancommand_start() {
   # um worker relancado procurar uma luta que so comeca horas depois.
   if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ]; then
     _cc_antecipar "$src_ram" "$_cc_link" "$_cc_seg"
-    evento_cancelar 2>/dev/null
+    evento_cancelar clancommand 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
   fi

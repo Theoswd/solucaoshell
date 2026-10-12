@@ -25,7 +25,10 @@ sls_play() {
     # evento. Era por isso que umas contas abandonavam e outras nao: so as que
     # o sistema derrubava. A batalha fica anotada em disco desde a inscricao
     # (batalha_marcar), e aqui a conta volta para ela.
-    batalha_retomar
+    # Houve retomada: a luta levou minutos, e o cronograma abaixo decidiria
+    # com a hora de antes dela (o relogio da volta). Um date a mais, so nesse
+    # caso.
+    if batalha_retomar; then relogio_sync; fi
 
     # CRONOGRAMA DE BATALHAS — ORDEM DE PRIORIDADE
     #

@@ -144,7 +144,11 @@ king_fight() {
     #   (a) a virada do rei morto (a pagina troca de forma por um instante);
     #   (b) a nossa morte (a pagina passa a oferecer o unrip);
     #   (c) uma pagina de transicao ou um soluco de rede.
-    # Rele /king antes de decidir qualquer coisa.
+    # Rele /king antes de decidir qualquer coisa — UMA vez. Na segunda
+    # passada (_reconf=1) a pagina ja e a releitura: reler de novo era um
+    # pedido a mais e deixava os links (ATK, KINGATK, HP) da leitura anterior
+    # valendo quando a luta voltava na terceira.
+    if [ "${_reconf:-0}" = 0 ]; then
     (
       run_curl_exec "${URL}/king" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
@@ -167,7 +171,6 @@ king_fight() {
     # over" com a batalha em andamento. Reavalia UMA vez (o _reconf trava a
     # recursao) e so entao desiste. A virada de pagina adianta a contagem da
     # morte do rei: se na volta nao houver kingatk, a fase muda na hora.
-    if [ "${_reconf:-0}" = 0 ]; then
       _reconf=1
       _sem_rei=3
       cl_access
@@ -355,6 +358,8 @@ king_fight() {
           run_curl_exec "${URL}/king" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao (ver clanfight.sh).
+        _reconf=1
         cl_access
         _last_act="$_agora"; echo "$_last_act" > last_atk
       fi
@@ -363,6 +368,8 @@ king_fight() {
       # Dentro do intervalo de 5s: espera o restante SEM nenhuma requisicao —
       # uma atualizacao de pagina antes de 5s atrapalharia a proxima acao.
       _resta=$(( LA - ( _agora - _last_act ) ))
+      # Relogio do aparelho voltou: nunca mais que LA.
+      [ "$_resta" -le "$LA" ] || _resta=$LA
       [ "$_resta" -gt 0 ] && sleep "$_resta"
     fi
 

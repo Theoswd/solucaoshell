@@ -83,8 +83,10 @@ flagfight_fight() {
   awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio flagfight
+  # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
+  # o BREAK_LOOP nela, e zerar depois fazia o laco rodar mesmo assim.
+  : > BREAK_LOOP
   cf_access
-  > BREAK_LOOP
   cat USH > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
@@ -163,6 +165,9 @@ flagfight_fight() {
       # uma pagina sem acao (rede, sessao, transicao) ate o teto.
       if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
         fetch_page "/flagfight" "$src_ram"
+        # A releitura acima ja e a reconfirmacao: sem a marca, o cf_access
+        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        _reconf=1
         cf_access
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
@@ -174,6 +179,8 @@ flagfight_fight() {
         # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
+        # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
+        [ "$_resta" -le "$LA" ] || _resta=$LA
         sleep "$_resta"
       fi
     fi
