@@ -67,6 +67,14 @@ login_logoff() {
     run_curl "${URL}/?sign_in=1" > /dev/null 2>&1
 
     creds=`base64 -d "$cript_file" 2>/dev/null`
+    # Credencial ilegivel: um POST vazio contaria no limite de logins por IP
+    # e seria lido como senha recusada (o do_login ja confere isto).
+    if [ -z "$creds" ]; then
+        [ "$_ll_lock" = "1" ] && login_unlock
+        unset _ll_lock
+        printf "[%s] %s — ERRO: cript_file ilegivel\n" "$SLS_TAG" "$SLS_USER"
+        return 1
+    fi
     # Sem echo|sed: ver do_login (sls.sh).
     luser=${creds#login=}; luser=${luser%%"&pass="*}
     lpass=${creds#"login=${luser}&pass="}
@@ -77,20 +85,25 @@ login_logoff() {
         --data-urlencode "login=${luser}" \
         --data-urlencode "pass@-" \
         "${URL}/?sign_in=1" > /dev/null
-
-    sleep 1
-
-    run_curl \
-        "${URL}/user" > /dev/null
+    _ll_rc=$?
 
     unset luser lpass
+
+    # Um /user so, como no do_login. Aqui havia um "sleep 1" e um /user
+    # descartado antes deste, com a trava global de login presa.
+    PAGE=`run_curl "${URL}/user"`
+    _ll_rc2=$?
+    [ "$_ll_rc" -eq 0 ] && _ll_rc=$_ll_rc2
 
     # A trava cobre so a autenticacao. Liberar aqui garante que ela sai em
     # qualquer caminho — sucesso, recusa ou erro de rede.
     [ "$_ll_lock" = "1" ] && login_unlock
     unset _ll_lock
 
-    PAGE=`run_curl "${URL}/user"`
+    # Rede (POST ou /user sem resposta) nao e senha recusada: mesma separacao
+    # do do_login.
+    if [ "$_ll_rc" -ne 0 ] || [ -z "$PAGE" ]; then LOGIN_ERRO=rede; else LOGIN_ERRO=credencial; fi
+    unset _ll_rc _ll_rc2
 
     if is_logged_in "$PAGE"; then
         sessao_marcar

@@ -4085,6 +4085,39 @@ _r=`( TMP="$_td20/f83g"; mkdir -p "$TMP"; export TMP; . "$LIB/info.sh" > /dev/nu
       printf 'king %s\n' $(( \`date +%s\` - 45 * 60 )) > "$TMP/batalha"; batalha_pendente || printf 'vence45' )`
 check "evento_cancelar: so a propria batalha; anotacao ate teto+10min" "fica sai vale35 vence45" "$_r"
 
+# ---- 3.9.84: rotina e login (revisao de 12/10)
+# Versao do log: nunca atras do ultimo commit (estava parada em 3.9.64).
+_vn=`sed -n 's/^versionNum="\(.*\)"$/\1/p' "$LIB/info.sh" | head -n 1`
+_vg=`git -C "$ROOT" log --format=%s 2>/dev/null | grep -o '(3\.[0-9]*\.[0-9]*)' | tr -d '()' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`
+if [ -z "$_vg" ]; then ok "versionNum: sem git aqui, nada a comparar ($_vn)"
+elif [ "`printf '%s\n%s\n' "$_vg" "$_vn" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`" = "$_vn" ]; then ok "versionNum ($_vn) nao fica atras do ultimo commit ($_vg)"
+else bad "versionNum ($_vn) atras do ultimo commit ($_vg)"; fi
+unset _vn _vg
+check "evento especial: a chamada direta marca o portao (sem repetir no start)" 1 \
+    "`sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' "$LIB/run.sh" | grep -c '^ *ativ_marcar evento$'`"
+check "modo -cl: arena so pelo portao (tarefas_livres), sem echo|grep" "0 0" \
+    "`sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c '^ *arena_duel$'` `sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c 'echo "\$RUN" | grep'`"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; URL=http://jogo
+      HOUR=""; _o=\`func_crono -q\`; func_crono -q; printf '[%s] %s' "$_o" "${HOUR:+hora}" )`
+check "func_crono -q: so atualiza a hora, sem escrever no log" "[] hora" "$_r"
+check "reconexao: um /user depois do login, sem sleep 1 (eram dois)" "2 0" \
+    "`sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '"\${URL}/user"'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *sleep 1$'`"
+_r=`( TMP="$_td20/f84c"; mkdir -p "$TMP"; export TMP; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' '@@@' > "$TMP/cript_file"
+      run_curl() { case "$*" in *sign_in*data*|*data*sign_in*) echo POST >> "$TMP/req" ;; *) echo GET >> "$TMP/req" ;; esac
+                   printf '%s' "<form><input name='pass'></form>"; }
+      login_lock() { :; }; login_unlock() { echo UNLOCK >> "$TMP/req"; }
+      login_logoff > /dev/null 2>&1; printf 'rc=%s ' $?; grep -c POST "$TMP/req"; grep -c UNLOCK "$TMP/req" )`
+check "reconexao: credencial ilegivel nao vira POST e solta a trava" "rc=1 0
+1" "$_r"
+check "trava de login: espera de 3 em 3s, PID lido sem cat" "1 1 0" \
+    "`sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *sleep 3$'` `sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c '_n" -lt 60'` `sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c 'cat "\$LOCKDIR/pid"'`"
+check "fim de luta sem pausa morta (fora o Duelo, entre as rodadas)" 0 \
+    "`cat "$LIB/flagfight.sh" "$LIB/king.sh" "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clancoliseum.sh" "$LIB/clancommand.sh" "$LIB/undying.sh" | grep -c '^  sleep 1[05]s$'`"
+check "play.sh: espera o worker sair em vez de 2s fixos por conta" 0 \
+    "`sed -n '/^kill_worker_tree() {/,/^}/p' "$ROOT/play.sh" | grep -c '^    sleep 2$'`"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83
 

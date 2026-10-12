@@ -330,7 +330,8 @@ clancommand_fight() {
   rm -f "$src_ram"
   unset src_ram cc_access _cc_acao _emluta _reconf _atk0 _latk _resta
   printf "Clancommand ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 

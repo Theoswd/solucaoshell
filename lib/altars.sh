@@ -190,7 +190,8 @@ altars_fight() {
   unset cf_access _random
   func_unset
   printf "Altars ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 

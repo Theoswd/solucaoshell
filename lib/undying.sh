@@ -170,8 +170,7 @@ undying_fight() {
         _last_grass _last_stone
   printf "Undying ok\n"
   # Sem apply_event: inscrevia no Vale seguinte (ver king.sh). A inscricao e
-  # a do undying_start.
-  sleep 15s
+  # a do undying_start. (O "sleep 15s" que vinha aqui era tempo morto.)
 }
 
 undying_start() {

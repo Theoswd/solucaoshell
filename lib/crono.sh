@@ -68,11 +68,14 @@ dia_atual() {
     if [ -n "$_rl_up" ] && [ -n "$_DD" ]; then _DIA="$_DD"; else _DIA=`date +%d`; fi
 }
 
-func_crono() {
+func_crono() { # [-q]: so atualiza HOUR/MIN, sem escrever no log
     hora_atual; minuto_atual
     HOUR="$_HOR"; MIN="$_MIN"
     [ -z "$HOUR" ] && HOUR=0
     [ -z "$MIN" ] && MIN=0
+    # Depois do func_sleep a hora saia duas vezes seguidas no log (aqui e no
+    # func_cat da volta seguinte). Com -q, so as variaveis.
+    [ "$1" = -q ] && return 0
     if [ -n "$_rl_up" ]; then
         printf "%s %02d:%02d\n" "$URL" "$HOUR" "$MIN"
     else
@@ -1054,7 +1057,7 @@ start() {
     # CLAN_ID DUPLICADO.
     #
     # O login_logoff, chamado logo acima, ja executa o clan_id quando a
-    # sessao esta viva — e o clan_id vai a rede sempre, sem guarda nenhuma.
+    # sessao esta viva (o clan_id tem portao proprio de 60 min, clanid.sh).
     # O `||` mantem o caminho para quando o login_logoff nao existe ou nao
     # chegou a rodar.
     [ -n "$CLD" ] || clan_id 2>/dev/null
@@ -1090,6 +1093,6 @@ start() {
 
     messages_info
     descansar
-    func_crono
+    func_crono -q
     func_sleep
 }

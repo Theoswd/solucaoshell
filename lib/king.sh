@@ -398,7 +398,8 @@ king_fight() {
   # depois achava o "Fuja da batalha" e, sem batalha anotada, confirmava a fuga.
   # A inscricao de cada Rei e feita pelo king_start.
   printf "King ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 

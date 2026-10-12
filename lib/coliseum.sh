@@ -325,6 +325,5 @@ coliseum_start() {
         fi
     else
         printf "Battle or event time...\n"
-        sleep 5s
     fi
 }

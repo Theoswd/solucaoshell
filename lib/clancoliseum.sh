@@ -186,7 +186,8 @@ clancoliseum_fight() {
   rm -f "$src_ram" "$full_ram"
   unset src_ram full_ram ACCESS cf_access
   printf "Clancoliseum ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 

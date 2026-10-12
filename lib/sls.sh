@@ -116,7 +116,10 @@ LOCKDIR="$HOME/.sls/.login.lock"
 login_lock() {
     _n=0
     _lk_meu=0
-    while [ "$_n" -lt 180 ]; do
+    # De 3 em 3s, e o PID lido sem processo (era um cat por segundo em cada
+    # conta esperando). O login_espacar ja impoe 10s entre logins, entao a
+    # espera nao fica mais longa; o teto continua 180s.
+    while [ "$_n" -lt 60 ]; do
         if mkdir "$LOCKDIR" 2>/dev/null; then
             _lk_meu=1
             echo $$ > "$LOCKDIR/pid" 2>/dev/null
@@ -124,7 +127,7 @@ login_lock() {
             type login_espacar > /dev/null 2>&1 && login_espacar
             return 0
         fi
-        _dono=`cat "$LOCKDIR/pid" 2>/dev/null`
+        _dono=; { read -r _dono < "$LOCKDIR/pid"; } 2>/dev/null
         case "$_dono" in
             # PID ainda nao gravado: o dono acabou de criar a trava e
             # esta a caminho de escrever. Apagar aqui era uma corrida —
@@ -132,7 +135,7 @@ login_lock() {
             ''|*[!0-9]*) : ;;
             *) kill -0 "$_dono" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null ;;
         esac
-        sleep 1
+        sleep 3
         _n=$((_n + 1))
     done
     # Nao conseguiu em 3 minutos: segue assim mesmo, para uma trava

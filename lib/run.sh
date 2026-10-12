@@ -179,6 +179,9 @@ sls_play() {
         # --- Eventos especiais
         (09:2[5-9]|21:2[5-9])
             specialEvent
+            # Marca o portao: sem isto o tarefas_livres do start() logo abaixo
+            # chamava o specialEvent de novo.
+            ativ_marcar evento
             start
             ;;
 
@@ -199,17 +202,20 @@ sls_play() {
             ;;
 
         (*)
-            if echo "$RUN" | grep -q -E '[-]cl'; then
+            case "$RUN" in *-cl*) _rn_cl=1 ;; *) _rn_cl=0 ;; esac
+            if [ "$_rn_cl" = 1 ]; then
                 printf "Running in coliseum mode: %s\n" "$RUN"
                 sleep 5
-                arena_duel
+                # A arena fica com o tarefas_livres logo abaixo, no portao
+                # dela (arena_liberada): aqui ela saia a cada volta, de 15 em
+                # 15s ou de 60 em 60s, sem energia na maioria das vezes.
                 coliseum_start
                 messages_info
             fi
             # Arena a cada 30 min, mesmo fora dos minutos da agenda.
             tarefas_livres
             func_sleep
-            func_crono
+            func_crono -q
             ;;
     esac
 }
