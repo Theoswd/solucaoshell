@@ -27,10 +27,9 @@ if [ -t 1 ]; then HAS_TTY=1; else HAS_TTY=0; fi
 # Cores
 C_RESET='\033[0m';   C_DIM='\033[2m';      C_BOLD='\033[1m'
 C_CYAN='\033[1;36m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'
-C_RED='\033[1;31m';  C_MAG='\033[1;35m';   C_WHITE='\033[1;37m'
-C_GOLD='\033[0;33m'; C_GRAY='\033[0;37m';  C_BLUE='\033[1;34m'
+C_RED='\033[1;31m';  C_WHITE='\033[1;37m'
 # 256 cores (Termux, WSL e iSH desenham): nome das contas e nivel.
-C_LARANJA='\033[1;38;5;166m'; C_VERDE='\033[0;32m'; C_LIMAO='\033[1;38;5;154m'
+C_LARANJA='\033[1;38;5;166m'
 C_LINHA='\033[38;5;240m'
 # O caractere ESC de verdade. As constantes acima sao strings com "\033"
 # literal, que so viram cor quando passam pelo printf %b — e o awk do
@@ -139,9 +138,8 @@ painel_icones_carregar() {
     # na sua cor (pedido do dono). Os icones abaixo sao so do estado da
     # conta, das atividades e do rodape.
     #
-    # S_W: largura em BYTES da coluna do simbolo de estado. Todos os simbolos
-    # de um modo tem os mesmos bytes e colunas, entao o nome cai sempre na
-    # mesma coluna, qualquer que seja o estado.
+    # Todos os simbolos de estado de um modo tem os mesmos bytes e colunas,
+    # entao o nome cai sempre na mesma coluna, qualquer que seja o estado.
     if [ "$1" = "1" ]; then
         # NENHUM ICONE AQUI USA SELETOR DE VARIACAO (U+FE0F).
         #
@@ -157,9 +155,8 @@ painel_icones_carregar() {
         #
         # Estados: todos de 4 bytes e 2 colunas (o ⚫/⚪ de 3 bytes empurrava o
         # nome da conta parada uma coluna para a direita).
-        S_W=4; S_COL=2
-        T_COLS=3
-        I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="›"; I_LIVE="💥 "
+        S_COL=2
+        I_ARROW="›"; I_LIVE="💥 "
         # Tabela: linhas do bloco de desenho de caixa, que toda fonte
         # monoespacada cobre (o mesmo caso do "▸").
         T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
@@ -169,42 +166,28 @@ painel_icones_carregar() {
         S_ON="🟢"; S_WAIT="🟡"; S_ERR="🔴"; S_OFF="🌑"; S_UNK="🔘"; S_PAUSE="💤"
         A_CLANFIGHT="🏆  Torneio do Clã";   A_ALTARES="🔥  Altares dos Deuses"
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
-        A_CLANCOL="🏅  Coliseu do Clã";     A_MASMORRA="🔑  Masmorra do Clã"
-        A_CLANQUEST="📜  Missões do Clã";   A_BANDEIRAS="🚩  Batalha de Bandeiras"
-        A_COLISEU="🎪  Coliseu";            A_ARENA="💥  Arena"
-        A_CARREIRA="🎓  Carreira";          A_CAVERNA="💎  Caverna"
-        A_CAMPANHA="🌍  Campanha";          A_LIGA="🥇  Liga dos Favoritos"
-        A_TROCA="💱  Troca Prata/Ouro";     A_SABIO="🧙  Cabana do Sábio"
+        A_CLANCOL="🏅  Coliseu do Clã"
+        A_ARENA="💥  Arena"
         A_TORNEQ="⚔️  Torneio de Equipe"
-        A_EVENTO="🎉  Evento Especial";     A_DESCANSO="💤  Descansando"
-        A_NONE="—"
     else
         # Em texto puro byte e coluna sao a mesma coisa.
-        S_W=5; S_COL=5
-        T_COLS=0
-        I_ACT=""; I_EVT=""; I_ARROW=">"; I_LIVE=""
+        S_COL=5
+        I_ARROW=">"; I_LIVE=""
         T_V="|"; T_H="-"; T_X="+"; T_B="+"; T_D="-"; T_RET="~"
         LIVE_W=0
         S_ON="[on]"; S_WAIT="[..]"; S_ERR="[off]"; S_OFF="[--]"; S_UNK="[??]"; S_PAUSE="[||]"
         A_CLANFIGHT="Torneio do Clã";   A_ALTARES="Altares dos Deuses"
         A_VALE="Vale dos Imortais";     A_REI="Rei dos Imortais"
-        A_CLANCOL="Coliseu do Clã";     A_MASMORRA="Masmorra do Clã"
-        A_CLANQUEST="Missões do Clã";   A_BANDEIRAS="Batalha de Bandeiras"
-        A_COLISEU="Coliseu";            A_ARENA="Arena"
-        A_CARREIRA="Carreira";          A_CAVERNA="Caverna"
-        A_CAMPANHA="Campanha";          A_LIGA="Liga dos Favoritos"
-        A_TROCA="Troca Prata/Ouro";     A_SABIO="Cabana do Sábio"
+        A_CLANCOL="Coliseu do Clã"
+        A_ARENA="Arena"
         A_TORNEQ="Torneio de Equipe"
-        A_EVENTO="Evento Especial";     A_DESCANSO="Descansando"
-        A_NONE="-"
 
         # Modo 2: troca so os icones, mantendo os nomes de atividade em texto.
         if [ "$1" = "2" ]; then
             # Estados de 3 bytes e 1 coluna cada ("×" tinha 2 e "?" 1, e o
             # nome dessas contas saia fora da coluna).
-            S_W=3; S_COL=1
-            T_COLS=0
-            I_ACT=""; I_EVT=""; I_ARROW="›"; I_LIVE="» "
+            S_COL=1
+            I_ARROW="›"; I_LIVE="» "
             T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
             LIVE_W=2
             S_ON="●"; S_WAIT="◐"; S_ERR="✕"; S_OFF="○"; S_UNK="◇"; S_PAUSE="‖"
@@ -694,7 +677,6 @@ evento_da_pagina_v() {
         *)              _EVP='' ;;
     esac
 }
-evento_da_pagina() { evento_da_pagina_v "$1"; printf '%s' "$_EVP"; }
 
 # O codigo em disco e mais novo que ESTE processo de painel?
 #
@@ -1014,7 +996,6 @@ aba_de_v() {
     esac
     unset _abp
 }
-aba_de() { aba_de_v "$1"; echo "$_ABA"; }
 
 # Relatorio de combate: HP ao vivo e dano recebido.
 #
@@ -1074,7 +1055,6 @@ combate_de_v() {
     fi
     unset _cbd _cbh _cbo _cbf
 }
-combate_de() { combate_de_v "$1"; printf '%s' "$_CBT"; }
 
 # ============================================================
 #  REGISTRO DA BATALHA AO VIVO

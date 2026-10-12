@@ -1628,8 +1628,8 @@ else
     ok "painel: nenhum seletor de variacao"
 fi
 
-# Os simbolos de estado de cada modo tem os mesmos bytes: e o que faz o
-# "%-*s" com S_W deixar o nome da conta na mesma coluna em qualquer estado.
+# Os simbolos de estado de cada modo tem os mesmos bytes: e o que deixa o
+# nome da conta na mesma coluna em qualquer estado.
 for _modo in 1 2; do
     _r=$(
         SLS_EMOJI="$_modo" HOME=/nao/existe
@@ -1638,9 +1638,8 @@ for _modo in 1 2; do
         for _s in "$S_ON" "$S_WAIT" "$S_ERR" "$S_OFF" "$S_UNK" "$S_PAUSE"; do
             printf '%s ' "`printf '%s' "$_s" | wc -c | tr -d ' '`"
         done
-        printf 'S_W=%s' "$S_W"
     )
-    case "$_modo" in 1) _esp="4 4 4 4 4 4 S_W=4" ;; 2) _esp="3 3 3 3 3 3 S_W=3" ;; esac
+    case "$_modo" in 1) _esp="4 4 4 4 4 4 " ;; 2) _esp="3 3 3 3 3 3 " ;; esac
     check "painel (modo $_modo): simbolos de estado com a mesma largura" "$_esp" "$_r"
 done
 unset _modo _r _esp
@@ -3701,9 +3700,9 @@ grep -q '^ *clancommand) *fetch_page "/clancommand" "\$TMP/ccmd_src"; *clancomma
 # USH. Com HP velho de outra luta no disco, vale o mais recente.
 _r=$( _d="$_td20/aovivo"; mkdir -p "$_d"; . "$LIB/panel.sh" > /dev/null 2>&1
       echo 4200 > "$_d/USH"; echo 5000 > "$_d/old_HP"; ESTREITO=1
-      printf '%s|' "`combate_de "$_d"`"
+      combate_de_v "$_d"; printf '%s|' "$_CBT"
       echo 9999 > "$_d/HP"; sleep 1; echo 4100 > "$_d/USH"
-      printf '%s' "`combate_de "$_d"`" )
+      combate_de_v "$_d"; printf '%s' "$_CBT" )
 check "painel ao vivo: HP do Coliseu do Cla e das Bandeiras (USH)" "HP 4200 (-800)|HP 4100 (-900)" "$_r"
 
 # Painel: HP e energia maximos sao os da propria conta (maior valor lido no

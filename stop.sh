@@ -14,7 +14,6 @@ unset _dir
 STATUS_DIR="$HOME/.sls/status"
 
 GREEN='\033[32m'
-RED='\033[0;31m'
 GOLD='\033[0;33m'
 RESET='\033[00m'
 
