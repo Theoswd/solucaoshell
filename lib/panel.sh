@@ -994,6 +994,9 @@ aba_de_v() {
         /league*)         _ABA="Liga dos Favoritos" ;;
         /trade*)          _ABA="Troca" ;;
         /effshop*|/lab*)  _ABA="Aprimoramento" ;;
+        # /questrnd antes de /quest*: o padrao das missoes tambem casa
+        # "/questrnd", e a Missao Aleatoria nunca aparecia.
+        /questrnd*)       _ABA="Missão Aleatória" ;;
         /quest*)          _ABA="Missões" ;;
         /collector*)      _ABA="Coleções" ;;
         /relic*)          _ABA="Relíquias" ;;
@@ -1006,7 +1009,6 @@ aba_de_v() {
         /user*)           _ABA="Meu Herói" ;;
         /settings*)       _ABA="Configurações" ;;
         /mail*)           _ABA="Mensagens" ;;
-        /questrnd*)       _ABA="Missão Aleatória" ;;
         /logout*)         _ABA="Saindo" ;;
         *)                _ABA="$_abp" ;;
     esac

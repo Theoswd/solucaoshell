@@ -13,14 +13,18 @@ coliseum_fight() {
 
     printf "Coliseum\n"
 
-    # HP maximo
-    full_atualizar "$full_ram"
-
-    # Desativa graficos
-    (
-        run_curl_exec "$URL/settings/graphics/0" > /dev/null
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    # O PREPARO SO QUANDO HA LUTA. O modo grafico e o /train (HP maximo) saiam
+    # a cada chamada: na madrugada o Coliseu e tentado de 10 em 10 minutos, e
+    # sem luta eram 2 dos 3 pedidos de cada tentativa (~860 por noite com 18
+    # contas). O modo grafico fica gravado na conta, entao vai uma vez por
+    # worker; o /train, so antes de entrar numa luta (ver abaixo).
+    if [ -z "$COLISEU_GRAFICO" ]; then
+        (
+            run_curl_exec "$URL/settings/graphics/0" > /dev/null
+        ) </dev/null > /dev/null 2>&1 &
+        time_exit 17
+        COLISEU_GRAFICO=1
+    fi
 
     # Pagina do coliseu
     (
@@ -52,6 +56,8 @@ coliseum_fight() {
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
       if [ -n "$go_stop" ]; then
+        # HP maximo: so agora, antes de entrar de fato na luta.
+        full_atualizar "$full_ram"
         # Inscricao: a batalha fica anotada para o worker relancado voltar.
         batalha_marcar coliseum
         printf "  Entering...\n"
@@ -77,6 +83,8 @@ coliseum_fight() {
         done
       else
         printf "  Luta do coliseu em andamento - voltando para ela\n"
+        # Retomada: sem o HP maximo em disco, le agora (o limiar de cura e dele).
+        [ -s "$full_ram" ] || full_atualizar "$full_ram"
       fi
 
         cl_access() {

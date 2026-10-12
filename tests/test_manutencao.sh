@@ -3935,8 +3935,42 @@ _r=`( cd "$_td20" && . "$LIB/info.sh" > /dev/null 2>&1
       itens_gratis undying it.html; printf '[%s][%s]' "\`cat GRASS\`" "\`cat STONE\`" )`
 check "itens_gratis: erva com preco em ouro fora, pedra gratis dentro" "[][/undying/stone/?r=8]" "$_r"
 
+# Coliseu (3.9.81): o preparo so quando ha luta. Modo grafico uma vez por
+# worker; /train so antes de entrar. Antes, cada tentativa sem luta da
+# madrugada fazia os dois.
+#   _col81 luta|nada -> pedidos de tres tentativas
+_col81() {
+    ( TMP="$_td20/col81_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/coliseum.sh" > /dev/null 2>&1
+      unset COLISEU_GRAFICO; FUNC_coliseum=y; : > "$TMP/req"
+      run_curl_exec() { _u=${1#http://jogo}; _u=${_u%%\?*}; echo "$_u" >> "$TMP/req"
+          if [ "$PG" = luta ]; then echo "<img src='/images/icon/level.png'/> <a href='/coliseum/enterFight/?r=5'>Entrar</a>"
+          else echo "<img src='/images/icon/level.png'/> <a href='/coliseum/'>Coliseu</a>"; fi; }
+      full_atualizar() { echo /train >> "$TMP/req"; echo 4608 > "$1"; }
+      batalha_marcar() { :; }; time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      coliseum_luta() { :; }
+      PG="$1"; cd "$TMP"
+      if [ "$PG" = luta ]; then
+          # Para na inscricao (batalha_marcar sai do subshell): basta ver a
+          # ordem do preparo.
+          ( batalha_marcar() { exit 0; }; coliseum_fight > /dev/null 2>&1 )
+      else
+          coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1
+      fi
+      tr '\n' ' ' < "$TMP/req" )
+}
+check "coliseu sem luta: 1 pedido por tentativa (grafico uma vez, sem /train)" \
+    "/settings/graphics/0 /coliseum /coliseum /coliseum " "`_col81 nada`"
+_r=`_col81 luta`
+case "$_r" in
+    "/settings/graphics/0 /coliseum /train ") ok "coliseu com luta: /train antes de entrar ($_r)" ;;
+    *) bad "coliseu com luta: ordem do preparo ($_r)" ;;
+esac
+check "painel: /questrnd aparece como Missao Aleatoria, /quest como Missoes" "Missão Aleatória|Missões" \
+    "`cd "$_td20" && . "$LIB/panel.sh" > /dev/null 2>&1; mkdir -p ab81; printf '/questrnd/take/' > ab81/pagina; aba_de_v ab81; printf '%s|' "$_ABA"; printf '/quest/' > ab81/pagina; aba_de_v ab81; printf '%s' "$_ABA"`"
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
