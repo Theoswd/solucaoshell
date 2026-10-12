@@ -4347,7 +4347,9 @@ _fr87() {
 }
 check "full_relendo: com o /train no meio, rele a pagina" "rc=0 /train /clancommand/ " "`_fr87 sai`"
 check "full_relendo: sem pedido no meio, nada" "rc=1 " "`_fr87 fica`"
-check "Torneio de Equipe: HP maximo sem nonce velho (os dois pontos)" "2 0" \
+# Na luta em andamento os links tem nonce (?r=): rele. Na inscricao o link
+# leva o id do torneio: sem releitura, que falhando apagava o link (3.9.88).
+check "Torneio de Equipe: HP maximo sem nonce velho na luta, inscricao sem releitura" "1 1" \
     "`grep -c 'full_relendo "\$TMP/FULL" /clancommand/ "\$src_ram"' "$LIB/clancommand.sh"` `grep -c '^ *full_atualizar ' "$LIB/clancommand.sh"`"
 # -batalhas: evento que termina sem a linha "ok" nao engole o Coliseu
 # seguinte; a troca por aliado aparece em todos os eventos.
@@ -4399,6 +4401,74 @@ _r=`( TMP="$_td20/st88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
       [ -f "$TMP/last_train" ] && printf 'ficou' || printf 'apagado'; printf ' %s|%s' "$ACC_LVL" "${HOME_STATS:--}" )`
 check "painel: subida de nivel durante a conferencia da Home apaga o last_train" "apagado 91|1" "$_r"
 unset -f _cp88
+# ---- 3.9.89: revisao da 3.9.87 (o que faltava na 3.9.88) ----
+# Guarda do Coliseu: a marca leva o dia (o worker vive dias) e nao vale no
+# modo -cl.
+#   _cp88 MODO -> chamadas: 01:15 duas vezes no dia 1, 01:15 no dia 2
+_cp88() {
+    ( TMP="$_td20/cp88_$1"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      _D=01; relogio_sync() { _HH=01; _MM=15; _DD=$_D; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=$1
+      coliseum_fight() { echo COL >> "$TMP/r"; COLISEU_SEM_LUTA=1; }
+      coliseum_start() { :; }; messages_info() { :; }
+      tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { echo ESPERA >> "$TMP/r"; }
+      sls_play; sls_play; _D=02; sls_play
+      tr '\n' ' ' < "$TMP/r" )
+}
+check "Coliseu: a guarda de uma noite nao pula o mesmo minuto na seguinte" "COL ESPERA COL " "`_cp88 -boot`"
+check "Coliseu: no modo -cl nao ha guarda" "COL COL COL " "`_cp88 -cl`"
+# Sem resposta nao e "sem luta": o pulso tenta de novo no mesmo minuto.
+#   _cs88 vazia|sem_luta -> COLISEU_SEM_LUTA
+_cs88() {
+    ( TMP="$_td20/cs88_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/coliseum.sh" > /dev/null 2>&1
+      FUNC_coliseum=y; COLISEU_GRAFICO=1; P=$1
+      run_curl_exec() { [ "$P" = vazia ] || echo "<img src='/images/icon/level.png'/> <a href='/coliseum/'>Coliseu</a> <a href='/logout'>sair</a>"; }
+      time_exit() { wait "$!" 2>/dev/null; }; cd "$TMP"
+      coliseum_fight > /dev/null 2>&1; printf '%s' "$COLISEU_SEM_LUTA" )
+}
+check "Coliseu: pagina sem resposta nao trava o minuto do pulso" 0 "`_cs88 vazia`"
+check "Coliseu: pagina do jogo sem luta trava o minuto, como na 3.9.87" 1 "`_cs88 sem_luta`"
+# Conferencia da Home: a subida de nivel continua apagando o last_train.
+_r=`( TMP="$_td20/lv88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
+      printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
+      printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
+      run_curl() { cat "$TMP/user"; }; fetch_train_stats() { :; }; messages_info() { :; }
+      ACC_LVL=90; atualiza_stats > /dev/null 2>&1
+      [ -f "$TMP/last_train" ] && printf 'ficou ' || printf 'apagado '; printf '%s' "$HOME_STATS" )`
+check "painel: subida de nivel na conferencia da Home apaga o last_train" "apagado 1" "$_r"
+# hpmp: /train que respondeu com pagina de erro (sem o HP maximo) ainda
+# pede o segundo, como antes da 3.9.87.
+_r=`( TMP="$_td20/hp88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"; : > "$TMP/SRC"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; echo "Erro interno"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      FIXHP=""; FIXMP=""; ACC_ENE=""; hpmp -fix; grep -c '/train' "$TMP/req" )`
+check "Vale: hpmp com o primeiro /train sem o HP maximo pede o segundo" 2 "$_r"
+# Cura que nao sai: tenta de novo ate duas vezes; a terceira conta como feita
+# (com so a cura falhando, ela sairia a cada volta sem pausa).
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; _o=""
+      for _rc in 7 7 7 7 0 7; do TE_RC=$_rc; if pedido_nao_saiu; then _o="$_o n"; else _o="$_o s"; fi; done
+      printf '%s' "$_o" )`
+check "pedido_nao_saiu: tres seguidas sem sair contam como feita" " n n s n s n" "$_r"
+_r=$( ( TMP="$_td20/rec88"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/clanfight.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 1000 <a href='/logout'>sair</a>"
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" > "$TMP/pag"
+      cp "$TMP/pag" "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; case "$1" in */heal/*) return 7 ;; esac; cat "$TMP/pag"; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 20 )); }; func_unset() { :; }
+      cd "$TMP" && clanfight_fight > /dev/null 2>&1
+      printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" ) )
+check "cura sempre sem conexao: 3 tentativas e a recarga de 90s vale, o ataque segue" "3 4" "$_r"
+unset -f _cp88 _cs88
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83

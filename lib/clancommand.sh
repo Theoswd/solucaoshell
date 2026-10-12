@@ -414,11 +414,11 @@ clancommand_start() {
   fi
 
   # FASE B — O INICIO ESTA PERTO: ENTRA E LUTA.
-  # O link da inscricao tem nonce: saindo o /train depois desta pagina, ela e
-  # relida e o link sai dela de novo.
-  if full_relendo "$TMP/FULL" /clancommand/ "$src_ram"; then
-    _cc_link=`_cc_inscricao "$src_ram"`
-  fi
+  # O link da inscricao leva o id do torneio, nao um nonce de clique (ver o
+  # topo do arquivo): o /train no meio nao o invalida, e reler a pagina aqui
+  # era um pedido a mais que, falhando, apagava o link e deixava a equipe
+  # fora do torneio.
+  full_atualizar "$TMP/FULL"
   batalha_marcar clancommand
   if [ -n "$_cc_link" ]; then
     (

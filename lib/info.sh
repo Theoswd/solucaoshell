@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.88"
+versionNum="3.9.89"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -79,8 +79,18 @@ time_exit() {
 # recarga (cura, escudo, esquiva) e tratada como nao feita e pode sair de
 # novo: com tempo esgotado ou pagina cortada o servidor pode ja ter usado o
 # elixir, e repetir gastaria outro.
+#
+# Tres seguidas que nao sairam contam como feita: com so esse pedido falhando
+# (e a releitura respondendo) a cura sairia a cada volta, sem pausa e sem
+# ataque.
 pedido_nao_saiu() {
-    case "${TE_RC:-0}" in 6|7|35) return 0 ;; esac
+    case "${TE_RC:-0}" in
+        6|7|35)
+            _pns_n=$(( ${_pns_n:-0} + 1 ))
+            if [ "$_pns_n" -ge 3 ]; then _pns_n=0; return 1; fi
+            return 0 ;;
+    esac
+    _pns_n=0
     return 1
 }
 
@@ -1192,7 +1202,9 @@ hpmp() {
             SLS_MAXTIME=17
             if fetch_train_stats 10 2>/dev/null; then
                 _hp_ur2=""; { read -r _hp_ur2 < "$TMP/.ult_req"; } 2>/dev/null
-                [ "$_hp_ur2" = "$_hp_ur" ] || _hp_leu=1
+                # Leu e achou o HP maximo: so faltaria a mana, que viria igual.
+                # Pagina de erro (sem o HP) ainda tenta o segundo, como antes.
+                [ "$_hp_ur2" = "$_hp_ur" ] || [ -z "$FIXHP" ] || _hp_leu=1
             fi
             unset SLS_MAXTIME _hp_ur _hp_ur2 ;;
     esac

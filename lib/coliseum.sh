@@ -70,6 +70,9 @@ coliseum_fight() {
     # (batalha_retomar) encontra a pagina de combate, sem link de inscricao.
     # Antes isso caia em "nao foi possivel iniciar" e a conta abandonava.
     _col_estado=`estado_luta "$src_ram" coliseum`
+    # Sem resposta ou sem sessao nao e "sem luta": o pulso tenta de novo no
+    # mesmo minuto, como antes da guarda.
+    case "$_col_estado" in invalida|deslogado) COLISEU_SEM_LUTA=0 ;; esac
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
       COLISEU_SEM_LUTA=0

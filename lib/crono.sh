@@ -363,8 +363,8 @@ atualiza_stats() {
     # Pagina logada: a sessao respondeu (libera a varredura, ver servidor_mudo).
     sessao_marcar
     # Conferencia da Home (acima): os numeros dela antes, os do /user depois.
-    # O nivel de antes volta para o parse_status: com o da Home no lugar, a
-    # subida de nivel nesta conferencia nao apagava o last_train.
+    # O nivel de antes volta para o parse_status: e por ele que a subida de
+    # nivel apaga o last_train (HP maximo e teto de energia novos).
     if [ -z "$HOME_STATS" ] && [ -n "$_st_home" ]; then
         _st_lvl="$ACC_LVL"
         status_ler "$_st_home"
