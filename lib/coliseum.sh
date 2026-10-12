@@ -1,3 +1,22 @@
+# HP maximo (full_atualizar) e, se ele pediu alguma pagina (o /train), o
+# /coliseum relido: os links (?r=) da pagina de antes ja nao valem.
+# 0 = releu a pagina, 1 = nada saiu e a pagina e a mesma.
+coliseum_hpmax() {
+    _col_ur=""; { read -r _col_ur < "$TMP/.ult_req"; } 2>/dev/null
+    full_atualizar "$full_ram"
+    _col_ur2=""; { read -r _col_ur2 < "$TMP/.ult_req"; } 2>/dev/null
+    if [ "$_col_ur2" = "$_col_ur" ]; then
+        unset _col_ur _col_ur2
+        return 1
+    fi
+    unset _col_ur _col_ur2
+    (
+        run_curl_exec "$URL/coliseum" > "$src_ram"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    return 0
+}
+
 # shellcheck disable=SC2155
 coliseum_fight() {
     # A chave vale aqui, e nao so no coliseum_start: o horario da madrugada
@@ -49,6 +68,16 @@ coliseum_fight() {
     # curl recusaria a URL.
     go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
+    # HP maximo: so com luta, antes de entrar. Se o full_atualizar pediu o
+    # /train, o nonce do enterFight ja e de uma pagina velha (o servidor
+    # recusa, como no clanquest.sh): rele o /coliseum e pega o link de novo.
+    # Assim o clique sai sempre da ultima pagina, como antes da 3.9.81, e o
+    # pulso sem luta continua sem /train.
+    if [ -n "$go_stop" ] && coliseum_hpmax; then
+        access_link=`grep -o -E '/coliseum(/[A-Za-z]+/[?]r[=][0-9]+|/)' "$src_ram" | sed -n '1p'`
+        go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
+    fi
+
     # LUTA JA EM ANDAMENTO: o worker relancado no meio de uma luta do coliseu
     # (batalha_retomar) encontra a pagina de combate, sem link de inscricao.
     # Antes isso caia em "nao foi possivel iniciar" e a conta abandonava.
@@ -56,8 +85,6 @@ coliseum_fight() {
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
       if [ -n "$go_stop" ]; then
-        # HP maximo: so agora, antes de entrar de fato na luta.
-        full_atualizar "$full_ram"
         # Inscricao: a batalha fica anotada para o worker relancado voltar.
         batalha_marcar coliseum
         printf "  Entering...\n"
@@ -83,8 +110,10 @@ coliseum_fight() {
         done
       else
         printf "  Luta do coliseu em andamento - voltando para ela\n"
-        # Retomada: sem o HP maximo em disco, le agora (o limiar de cura e dele).
-        [ -s "$full_ram" ] || full_atualizar "$full_ram"
+        # Retomada: sem o HP maximo em disco, le agora (o limiar de cura e
+        # dele). Depois do /train a pagina e relida: o primeiro golpe nao
+        # sai com os links de antes dele.
+        [ -s "$full_ram" ] || coliseum_hpmax
       fi
 
         cl_access() {

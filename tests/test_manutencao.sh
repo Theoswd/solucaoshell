@@ -3945,17 +3945,18 @@ _col81() {
     ( TMP="$_td20/col81_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/coliseum.sh" > /dev/null 2>&1
       unset COLISEU_GRAFICO; FUNC_coliseum=y; : > "$TMP/req"
-      run_curl_exec() { _u=${1#http://jogo}; _u=${_u%%\?*}; echo "$_u" >> "$TMP/req"
-          if [ "$PG" = luta ]; then echo "<img src='/images/icon/level.png'/> <a href='/coliseum/enterFight/?r=5'>Entrar</a>"
+      run_curl_exec() { _u=${1#http://jogo}; _u=${_u%%\?*}; echo "$_u" >> "$TMP/req"; printf %s "$_u" > "$TMP/.ult_req"
+          if [ "$PG" = luta ]; then echo "<img src='/images/icon/level.png'/> <a href='/coliseum/enterFight/?r=`wc -l < "$TMP/req"`'>Entrar</a>"
           else echo "<img src='/images/icon/level.png'/> <a href='/coliseum/'>Coliseu</a>"; fi; }
-      full_atualizar() { echo /train >> "$TMP/req"; echo 4608 > "$1"; }
+      # TREINO=sai: o full_atualizar pede o /train (leitura vencida).
+      full_atualizar() { [ "$TREINO" = sai ] && { echo /train >> "$TMP/req"; printf /train > "$TMP/.ult_req"; }; echo 4608 > "$1"; }
       batalha_marcar() { :; }; time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
       coliseum_luta() { :; }
       PG="$1"; cd "$TMP"
       if [ "$PG" = luta ]; then
           # Para na inscricao (batalha_marcar sai do subshell): basta ver a
           # ordem do preparo.
-          ( batalha_marcar() { exit 0; }; coliseum_fight > /dev/null 2>&1 )
+          ( batalha_marcar() { echo "entra=$go_stop" >> "$TMP/req"; exit 0; }; coliseum_fight > /dev/null 2>&1 )
       else
           coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1
       fi
@@ -3963,11 +3964,12 @@ _col81() {
 }
 check "coliseu sem luta: 1 pedido por tentativa (grafico uma vez, sem /train)" \
     "/settings/graphics/0 /coliseum /coliseum /coliseum " "`_col81 nada`"
-_r=`_col81 luta`
-case "$_r" in
-    "/settings/graphics/0 /coliseum /train ") ok "coliseu com luta: /train antes de entrar ($_r)" ;;
-    *) bad "coliseu com luta: ordem do preparo ($_r)" ;;
-esac
+# O clique sai sempre da ultima pagina: depois do /train o /coliseum e
+# relido e o nonce e o dele (r=4, nao o r=2 da pagina de antes do /train).
+check "coliseu com luta: /train e o /coliseum relido antes de entrar" \
+    "/settings/graphics/0 /coliseum /train /coliseum entra=/coliseum/enterFight/?r=4 " "`TREINO=sai _col81 luta`"
+check "coliseu com luta, HP maximo em dia: entra com a pagina lida" \
+    "/settings/graphics/0 /coliseum entra=/coliseum/enterFight/?r=2 " "`TREINO=fica _col81 luta`"
 check "painel: /questrnd aparece como Missao Aleatoria, /quest como Missoes" "Missão Aleatória|Missões" \
     "`cd "$_td20" && . "$LIB/panel.sh" > /dev/null 2>&1; mkdir -p ab81; printf '/questrnd/take/' > ab81/pagina; aba_de_v ab81; printf '%s|' "$_ABA"; printf '/quest/' > ab81/pagina; aba_de_v ab81; printf '%s' "$_ABA"`"
 
@@ -4065,16 +4067,17 @@ _r=`( TMP="$_td20/f83e"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACIN
       cd "$TMP" && clanfight_fight > /dev/null 2>&1
       grep -o 'grass/?r=[0-9]*' "$TMP/req" | head -n 1 )`
 check "Torneio: a erva depois da cura usa o link da pagina nova" "grass/?r=9" "$_r"
-# Rotina: batalha pendente vem antes das atividades.
+# Rotina: com batalha pendente (sessao caida na luta) nao roda as atividades,
+# e nao tenta outra retomada: quem chama acabou de tentar (3.9.86).
 _r=`( TMP="$_td20/f83f"; mkdir -p "$TMP"; export TMP; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       batalha_marcar king
       batalha_retomar() { printf 'retomou '; return 0; }
       servidor_mudo() { printf 'ATIVIDADES '; return 0; }
       tarefas_livres; printf '| '
-      batalha_retomar() { printf 'retomou '; batalha_limpar; return 0; }
+      batalha_limpar
       tarefas_livres )`
-check "rotina: retoma a batalha pendente antes das atividades" \
-    "retomou | retomou ATIVIDADES Servidor sem resposta - atividades na proxima volta" "$_r"
+check "rotina: batalha pendente segura as atividades, sem nova retomada" \
+    "| ATIVIDADES Servidor sem resposta - atividades na proxima volta" "$_r"
 check "start: retomada logo depois do login" 1 \
     "`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c '^    batalha_retomar$'`"
 # evento_cancelar so apaga a batalha do proprio evento; anotacao vale ate o
@@ -4160,6 +4163,26 @@ _r=`( TMP="$_td20/f85e"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "
       sleep() { :; }; evento_dedicar
       [ "\`cat "$TMP/em_evento"\`" = $(( 1000 + 240 - $$ % 10 )) ] && printf 'hora_certa '; wc -l < "$TMP/d" )`
 check "evento_dedicar: minuto e segundo de um date so" "hora_certa 2" "$_r"
+_r=`( TMP="$_td20/f85f"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      batalha_pendente() { return 0; }; batalha_retomar() { echo RETOMOU >> "$TMP/r"; }
+      clan_id() { echo ROTINA >> "$TMP/r"; }; stats_liberado() { echo ROTINA >> "$TMP/r"; return 1; }
+      tarefas_livres > /dev/null 2>&1; printf 'rc=%s ' $?; cat "$TMP/r" 2>/dev/null | tr '\n' ' ' )`
+check "tarefas_livres: com batalha pendente nao roda a rotina nem tenta a 3a retomada" "rc=0 " "$_r"
+_r=`( TMP="$_td20/f85g"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { printf '%s' "<a href=/altars/dod"; return 18; }
+      printf '%s' "<a href=/altars/unrip/?r=777>rev</a>" > "$TMP/pag"; luta_inicio altars > /dev/null 2>&1
+      ressuscitar altars "$TMP/pag" > /dev/null 2>&1; printf 'rc=%s reviveu=%s falhas=%s' $? "$_reviveu" "$_rs_falhas" )`
+check "ressuscitar: pagina cortada (curl 18) nao gasta a ressurreicao" "rc=0 reviveu=0 falhas=1" "$_r"
+check "Vale: o primeiro golpe so dispensa a releitura quando respondeu inteiro" "1 1" \
+    "`grep -c 'time_exit 17 && \[ "\${TE_RC:-0}" = 0 \] && \[ -s "\$TMP/SRC" \] && _VL_PAGINA0=1' "$LIB/undying.sh"` `grep -c 'if \[ "\${_VL_PAGINA0:-0}" != 1 \]; then' "$LIB/undying.sh"`"
+_r=`( TMP="$_td20/f85h"; mkdir -p "$TMP"; export TMP; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' 'login=a&pass=b' | base64 > "$TMP/cript_file"
+      # Primeiro /user: o jogo diz que a conta saiu; dai em diante, sem rede.
+      run_curl() { [ -f "$TMP/n" ] && return 7; : > "$TMP/n"; printf '%s' 'x jsInterface.event("user=0;") y'; }
+      login_lock() { :; }; login_unlock() { :; }
+      login_logoff 2>&1 | grep -c 'falha ao reconectar (sem resposta do servidor)' )`
+check "reconexao: o log diz quando foi rede, e nao senha recusada" 1 "$_r"
 unset -f _cnt85
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53

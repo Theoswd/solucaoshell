@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.85"
+versionNum="3.9.86"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -60,6 +60,9 @@ time_exit() {
     # fetch_page faz.
     wait "$TEFPID" 2>/dev/null
     _te_rc=$?
+    # Codigo do curl (0 = pagina inteira), para quem precisa distinguir uma
+    # pagina cortada (18, 56) de uma resposta completa.
+    TE_RC=$_te_rc
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
     if [ "$_te_rc" = "28" ]; then
@@ -1132,8 +1135,9 @@ ressuscitar() {
     # PEDIDO SEM RESPOSTA NAO GASTA A RESSURREICAO. A trava valia mesmo com o
     # unrip cortado pela rede: a releitura ainda mostrava o unrip, o
     # ressuscitar recusava e o luta_acabou declarava a conta morta. Ate duas
-    # novas tentativas por luta.
-    if ! time_exit 17 || [ ! -s "$2" ]; then
+    # novas tentativas por luta. Pagina cortada no meio (curl 18 ou 56) conta
+    # como sem resposta, nao so o tempo esgotado.
+    if ! time_exit 17 || [ "${TE_RC:-0}" != 0 ] || [ ! -s "$2" ]; then
         _rs_falhas=$(( ${_rs_falhas:-0} + 1 ))
         [ "$_rs_falhas" -le 2 ] && _reviveu=0
     fi

@@ -27,7 +27,8 @@ undying_fight() {
   # para fora). Sem isto a luta poderia comecar lendo uma pagina de arena.
   # Vindo do undying_start, que acabou de dar o primeiro golpe, a pagina e a
   # resposta dele: reler aqui era um pedido a toa, colado no golpe (<5s).
-  if [ -z "$_VL_GOLPE0" ]; then
+  # So quando o golpe respondeu: estourado ou vazio, rele como antes.
+  if [ "${_VL_PAGINA0:-0}" != 1 ]; then
   (
     run_curl_exec "${URL}/undying" > "$TMP/SRC"
   ) </dev/null > /dev/null 2>&1 &
@@ -103,7 +104,7 @@ undying_fight() {
     _last_act="$_VL_GOLPE0"; _vl_t1="$_VL_GOLPE0"; _vl_h1="$_VL_HORA0"
     case "$_VL_LINK0" in */mana/*) _vl_mana=1 ;; *) _vl_hit=1 ;; esac
   fi
-  unset _VL_GOLPE0 _VL_HORA0 _VL_LINK0
+  unset _VL_GOLPE0 _VL_HORA0 _VL_LINK0 _VL_PAGINA0
   echo "$_last_act" > last_atk
   _last_grass=$(( _agora - 60 )); _last_stone=$(( _agora - 60 ))
   : > BREAK_LOOP
@@ -221,7 +222,8 @@ undying_start() {
         (
           run_curl_exec "${URL}${_VL_LINK0}" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        _VL_PAGINA0=0
+        time_exit 17 && [ "${TE_RC:-0}" = 0 ] && [ -s "$TMP/SRC" ] && _VL_PAGINA0=1
         echo "1" > BREAK_LOOP
         printf " ... undying iniciado\n"
       fi

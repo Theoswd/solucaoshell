@@ -100,12 +100,13 @@ login_logoff() {
     [ "$_ll_lock" = "1" ] && login_unlock
     unset _ll_lock
 
-    # Rede (POST ou /user sem resposta) nao e senha recusada: mesma separacao
-    # do do_login.
-    if [ "$_ll_rc" -ne 0 ] || [ -z "$PAGE" ]; then LOGIN_ERRO=rede; else LOGIN_ERRO=credencial; fi
+    # Rede (POST ou /user sem resposta) nao e senha recusada: o log diz qual
+    # foi, como o do_login separa.
+    if [ "$_ll_rc" -ne 0 ] || [ -z "$PAGE" ]; then _ll_porque="sem resposta do servidor"; else _ll_porque="login recusado"; fi
     unset _ll_rc _ll_rc2
 
     if is_logged_in "$PAGE"; then
+        unset _ll_porque
         sessao_marcar
         printf "[%s] %s — reconectado\n" "$SLS_TAG" "$SLS_USER"
         _acc=`extract_username "$PAGE"`
@@ -121,7 +122,8 @@ login_logoff() {
         return 0
     fi
 
-    printf "[%s] %s — falha ao reconectar\n" "$SLS_TAG" "$SLS_USER"
+    printf "[%s] %s — falha ao reconectar (%s)\n" "$SLS_TAG" "$SLS_USER" "$_ll_porque"
+    unset _ll_porque
     [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
     return 1
 }

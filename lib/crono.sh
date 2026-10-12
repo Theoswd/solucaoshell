@@ -520,14 +520,13 @@ campanha_liberada() {
 # esta aplicada num deles nada mais deve competir. Ao terminar o evento,
 # o start() chama esta mesma varredura (so o que venceu o proprio portao).
 tarefas_livres() {
-    # BATALHA PENDENTE ANTES DAS ATIVIDADES. Com a sessao caida no meio da
-    # luta a batalha fica anotada; quando a sessao volta, a rotina (arena,
-    # missoes...) rodava antes e a retomada so vinha no descanso do fim da
-    # volta, minutos depois. Sem retomar (sessao ainda fora), nada aqui.
-    if batalha_pendente; then
-        batalha_retomar
-        batalha_pendente && return 0
-    fi
+    # BATALHA PENDENTE: NADA DA ROTINA. A anotacao so fica depois de uma
+    # retomada quando a sessao caiu no meio da luta. Todo caminho ate aqui
+    # acabou de tentar a retomada (o sls_play no inicio da volta, o start()
+    # depois do login_logoff), entao tentar de novo aqui era um terceiro
+    # par de pedidos por volta num servidor que ja recusava. So nao roda a
+    # rotina, que tambem cairia na sessao fora.
+    batalha_pendente && return 0
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
     # --- Numeros do painel, a cada 5 min
