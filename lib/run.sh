@@ -1,7 +1,4 @@
 sls_play() {
-    # Um "date" por volta: o horario da agenda e todos os portoes da rotina
-    # saem dele (relogio_sync, em info.sh).
-    relogio_sync
     echo "$RUN" > "$TMP/runmode_file" 2>/dev/null
 
     # ID DO CLA — A VARIAVEL, NAO SO O ARQUIVO.
@@ -26,6 +23,16 @@ sls_play() {
     # o sistema derrubava. A batalha fica anotada em disco desde a inscricao
     # (batalha_marcar), e aqui a conta volta para ela.
     batalha_retomar
+
+    # UM "date" POR VOLTA, DEPOIS DA IDA A REDE. O horario da agenda e os
+    # portoes da rotina saem dele (relogio_sync, em info.sh). Ele vinha no
+    # topo, antes do clan_id e da retomada: um /clan lento (ate 17s) em
+    # 12:29:50 fazia o case ver 12:29 as 12:30:05, entrar no Rei fora da
+    # janela e deixar a conta 10 min parada no evento_espera. Lido aqui, ele
+    # tambem cobre a retomada, que leva minutos (antes era um date a mais so
+    # nesse caso). O clan_id e a retomada usam o relogio da volta anterior
+    # (ou o date, na primeira), como os portoes sempre fizeram.
+    relogio_sync
 
     # CRONOGRAMA DE BATALHAS — ORDEM DE PRIORIDADE
     #
@@ -147,22 +154,41 @@ sls_play() {
         # ramo (*), que ja chama tarefas_livres, entao a checagem das
         # missoes do cla e da arena continua na mesma frequencia.
         (00:[345]5|0[123]:[0-5]5|04:[012]5)
-            coliseum_fight
-              # PAUSA PARA CHECAR MISSOES. O Coliseu comum nao esta entre os
-              # cinco eventos de prioridade, entao entre as lutas o bot
-              # confere o checklist do cla e roda a arena no intervalo dela.
-              # Antes, as quatro horas da janela passavam sem nada disso.
-            tarefas_livres
-            # Este ramo nao passa pelo func_cat/start(), entao sem isto a
-            # sessao ficava presa na ultima pagina de luta/missao. Descansa na
-            # Home no servidor entre os pulsos (o func_cat ja faz isso nos
-            # demais ramos).
-            descansar
-            # Quando NAO ha luta, o coliseum_fight retorna na hora e este ramo
-            # (sem func_sleep) reentraria em rajada dentro do mesmo minuto.
-            # Uma pausa curta limita isso sem atrasar o pulso de forma sensivel;
-            # quando HA luta, o coliseum_fight ja consome o tempo.
-            sleep 5
+            # UM PULSO POR MINUTO QUANDO NAO HA LUTA. Sem luta o
+            # coliseum_fight volta na hora, e o ramo se repetia de 5 em 5s
+            # no mesmo minuto (/coliseum e Home a cada passada, ~10 vezes).
+            # Achou o Coliseu sem luta neste minuto: o resto dele e como um
+            # minuto comum (o ramo (*)). Com luta, nada muda: a luta leva
+            # minutos, e uma luta que acabe ainda no minuto do pulso pode
+            # tentar outra, como antes. A marca leva o dia: o worker vive
+            # dias, e a de uma noite pulava o mesmo minuto na noite seguinte.
+            # No modo -cl (Coliseu o tempo todo) nao ha guarda.
+            if [ "$_COL_PULSO" = "$_DD $_HH:$_MM" ]; then
+                tarefas_livres
+                func_sleep
+                func_crono -q
+            else
+                coliseum_fight
+                case "$RUN" in
+                    *-cl*) ;;
+                    *) [ "$COLISEU_SEM_LUTA" = 1 ] && _COL_PULSO="$_DD $_HH:$_MM" ;;
+                esac
+                  # PAUSA PARA CHECAR MISSOES. O Coliseu comum nao esta entre os
+                  # cinco eventos de prioridade, entao entre as lutas o bot
+                  # confere o checklist do cla e roda a arena no intervalo dela.
+                  # Antes, as quatro horas da janela passavam sem nada disso.
+                tarefas_livres
+                # Este ramo nao passa pelo func_cat/start(), entao sem isto a
+                # sessao ficava presa na ultima pagina de luta/missao. Descansa na
+                # Home no servidor entre os pulsos (o func_cat ja faz isso nos
+                # demais ramos).
+                descansar
+                # Quando NAO ha luta, o coliseum_fight retorna na hora e este ramo
+                # (sem func_sleep) reentraria em rajada dentro do mesmo minuto.
+                # Uma pausa curta limita isso sem atrasar o pulso de forma sensivel;
+                # quando HA luta, o coliseum_fight ja consome o tempo.
+                sleep 5
+            fi
             ;;
 
         # --- Batalha de Bandeiras
@@ -176,6 +202,9 @@ sls_play() {
         # --- Eventos especiais
         (09:2[5-9]|21:2[5-9])
             specialEvent
+            # Marca o portao: sem isto o tarefas_livres do start() logo abaixo
+            # chamava o specialEvent de novo.
+            ativ_marcar evento
             start
             ;;
 
@@ -196,17 +225,20 @@ sls_play() {
             ;;
 
         (*)
-            if echo "$RUN" | grep -q -E '[-]cl'; then
+            case "$RUN" in *-cl*) _rn_cl=1 ;; *) _rn_cl=0 ;; esac
+            if [ "$_rn_cl" = 1 ]; then
                 printf "Running in coliseum mode: %s\n" "$RUN"
                 sleep 5
-                arena_duel
+                # A arena fica com o tarefas_livres logo abaixo, no portao
+                # dela (arena_liberada): aqui ela saia a cada volta, de 15 em
+                # 15s ou de 60 em 60s, sem energia na maioria das vezes.
                 coliseum_start
                 messages_info
             fi
             # Arena a cada 30 min, mesmo fora dos minutos da agenda.
             tarefas_livres
             func_sleep
-            func_crono
+            func_crono -q
             ;;
     esac
 }

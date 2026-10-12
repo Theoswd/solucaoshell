@@ -144,7 +144,18 @@ king_fight() {
     #   (a) a virada do rei morto (a pagina troca de forma por um instante);
     #   (b) a nossa morte (a pagina passa a oferecer o unrip);
     #   (c) uma pagina de transicao ou um soluco de rede.
-    # Rele /king antes de decidir qualquer coisa.
+    # Rele /king antes de decidir qualquer coisa — UMA vez. Na segunda
+    # passada (_reconf=1) a pagina ja e a releitura: reler de novo era um
+    # pedido a mais e deixava os links (ATK, KINGATK, HP) da leitura anterior
+    # valendo quando a luta voltava na terceira.
+    if [ "${_reconf:-0}" = 0 ]; then
+    # A VIRADA SO CONTA COM PAGINA DO JOGO. Resposta vazia, cortada ou que
+    # nao e do jogo (rede) nao e o rei caindo: adiantar a contagem com ela
+    # trocava a fase (esquiva liberada, limiar de cura menor) com o rei vivo.
+    case "`estado_luta "$TMP/SRC" king`" in
+      invalida|deslogado) _virada=0 ;;
+      *)                  _virada=1 ;;
+    esac
     (
       run_curl_exec "${URL}/king" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
@@ -167,13 +178,27 @@ king_fight() {
     # over" com a batalha em andamento. Reavalia UMA vez (o _reconf trava a
     # recursao) e so entao desiste. A virada de pagina adianta a contagem da
     # morte do rei: se na volta nao houver kingatk, a fase muda na hora.
-    if [ "${_reconf:-0}" = 0 ]; then
       _reconf=1
-      _sem_rei=3
+      [ "$_virada" = 1 ] && _sem_rei=3
       cl_access
       return
     fi
     _reconf=0
+    # PASSADA DA RELEITURA: esta pagina ja e a relida (aqui em cima ou no
+    # ramo "sem link de ataque" do laco, que rele /king e chega com
+    # _reconf=1). Desde a 3.9.83 esse segundo caminho pulava o ressuscitar e
+    # a virada: a conta morta via o unrip no luta_acabou e encerrava a luta,
+    # e a fase do rei morto atrasava ~15s. Os dois valem aqui tambem. O
+    # ressuscitar nao pede nada sem unrip na pagina, e a trava _reviveu
+    # impede um segundo unrip.
+    if ressuscitar king "$TMP/SRC"; then
+      cl_access
+      return
+    fi
+    case "`estado_luta "$TMP/SRC" king`" in
+      invalida|deslogado) ;;
+      *) _sem_rei=3 ;;
+    esac
     # Nem a releitura trouxe acao do Rei. Ainda assim nao e o bot quem decide
     # que a luta acabou: so o jogo declara (morte ou fim), e e isso que o
     # luta_acabou le. Sem declaracao, o laco segue na pagina do Rei.
@@ -262,9 +287,11 @@ king_fight() {
         (
           read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
         cl_access
-        _last_heal="$_agora"; echo "$_last_heal" > last_heal
+        # Pedido que nem chegou ao servidor: a cura nao valeu (ver
+        # pedido_nao_saiu). O relogio unico de acoes marca do mesmo jeito.
+        if [ "$_saiu" = 1 ]; then _last_heal="$_agora"; echo "$_last_heal" > last_heal; fi
         _last_act="$_agora";  echo "$_last_act"  > last_atk
 
       # PRIORIDADE 2 — ESQUIVA: SO depois da morte do rei (_rei_morto=1), so
@@ -278,9 +305,9 @@ king_fight() {
         (
           read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
         cl_access
-        _last_dodge="$_agora"; echo "$_last_dodge" > last_dodge
+        if [ "$_saiu" = 1 ]; then _last_dodge="$_agora"; echo "$_last_dodge" > last_dodge; fi
         _last_act="$_agora";   echo "$_last_act"   > last_atk
 
       # PRIORIDADE 3 — ERVA: acao propria, SO quando disponivel (link na
@@ -328,8 +355,8 @@ king_fight() {
           # para nao acertar cla aliado.
           #
           # Consome a janela de 5s como qualquer acao: trocar de alvo tambem
-          # e uma jogada, e nao pode virar rajada.
-          printf "Alvo aliado — trocando de alvo\n"
+          # e uma jogada, e nao pode virar rajada. (A linha do log sai do
+          # troca_aliado.)
           (
             read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
@@ -355,6 +382,8 @@ king_fight() {
           run_curl_exec "${URL}/king" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao (ver clanfight.sh).
+        _reconf=1
         cl_access
         _last_act="$_agora"; echo "$_last_act" > last_atk
       fi
@@ -363,6 +392,8 @@ king_fight() {
       # Dentro do intervalo de 5s: espera o restante SEM nenhuma requisicao —
       # uma atualizacao de pagina antes de 5s atrapalharia a proxima acao.
       _resta=$(( LA - ( _agora - _last_act ) ))
+      # Relogio do aparelho voltou: nunca mais que LA.
+      [ "$_resta" -le "$LA" ] || _resta=$LA
       [ "$_resta" -gt 0 ] && sleep "$_resta"
     fi
 
@@ -383,7 +414,7 @@ king_fight() {
   fi
 
   unset cl_access acao_disponivel fase_ler
-  unset _rei_morto _sem_rei _reconf _reviveu _full HPER_REI HPER_POS
+  unset _rei_morto _sem_rei _reconf _reviveu _virada _full HPER_REI HPER_POS
   unset _last_dodge _last_grass _last_stone LD LC LG LS
   func_unset
   # SEM INSCRICAO DEPOIS DA LUTA. Aqui havia um apply_event: um GET e, com o
@@ -391,7 +422,8 @@ king_fight() {
   # depois achava o "Fuja da batalha" e, sem batalha anotada, confirmava a fuga.
   # A inscricao de cada Rei e feita pelo king_start.
   printf "King ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 

@@ -68,11 +68,14 @@ dia_atual() {
     if [ -n "$_rl_up" ] && [ -n "$_DD" ]; then _DIA="$_DD"; else _DIA=`date +%d`; fi
 }
 
-func_crono() {
+func_crono() { # [-q]: so atualiza HOUR/MIN, sem escrever no log
     hora_atual; minuto_atual
     HOUR="$_HOR"; MIN="$_MIN"
     [ -z "$HOUR" ] && HOUR=0
     [ -z "$MIN" ] && MIN=0
+    # Depois do func_sleep a hora saia duas vezes seguidas no log (aqui e no
+    # func_cat da volta seguinte). Com -q, so as variaveis.
+    [ "$1" = -q ] && return 0
     if [ -n "$_rl_up" ]; then
         printf "%s %02d:%02d\n" "$URL" "$HOUR" "$MIN"
     else
@@ -285,6 +288,39 @@ atualiza_stats() {
     # entao ela parecia travada.
     fetch_train_stats 2>/dev/null
 
+    # A HOME DO DESCANSO NO LUGAR DO /user, SO DEPOIS DE CONFERIDA.
+    #
+    # O descanso le a Home a cada volta, e o /user era um pedido a mais a
+    # cada 5 min so para o painel. A Home lida ha menos de 2 min, viva e com
+    # os cinco icones do cabecalho, serve no lugar dele — mas so depois de o
+    # worker ver, uma vez, que ela da os mesmos numeros que o /user (nivel,
+    # ouro e prata iguais, HP e energia presentes). Sem bater em 3 conferencias,
+    # ou sem os cinco icones, segue tudo pelo /user, como antes. O nome da
+    # conta (ACC) continua vindo do /user do login.
+    _st_home=""
+    if [ "${HOME_STATS:-}" != 0 ]; then
+        _st_ok=0; { read -r _st_ok < "$TMP/.home_ok"; } 2>/dev/null
+        case "$_st_ok" in ''|*[!0-9]*) _st_ok=0 ;; esac
+        agora_s
+        _st_ok=$(( _AGORA - _st_ok ))
+        if [ "$_st_ok" -ge 0 ] && [ "$_st_ok" -lt 120 ]; then
+            _st_home=`cat "$TMP/REST" 2>/dev/null`
+            for _st_m in "health.png' alt='hp'/>" "mana.png' alt='mp'/>" "level.png' alt=" \
+                         "gold.png' alt='g'/>" "silver.png' alt='s'/>"; do
+                case "$_st_home" in *"$_st_m"*) ;; *) _st_home=""; break ;; esac
+            done
+        fi
+        unset _st_ok _st_m
+    fi
+    if [ "$HOME_STATS" = 1 ] && [ -n "$_st_home" ]; then
+        parse_status "$_st_home"
+        messages_info
+        ativ_marcar stats
+        printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
+        unset _st_home _aba_ant
+        return 0
+    fi
+
     _pg=`run_curl "${URL}/user" 2>/dev/null`
 
     # SESSAO CAIDA NO OCIO: RECONECTA EM VEZ DE DESISTIR.
@@ -319,18 +355,43 @@ atualiza_stats() {
 
     if [ -z "$_pg" ] || ! is_logged_in "$_pg"; then
         printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
-        unset _pg _aba_ant
+        unset _pg _aba_ant _st_home
         return 1
     fi
     _a=`extract_username "$_pg"`
     [ -n "$_a" ] && ACC="$_a"
     # Pagina logada: a sessao respondeu (libera a varredura, ver servidor_mudo).
     sessao_marcar
+    # Conferencia da Home (acima): os numeros dela antes, os do /user depois.
+    # O nivel de antes volta para o parse_status: e por ele que a subida de
+    # nivel apaga o last_train (HP maximo e teto de energia novos).
+    if [ -z "$HOME_STATS" ] && [ -n "$_st_home" ]; then
+        _st_lvl="$ACC_LVL"
+        status_ler "$_st_home"
+        _st_h="$ACC_HP|$ACC_MP|$ACC_LVL|$ACC_GOLD|$ACC_SILVER"
+        ACC_LVL="$_st_lvl"; unset _st_lvl
+    fi
     parse_status "$_pg"
+    if [ -n "$_st_h" ]; then
+        case "$_st_h" in
+            ?*'|'?*"|$ACC_LVL|$ACC_GOLD|$ACC_SILVER")
+                if [ -n "$ACC_LVL" ] && [ -n "$ACC_GOLD" ] && [ -n "$ACC_SILVER" ]; then
+                    HOME_STATS=1
+                    printf "Painel: a Home traz os mesmos numeros do /user - o /user deixa de ser pedido\n"
+                fi ;;
+        esac
+        if [ -z "$HOME_STATS" ]; then
+            _st_n=$(( ${_st_n:-0} + 1 ))
+            if [ "$_st_n" -ge 3 ]; then
+                HOME_STATS=0
+                printf "Painel: a Home nao bate com o /user - os numeros seguem pelo /user\n"
+            fi
+        fi
+    fi
     messages_info
     ativ_marcar stats
     printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
-    unset _pg _a _aba_ant
+    unset _pg _a _aba_ant _st_home _st_h
 }
 
 # MASMORRA DO CLA: QUEM DECIDE E A PAGINA, NAO O RELOGIO.
@@ -517,6 +578,13 @@ campanha_liberada() {
 # esta aplicada num deles nada mais deve competir. Ao terminar o evento,
 # o start() chama esta mesma varredura (so o que venceu o proprio portao).
 tarefas_livres() {
+    # BATALHA PENDENTE: NADA DA ROTINA. A anotacao so fica depois de uma
+    # retomada quando a sessao caiu no meio da luta. Todo caminho ate aqui
+    # acabou de tentar a retomada (o sls_play no inicio da volta, o start()
+    # depois do login_logoff), entao tentar de novo aqui era um terceiro
+    # par de pedidos por volta num servidor que ja recusava. So nao roda a
+    # rotina, que tambem cairia na sessao fora.
+    batalha_pendente && return 0
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
     # --- Numeros do painel, a cada 5 min
@@ -720,9 +788,10 @@ ativ_marcar() { agora_s; echo "$_AGORA" > "$TMP/last_$1" 2>/dev/null; }
 # Os ramos de prioridade entram em :55-:59 (evento em :00) ou :25-:29
 # (evento em :30), entao a conta e direta.
 evento_dedicar() {
-    _ed_m=`date +%M | sed 's/^0//'`
+    # Minuto e segundo de um date so (eram dois date|sed).
+    _ed_s=`date +%M%S`
+    _ed_m=${_ed_s%??}; _ed_m=${_ed_m#0}; _ed_s=${_ed_s#??}; _ed_s=${_ed_s#0}
     case "$_ed_m" in ''|*[!0-9]*) _ed_m=0 ;; esac
-    _ed_s=`date +%S | sed 's/^0//'`
     case "$_ed_s" in ''|*[!0-9]*) _ed_s=0 ;; esac
     if   [ "$_ed_m" -ge 50 ]; then _ed_f=$(( 60 - _ed_m ))
     elif [ "$_ed_m" -ge 20 ] && [ "$_ed_m" -lt 30 ]; then _ed_f=$(( 30 - _ed_m ))
@@ -762,10 +831,14 @@ evento_dedicar() {
 # exemplo) chama isto: sem o marcador, o evento_espera devolve na hora e a
 # conta volta para a rotina em vez de ficar dez minutos parada por um evento
 # que nao vai acontecer.
-evento_cancelar() {
+evento_cancelar() { # [SECAO]
     rm -f "$TMP/em_evento" 2>/dev/null
-    # Sem inscricao nao ha batalha a retomar.
-    batalha_limpar 2>/dev/null
+    # Sem inscricao nao ha batalha a retomar. Com a secao, so apaga a anotacao
+    # dela: uma batalha de OUTRO evento ainda pendente (sessao caida) fica,
+    # senao o descanso confirmaria a fuga dela.
+    if [ -z "$1" ] || ! batalha_pendente || [ "$_bp_sec" = "$1" ]; then
+        batalha_limpar 2>/dev/null
+    fi
     return 0
 }
 
@@ -1016,7 +1089,7 @@ start() {
     # segunda chamada no mesmo minuto so espera o minuto virar.
     _st_min=`date +%Y%m%d%H%M`
     if [ "`cat "$TMP/last_start" 2>/dev/null`" = "$_st_min" ]; then
-        _st_s=`date +%S | sed 's/^0//'`
+        _st_s=`date +%S`; _st_s=${_st_s#0}
         case "$_st_s" in ''|*[!0-9]*) _st_s=0 ;; esac
         unset _st_min
         espera_interrompivel $(( 60 - _st_s ))
@@ -1036,11 +1109,13 @@ start() {
             return 1
         fi
     fi
+    # Sessao de volta: a batalha que ficou pendente vem antes da varredura.
+    batalha_retomar
 
     # CLAN_ID DUPLICADO.
     #
     # O login_logoff, chamado logo acima, ja executa o clan_id quando a
-    # sessao esta viva — e o clan_id vai a rede sempre, sem guarda nenhuma.
+    # sessao esta viva (o clan_id tem portao proprio de 60 min, clanid.sh).
     # O `||` mantem o caminho para quando o login_logoff nao existe ou nao
     # chegou a rodar.
     [ -n "$CLD" ] || clan_id 2>/dev/null
@@ -1076,6 +1151,6 @@ start() {
 
     messages_info
     descansar
-    func_crono
+    func_crono -q
     func_sleep
 }

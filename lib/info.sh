@@ -3,7 +3,7 @@
 # CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
 # funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
 # imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.64"
+versionNum="3.9.89"
 # Aguarda o ultimo job em background terminar, ate N segundos.
 #
 # CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
@@ -60,6 +60,9 @@ time_exit() {
     # fetch_page faz.
     wait "$TEFPID" 2>/dev/null
     _te_rc=$?
+    # Codigo do curl (0 = pagina inteira), para quem precisa distinguir uma
+    # pagina cortada (18, 56) de uma resposta completa.
+    TE_RC=$_te_rc
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
     if [ "$_te_rc" = "28" ]; then
@@ -69,6 +72,26 @@ time_exit() {
     fi
     unset _te_rc
     return 0
+}
+
+# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35: nome, conexao ou
+# TLS recusados, depois de um time_exit.) So nesses casos uma acao com
+# recarga (cura, escudo, esquiva) e tratada como nao feita e pode sair de
+# novo: com tempo esgotado ou pagina cortada o servidor pode ja ter usado o
+# elixir, e repetir gastaria outro.
+#
+# Tres seguidas que nao sairam contam como feita: com so esse pedido falhando
+# (e a releitura respondendo) a cura sairia a cada volta, sem pausa e sem
+# ataque.
+pedido_nao_saiu() {
+    case "${TE_RC:-0}" in
+        6|7|35)
+            _pns_n=$(( ${_pns_n:-0} + 1 ))
+            if [ "$_pns_n" -ge 3 ]; then _pns_n=0; return 1; fi
+            return 0 ;;
+    esac
+    _pns_n=0
+    return 1
 }
 
 # Funcao central de requisicao via curl.
@@ -743,6 +766,10 @@ batalha_pendente() {
     [ -n "$_bp_sec" ] || return 1
     _bp_min="$LUTA_TETO_MIN"
     case "$_bp_min" in ''|*[!0-9]*) _bp_min=30 ;; esac
+    # A anotacao conta da INSCRICAO e o teto da luta (luta_teto) do inicio da
+    # luta: no Rei, inscricao as :25 e luta podendo ir alem das :55. Com 10
+    # min de folga a anotacao nao vence com a luta ainda permitida.
+    _bp_min=$(( _bp_min + 10 ))
     _bp_t=$(( `date +%s` - _bp_t ))
     # Marca mais no futuro que o teto: o relogio voltou muito (data errada
     # corrigida) e ela nao vale. Um ajuste pequeno do NTP no meio da luta
@@ -857,6 +884,7 @@ luta_inicio() {
     _lt_lutou=0
     _lt_hp0=0
     _reviveu=0
+    _rs_falhas=0
     LUTA_MOTIVO=""
     LUTA_SESSAO_CAIU=0
     # Troca por aliado e fogo amigo (allies.sh).
@@ -880,6 +908,11 @@ luta_inicio() {
 luta_hp() {
     # Chamada so com a luta na tela: a conta lutou (ver LUTA_FORA_LUTOU).
     _lt_lutou=1
+    # A LUTA VOLTOU: a contagem do "fora" recomeca. Sem isto a marca de uma
+    # transicao antiga ficava valendo, e a segunda transicao da luta (15s ou
+    # 90s depois da primeira) ja encerrava na hora, com a conta viva. O
+    # mesmo para as leituras invalidas seguidas.
+    _lt_fora_desde=""; _lt_invalidas=0
     # So o primeiro numero: o arquivo de HP de alguns modulos traz uma linha
     # por ocorrencia na pagina, e espaco a esquerda sobra do sed.
     _lh="$1"
@@ -1052,6 +1085,29 @@ full_atualizar() { # arquivo_do_HP_maximo
     return 0
 }
 
+# HP MAXIMO ANTES DE AGIR NUMA PAGINA JA LIDA.   full_relendo FULL CAMINHO ARQ
+#
+# O full_atualizar pode pedir o /train (leitura com mais de 10 min). Saindo
+# esse pedido entre a leitura da pagina e o clique, o nonce (?r=) dela ja nao
+# vale e o servidor recusa a acao (ver clanquest.sh). Quando algum pedido
+# saiu (o .ult_req mudou), rele CAMINHO em ARQ.
+#   0 = releu (quem chama tira os links de novo), 1 = nada saiu.
+full_relendo() {
+    _fr_ur=""; { read -r _fr_ur < "$TMP/.ult_req"; } 2>/dev/null
+    full_atualizar "$1"
+    _fr_ur2=""; { read -r _fr_ur2 < "$TMP/.ult_req"; } 2>/dev/null
+    if [ "$_fr_ur2" = "$_fr_ur" ]; then
+        unset _fr_ur _fr_ur2
+        return 1
+    fi
+    unset _fr_ur _fr_ur2
+    (
+        run_curl_exec "${URL}$2" > "$3"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    return 0
+}
+
 # Alvo da inscricao, escalonado por conta: MMSS base mais 0 a VAO-1 segundos
 # (VAO padrao 30).
 #
@@ -1119,7 +1175,15 @@ ressuscitar() {
     (
         run_curl_exec "${URL}${_rs_l}" > "$2"
     ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    # PEDIDO SEM RESPOSTA NAO GASTA A RESSURREICAO. A trava valia mesmo com o
+    # unrip cortado pela rede: a releitura ainda mostrava o unrip, o
+    # ressuscitar recusava e o luta_acabou declarava a conta morta. Ate duas
+    # novas tentativas por luta. Pagina cortada no meio (curl 18 ou 56) conta
+    # como sem resposta, nao so o tempo esgotado.
+    if ! time_exit 17 || [ "${TE_RC:-0}" != 0 ] || [ ! -s "$2" ]; then
+        _rs_falhas=$(( ${_rs_falhas:-0} + 1 ))
+        [ "$_rs_falhas" -le 2 ] && _reviveu=0
+    fi
     unset _rs_l
     return 0
 }
@@ -1127,11 +1191,25 @@ ressuscitar() {
 hpmp() {
     # INICIO DO VALE: HP e mana maximos conferidos como no inicio das outras
     # batalhas (ver full_atualizar): relidos se a leitura tem mais de 10 min.
+    # O /train de baixo so sai se o fetch_train_stats nao acabou de ler um:
+    # com a pagina recem-lida e sem a mana nela, pedir de novo dava a mesma
+    # pagina. Sem resposta (ou sem pedido, leitura em dia), sai como antes.
+    _hp_fix=0; _hp_leu=0
     case " $* " in
-        *" -fix "*) SLS_MAXTIME=17; fetch_train_stats 10 2>/dev/null; unset SLS_MAXTIME ;;
+        *" -fix "*)
+            _hp_fix=1
+            _hp_ur=""; { read -r _hp_ur < "$TMP/.ult_req"; } 2>/dev/null
+            SLS_MAXTIME=17
+            if fetch_train_stats 10 2>/dev/null; then
+                _hp_ur2=""; { read -r _hp_ur2 < "$TMP/.ult_req"; } 2>/dev/null
+                # Leu e achou o HP maximo: so faltaria a mana, que viria igual.
+                # Pagina de erro (sem o HP) ainda tenta o segundo, como antes.
+                [ "$_hp_ur2" = "$_hp_ur" ] || [ -z "$FIXHP" ] || _hp_leu=1
+            fi
+            unset SLS_MAXTIME _hp_ur _hp_ur2 ;;
     esac
     # HP e mana maximos ja lidos neste processo: sem outro /train.
-    if echo "$@" | grep -q '\-fix' && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
+    if [ "$_hp_fix" = 1 ] && [ "$_hp_leu" = 0 ] && { [ -z "$FIXHP" ] || [ -z "$FIXMP" ]; }; then
         (
             run_curl_exec "$URL/train" > "$TMP/TRAIN"
         ) </dev/null > /dev/null 2>&1 &
@@ -1140,6 +1218,7 @@ hpmp() {
         [ -n "$_fx" ] && FIXHP=$_fx
         FIXMP=`grep -o -E ': [0-9]+' "$TMP/TRAIN" | sed -n '5s/: //p'`
     fi
+    unset _hp_fix _hp_leu
 
     # Mesma leitura do parse_status. O " | " dos padroes antigos era
     # alternancia do ERE: a mana dentro de <span> saia vazia (MPPER 0).
@@ -1187,6 +1266,32 @@ hpmp() {
 #   icon/gold.png' alt='g'/> 396
 #   icon/silver.png' alt='s'/> 408,1M
 # Energia so aparece em /train: mana.png' alt=''/> Energia: 2125
+# Os cinco numeros do cabecalho (HP, energia, nivel, ouro, prata) de uma
+# pagina em ACC_HP, ACC_MP, ACC_LVL, ACC_GOLD e ACC_SILVER, sem gravar nada.
+# E a leitura do parse_status (ver os comentarios dele); o atualiza_stats a
+# usa tambem para conferir a Home contra o /user.
+status_ler() {
+    ACC_HP=""; ACC_MP=""; ACC_LVL=""; ACC_GOLD=""; ACC_SILVER=""
+    _ps_l=`printf '%s' "$1" | grep -o -E \
+        -e "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" \
+        -e "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" \
+        -e "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" \
+        -e "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?"`
+    while IFS= read -r _ps_x; do
+        case "$_ps_x" in
+            health*) [ -n "$ACC_HP" ]     || ACC_HP=${_ps_x##*[!0-9]} ;;
+            mana*)   [ -n "$ACC_MP" ]     || ACC_MP=${_ps_x##*[!0-9]} ;;
+            level*)  [ -n "$ACC_LVL" ]    || ACC_LVL=${_ps_x##*[!0-9]} ;;
+            gold*)   [ -n "$ACC_GOLD" ]   || ACC_GOLD=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+            silver*) [ -n "$ACC_SILVER" ] || ACC_SILVER=${_ps_x#"${_ps_x%%[0-9]*}"} ;;
+        esac
+    done <<EOF
+$_ps_l
+EOF
+    unset _ps_l _ps_x
+}
+
 parse_status() {
     _pg="$1"
     [ -n "$_pg" ] || return 1
@@ -1206,18 +1311,20 @@ parse_status() {
     # numero, contanto que nenhum deles seja digito. Como "[^0-9]" nao casa
     # digito, o numero capturado e sempre o PRIMEIRO depois do icone — a
     # folga nao deixa o seletor pular para um numero vizinho.
-    ACC_HP=`printf '%s' "$_pg" | grep -o -E "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
-    ACC_MP=`printf '%s' "$_pg" | grep -o -E "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" | grep -o -E '[0-9]{1,9}$' | head -n1`
+    #
+    # UM GREP PARA OS CINCO. Eram cinco grep|grep|head (25 processos a cada
+    # leitura do cabecalho). Os mesmos cinco padroes vao num grep so, e o
+    # numero sai do fim de cada achado no proprio shell: vale o primeiro de
+    # cada icone, como o head -n1. Os marcadores nao tem digito, entao o
+    # numero e o que vem depois do ultimo nao-digito (HP, MP, nivel) ou do
+    # primeiro digito em diante (ouro e prata, guardados como o jogo mostra:
+    # pode vir "408,1M").
     _lvl_ant="$ACC_LVL"
-    ACC_LVL=`printf '%s' "$_pg" | grep -o -E "level\.png' alt='[^']*'/>[^0-9]{0,40}[0-9]{1,4}" | grep -o -E '[0-9]{1,4}$' | head -n1`
+    status_ler "$_pg"
     # Subiu de nivel: HP maximo e teto de energia mudaram (ver fetch_train_stats).
     [ -n "$_lvl_ant" ] && [ -n "$ACC_LVL" ] && [ "$_lvl_ant" != "$ACC_LVL" ] && \
         rm -f "$TMP/last_train" 2>/dev/null
     unset _lvl_ant
-
-    # Ouro e prata: guarda o texto como o jogo mostra (pode vir "408,1M").
-    ACC_GOLD=`printf '%s' "$_pg" | grep -o -E "gold\.png' alt='g'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
-    ACC_SILVER=`printf '%s' "$_pg" | grep -o -E "silver\.png' alt='s'/>[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
 
     NOWHP="$ACC_HP"; NOWMP="$ACC_MP"
 
@@ -1251,7 +1358,11 @@ parse_status() {
     # O teto do /train, quando maior. A energia so vale como numero inteiro:
     # separador de milhar sai, valor com sufixo (K/M) fica de fora.
     case "$FIXHP" in ''|*[!0-9]*) ;; *) [ "$FIXHP" -gt "$_mx_h" ] && _mx_h="$FIXHP" ;; esac
-    _mx_t=`printf '%s' "$ACC_ENE" | tr -d ".,'"` 2>/dev/null
+    # Sem separador (o caso comum), sem tr.
+    case "$ACC_ENE" in
+        *[.,\']*) _mx_t=`printf '%s' "$ACC_ENE" | tr -d ".,'"` 2>/dev/null ;;
+        *)        _mx_t="$ACC_ENE" ;;
+    esac
     case "$_mx_t" in ''|*[!0-9]*) ;; *) [ "$_mx_t" -gt "$_mx_e" ] && _mx_e="$_mx_t" ;; esac
 
     if [ -n "$ACC_HP" ] && [ "$_mx_h" -gt 0 ]; then

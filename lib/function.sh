@@ -45,11 +45,11 @@ load_config() {
     CONFIG_FILE="${TMP:-.}/config.cfg"
     [ -f "$CONFIG_FILE" ] || : > "$CONFIG_FILE"
 
-    config_defaults | while IFS='=' read -r _dk _dv; do
-        [ -n "$_dk" ] || continue
-        grep -q "^${_dk}=" "$CONFIG_FILE" 2>/dev/null || \
-            printf '%s=%s\n' "$_dk" "$_dv" >> "$CONFIG_FILE"
-    done
+    # Chaves que faltam, na ordem dos padroes: um awk le o arquivo uma vez
+    # (era um grep por chave, 22 a cada chamada, e o get_config chama aqui).
+    config_defaults | awk -v f="$CONFIG_FILE" '
+        BEGIN { while ((getline l < f) > 0) if (index(l, "=")) tem[substr(l, 1, index(l, "=") - 1)] = 1 }
+        { k = $0; sub(/=.*/, "", k); if (k != "" && !(k in tem)) print }' >> "$CONFIG_FILE"
 
     # NUMEROS DO PAINEL: 3 -> 5 MIN, UMA VEZ. O padrao ficava gravado no
     # config.cfg de cada conta, entao mudar so o padrao nao valia para quem

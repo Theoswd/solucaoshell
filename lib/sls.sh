@@ -116,7 +116,10 @@ LOCKDIR="$HOME/.sls/.login.lock"
 login_lock() {
     _n=0
     _lk_meu=0
-    while [ "$_n" -lt 180 ]; do
+    # De 3 em 3s, e o PID lido sem processo (era um cat por segundo em cada
+    # conta esperando). O login_espacar ja impoe 10s entre logins, entao a
+    # espera nao fica mais longa; o teto continua 180s.
+    while [ "$_n" -lt 60 ]; do
         if mkdir "$LOCKDIR" 2>/dev/null; then
             _lk_meu=1
             echo $$ > "$LOCKDIR/pid" 2>/dev/null
@@ -124,7 +127,7 @@ login_lock() {
             type login_espacar > /dev/null 2>&1 && login_espacar
             return 0
         fi
-        _dono=`cat "$LOCKDIR/pid" 2>/dev/null`
+        _dono=; { read -r _dono < "$LOCKDIR/pid"; } 2>/dev/null
         case "$_dono" in
             # PID ainda nao gravado: o dono acabou de criar a trava e
             # esta a caminho de escrever. Apagar aqui era uma corrida —
@@ -132,7 +135,7 @@ login_lock() {
             ''|*[!0-9]*) : ;;
             *) kill -0 "$_dono" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null ;;
         esac
-        sleep 1
+        sleep 3
         _n=$((_n + 1))
     done
     # Nao conseguiu em 3 minutos: segue assim mesmo, para uma trava
@@ -213,71 +216,24 @@ do_login() {
         return 1
     fi
 
-    creds=$(base64 -d "$cript_file" 2>/dev/null)
-    if [ -z "$creds" ]; then
-        printf "[%s] %s — ERRO: cript_file ilegivel\n" "$SLS_TAG" "$SLS_USER"
-        return 1
-    fi
-    # Sem echo|sed: o echo do dash interpreta "\", e uma senha com "\n" ou
-    # "\c" chegava alterada ao servidor.
-    luser=${creds#login=}; luser=${luser%%"&pass="*}
-    lpass=${creds#"login=${luser}&pass="}
-    unset creds
-
-    # O GET INICIAL PRECISA SER A PAGINA DE LOGIN, NAO A HOME.
+    # Autenticacao (login_autenticar, em loginlogoff.sh): o GET da pagina de
+    # login antes do POST e obrigatorio.
     #
-    # Esta linha ja foi "run_curl ${URL}/" e isso quebrou a autenticacao de
-    # todas as contas. O servidor exige que a sessao passe pela pagina de
-    # login (/?sign_in=1) antes de aceitar o POST de credencial; vindo da
-    # home, ele responde "Nome de usuario ou senha digitado incorretamente"
-    # mesmo com a senha certa — o que faz parecer credencial invalida.
-    #
-    # Comprovado alternando as duas formas com a mesma credencial:
+    # Esta sequencia ja comecou com "run_curl ${URL}/" e isso quebrou a
+    # autenticacao de todas as contas: vindo da home, o servidor responde
+    # "Nome de usuario ou senha digitado incorretamente" mesmo com a senha
+    # certa. Comprovado alternando as duas formas com a mesma credencial:
     #   GET /            -> recusado   (2 de 2)
     #   GET /?sign_in=1  -> LOGOU      (2 de 2)
-    #
-    # A versao original do projeto enviava o POST de login DUAS vezes. Esse
-    # primeiro POST parecia duplicacao inutil e foi removido, mas era ele que
-    # inicializava o fluxo de login. Agora um GET na propria pagina de login
-    # cumpre esse papel, sem enviar a credencial duas vezes.
-    login_lock
-    run_curl "${URL}/?sign_in=1" > /dev/null 2>&1
+    # A versao original enviava o POST DUAS vezes; o primeiro era o que
+    # inicializava o fluxo, e o GET cumpre esse papel sem mandar a senha duas
+    # vezes.
+    login_autenticar || return 1
 
-    # Senha pelo stdin (pass@-), nao na linha de comando do curl: o argv
-    # fica visivel em /proc e no ps durante o login.
-    printf %s "$lpass" | run_curl --data-urlencode "login=${luser}" \
-             --data-urlencode "pass@-" \
-             "${URL}/?sign_in=1" > /dev/null
-    # O $? TEM de ser lido AQUI, colado no comando.
-    #
-    # CORRECAO (contas que ficam fora do ar com muitas contas): antes o
-    # "unset luser lpass" vinha entre o POST e a leitura, entao "_rc2=$?"
-    # capturava o status do UNSET — que e sempre 0. A deteccao de falha de
-    # REDE no POST de login nunca disparava.
-    #
-    # O estrago aparece no backoff: uma falha de rede durante o POST (o caso
-    # comum quando ha 15 contas do mesmo IP e o servidor estrangula) caia no
-    # ramo "credencial", como se a senha estivesse errada. Esse ramo escala a
-    # espera — 60s, depois 300s e depois 900s. Uma oscilacao de poucos
-    # segundos jogava a conta para QUINZE MINUTOS parada, repetidamente, e o
-    # painel a mostrava fora do ar quase o tempo todo.
-    _rc2=$?
-    unset luser lpass
-
-    PAGE=$(run_curl "${URL}/user" 2>/dev/null)
-    _rc3=$?
-
-    # A trava cobre apenas a autenticacao. Liberar aqui, antes de
-    # avaliar o resultado, garante que ela sai em qualquer caminho —
-    # sucesso, recusa ou erro de rede.
-    login_unlock
-
-    if [ "$_rc2" -ne 0 ] || [ "$_rc3" -ne 0 ] || [ -z "$PAGE" ]; then
-        LOGIN_ERRO=rede
+    if [ "$LOGIN_ERRO" = rede ]; then
         unset PAGE
         return 1
     fi
-    LOGIN_ERRO=credencial
     if is_logged_in "$PAGE"; then
         ACC=$(extract_username "$PAGE")
         [ -z "$ACC" ] && ACC="$SLS_USER"

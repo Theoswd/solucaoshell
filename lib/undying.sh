@@ -25,10 +25,15 @@ undying_fight() {
 
   # Recupera a pagina de batalha (o arena_fullmana do start pode ter navegado
   # para fora). Sem isto a luta poderia comecar lendo uma pagina de arena.
+  # Vindo do undying_start, que acabou de dar o primeiro golpe, a pagina e a
+  # resposta dele: reler aqui era um pedido a toa, colado no golpe (<5s).
+  # So quando o golpe respondeu: estourado ou vazio, rele como antes.
+  if [ "${_VL_PAGINA0:-0}" != 1 ]; then
   (
     run_curl_exec "${URL}/undying" > "$TMP/SRC"
   ) </dev/null > /dev/null 2>&1 &
   time_exit 17
+  fi
 
   # Le a pagina: extrai o link de golpe e diz se ainda estamos na luta
   # (retorno 0 = em luta, 1 = fora). NAO encerra a luta sozinho.
@@ -92,6 +97,14 @@ undying_fight() {
   cf_access
   _agora=`date +%s`
   _last_act=$(( _agora - LA ))
+  # O golpe do undying_start conta no relogio de 5s e no resumo: a acao
+  # seguinte saia 1-2s depois dele, e o jogo recusa acoes coladas (a erva
+  # recusada so voltava 60s depois).
+  if [ -n "$_VL_GOLPE0" ]; then
+    _last_act="$_VL_GOLPE0"; _vl_t1="$_VL_GOLPE0"; _vl_h1="$_VL_HORA0"
+    case "$_VL_LINK0" in */mana/*) _vl_mana=1 ;; *) _vl_hit=1 ;; esac
+  fi
+  unset _VL_GOLPE0 _VL_HORA0 _VL_LINK0 _VL_PAGINA0
   echo "$_last_act" > last_atk
   _last_grass=$(( _agora - 60 )); _last_stone=$(( _agora - 60 ))
   : > BREAK_LOOP
@@ -144,6 +157,8 @@ undying_fight() {
       # Dentro dos 5s: espera o restante sem requisitar (atualizar <5s tambem
       # atrapalha o proximo golpe).
       _resta=$(( LA - ( _agora - _last_act ) ))
+      # Relogio do aparelho voltou: nunca mais que LA.
+      [ "$_resta" -le "$LA" ] || _resta=$LA
       [ "$_resta" -gt 0 ] && sleep "$_resta"
     fi
   done
@@ -156,8 +171,7 @@ undying_fight() {
         _last_grass _last_stone
   printf "Undying ok\n"
   # Sem apply_event: inscrevia no Vale seguinte (ver king.sh). A inscricao e
-  # a do undying_start.
-  sleep 15s
+  # a do undying_start. (O "sleep 15s" que vinha aqui era tempo morto.)
 }
 
 undying_start() {
@@ -187,12 +201,8 @@ undying_start() {
       sleep 5s
     done
 
-    (
-      run_curl_exec "$URL/undying/" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
-    grep -o -E '/undying/(mana|hit)/[?][r][=][0-9]+' "$TMP/SRC" | head -n 1 > "$TMP/HITMANA" 2>/dev/null
-
+    # (A leitura de /undying/ que vinha aqui era descartada: o laco abaixo
+    # rele a pagina antes de olhar o link.)
     > BREAK_LOOP
     BREAK=$(($(date +%s) + 11))
 
@@ -204,11 +214,16 @@ undying_start() {
 
       grep -o -E '/undying/(mana|hit)/[?][r][=][0-9]+' "$TMP/SRC" | head -n 1 > "$TMP/HITMANA" 2>/dev/null
 
-      if grep -q -o -E '/undying/(hit|mana)' "$TMP/SRC"; then
+      # So com o link inteiro (?r=nonce): com a pagina cortada no meio do link
+      # o HITMANA ficava vazio e o pedido ia para a pagina inicial.
+      if [ -s "$TMP/HITMANA" ]; then
+        read -r _VL_LINK0 < "$TMP/HITMANA"
+        _VL_GOLPE0=`date +%s`; _VL_HORA0=`date +%H:%M:%S`
         (
-          run_curl_exec "${URL}$(cat "$TMP/HITMANA")" > "$TMP/SRC"
+          run_curl_exec "${URL}${_VL_LINK0}" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        _VL_PAGINA0=0
+        time_exit 17 && [ "${TE_RC:-0}" = 0 ] && [ -s "$TMP/SRC" ] && _VL_PAGINA0=1
         echo "1" > BREAK_LOOP
         printf " ... undying iniciado\n"
       fi

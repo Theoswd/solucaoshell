@@ -80,8 +80,10 @@ clancoliseum_fight() {
   awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio clancoliseum
+  # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
+  # o BREAK_LOOP nela, e zerar depois fazia o laco rodar mesmo assim.
+  : > BREAK_LOOP
   cf_access
-  > BREAK_LOOP
   cat USH > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
@@ -104,24 +106,32 @@ clancoliseum_fight() {
     if [ -s HEAL ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
+      _saiu=0
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
-      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_heal
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat USH > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_heal
+      fi
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
+      _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
-      cat USH > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_dodge
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat USH > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_dodge
+      fi
 
     # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
     #
@@ -160,6 +170,9 @@ clancoliseum_fight() {
           run_curl_exec "${URL}/clancoliseum" > "$src_ram"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao: sem a marca, o cf_access
+        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        _reconf=1
         cf_access
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
@@ -171,6 +184,8 @@ clancoliseum_fight() {
         # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
+        # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
+        [ "$_resta" -le "$LA" ] || _resta=$LA
         sleep "$_resta"
       fi
     fi
@@ -179,7 +194,8 @@ clancoliseum_fight() {
   rm -f "$src_ram" "$full_ram"
   unset src_ram full_ram ACCESS cf_access
   printf "Clancoliseum ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 
@@ -215,7 +231,7 @@ clancoliseum_start() {
       printf "Clan coliseum: sem inscricao disponivel agora - pulando\n"
       # Sem inscricao nao ha evento a esperar: apaga a dedicacao para a conta
       # voltar JA para a rotina, em vez de ficar dez minutos parada.
-      evento_cancelar 2>/dev/null
+      evento_cancelar clancoliseum 2>/dev/null
       rm -f "$src_ram" "$full_ram"
       unset src_ram full_ram
       return 0

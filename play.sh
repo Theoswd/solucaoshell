@@ -105,7 +105,13 @@ kill_worker_tree() {
     worker_vivo "$kw_pid" "$2" || return 1
 
     kill -TERM "-$kw_pid" 2>/dev/null || kill -TERM "$kw_pid" 2>/dev/null
-    sleep 2
+    # Ate 2s, saindo assim que o worker terminar (eram 2s fixos por conta:
+    # 36s com 18 contas no --restart).
+    _kw_n=0
+    while [ "$_kw_n" -lt 10 ] && kill -0 "$kw_pid" 2>/dev/null; do
+        sleep 0.2; _kw_n=$((_kw_n + 1))
+    done
+    unset _kw_n
     if kill -0 "$kw_pid" 2>/dev/null; then
         kill -KILL "-$kw_pid" 2>/dev/null || kill -KILL "$kw_pid" 2>/dev/null
     fi
@@ -329,9 +335,10 @@ while IFS='|' read -r srv user encoded <&3 || [ -n "$srv" ]; do
     _w=0
     # 5s bastam: o worker grava o PID como primeira acao. Com 20 contas,
     # o limite antigo de 10s somava ate 200s de espera no pior caso.
-    while [ -z "$pid" ] && [ "$_w" -lt 5 ]; do
-        sleep 1
-        pid=$(cat "$pid_file" 2>/dev/null)
+    # De 0,2 em 0,2s (os mesmos 5s): o PID costuma estar la no primeiro.
+    while [ -z "$pid" ] && [ "$_w" -lt 25 ]; do
+        sleep 0.2
+        { read -r pid < "$pid_file"; } 2>/dev/null
         _w=$((_w + 1))
     done
     printf "   PID: %s | Log: %s\n" "${pid:-FALHOU}" "$log_file"

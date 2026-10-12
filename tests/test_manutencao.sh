@@ -1055,8 +1055,9 @@ _orfao=0
 _lista=$(sed -n '/^for _lib in/,/^do$/p' "$LIB/sls.sh" | tr ' ' '\n' | grep '\.sh$')
 for _f in "$LIB"/*.sh; do
     _b=$(basename "$_f")
-    # Estes sao carregados por caminho proprio, nao pelo laco.
-    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh) continue ;; esac
+    # Estes sao carregados por caminho proprio, nao pelo laco (o batalhas.sh
+    # e executado pelo status.sh -batalhas).
+    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh|batalhas.sh) continue ;; esac
     echo "$_lista" | grep -qx "$_b" || { _orfao=$((_orfao + 1)); bad "modulo em lib/ que ninguem carrega: $_b"; }
 done
 [ "$_orfao" -eq 0 ] && ok "nenhum modulo orfao em lib/"
@@ -1288,9 +1289,9 @@ _r=$( TMP="$_bt/acc7"; mkdir -p "$TMP"; . "$LIB/info.sh"
       batalha_marcar king; read -r _s _t0 < "$TMP/batalha"
       sleep 1; batalha_marcar king; read -r _s _t1 < "$TMP/batalha"
       [ "$_t0" = "$_t1" ] && printf 'preserva '
-      printf 'king %s\n' $(( `date +%s` - 31 * 60 )) > "$TMP/batalha"
+      printf 'king %s\n' $(( `date +%s` - 41 * 60 )) > "$TMP/batalha"
       batalha_pendente || printf 'vence' )
-check "mesma batalha preserva a inscricao; vence apos LUTA_TETO_MIN" "preserva vence" "$_r"
+check "mesma batalha preserva a inscricao; vence apos LUTA_TETO_MIN + 10 min" "preserva vence" "$_r"
 _r=$( TMP="$_bt/acc8"; mkdir -p "$TMP" "$_bt/acc9"; . "$LIB/info.sh"
       batalha_marcar king
       TMP="$_bt/acc9"; batalha_pendente && printf 'vazou' || printf 'isolada' )
@@ -1407,7 +1408,7 @@ else
     bad "descansar: confirma a saida sem conferir a batalha pendente"
 fi
 # O worker relancado volta para a batalha antes de qualquer outra atividade.
-_rt=$(grep -n '^    batalha_retomar' "$LIB/run.sh" | head -n1 | cut -d: -f1)
+_rt=$(grep -n '^    \(if \)\{0,1\}batalha_retomar' "$LIB/run.sh" | head -n1 | cut -d: -f1)
 _cs=$(grep -n 'case "$_HH:$_MM" in' "$LIB/run.sh" | head -n1 | cut -d: -f1)
 if [ -n "$_rt" ] && [ -n "$_cs" ] && [ "$_rt" -lt "$_cs" ]; then
     ok "run.sh: batalha pendente e retomada antes do cronograma"
@@ -2611,8 +2612,10 @@ check "cave_start sem acao: espera 60s antes de sair" "espera 60" "$_r"
 # --- senha fora do argv do curl (lpass=${creds...} e so a leitura do cript_file)
 _r=`grep -c '[^l]pass=\${' "$LIB/sls.sh" "$LIB/loginlogoff.sh" "$LIB/session_check.sh" | grep -vc ':0$'`
 check "login: senha nunca na linha de comando do curl" 0 "$_r"
+# Dois POSTs: o login_autenticar (login e reconexao, desde a 3.9.87) e o
+# test_login do setup.
 _r=`cat "$LIB/sls.sh" "$LIB/loginlogoff.sh" "$LIB/session_check.sh" | grep -c '"pass@-"'`
-check "login: senha pelo stdin nos tres POSTs" 3 "$_r"
+check "login: senha pelo stdin nos dois POSTs" 2 "$_r"
 
 # --- codigo morto removido: nada chama o que saiu, e todo modulo listado existe
 _r=`sed -n '/^for _lib in/,/^do$/p' "$LIB/sls.sh" | tr ' \\' '\n\n' | grep '\.sh$' \
@@ -2812,8 +2815,8 @@ check "setup: numero da tela e a conta certa" "Bia|Yg== invalido cancelou" "$_r"
 
 # Credencial: "\", espacos e "&pass=" dentro da senha chegam intactos.
 _cr='login=Ze&pass= a\nb\c&pass=%+ '
-for _f in lib/sls.sh lib/loginlogoff.sh setup.sh; do
-    _r=`( creds="$_cr"; eval "$(grep -E '^ *(luser|lpass)=' "$ROOT/$_f")"; printf '[%s][%s]' "$luser" "$lpass" )`
+for _f in lib/loginlogoff.sh setup.sh; do
+    _r=`( creds="$_cr"; _la_creds="$_cr"; eval "$(grep -E '^ *(luser|lpass)=' "$ROOT/$_f")"; printf '[%s][%s]' "$luser" "$lpass" )`
     check "senha com barra invertida e espacos: $_f" '[Ze][ a\nb\c&pass=%+ ]' "$_r"
 done
 
@@ -2969,6 +2972,7 @@ check "fetch_page sem link: nao pede a Home, esvazia a pagina e diz a origem" "f
 # linha, em qualquer forma: `...`, $(...), "> ARQUIVO", "if grep -o",
 # com ou sem outros comandos no pipe e com continuacao de linha.
 # Contar (wc -l, grep -c) e testar (grep -q) nao pedem uma linha so.
+# A lista do check.sh (_ck_l=) tambem nao: o _ck_link tira dela um link so.
 _soltos=$(awk '
     FNR == 1 { buf = "" }
     /^[ \t]*#/ { next }
@@ -2979,7 +2983,7 @@ _soltos=$(awk '
         buf = ""
     }
     l ~ /grep -o/ && (l ~ /r\[=\]|r=/ || l ~ /\(\[0-9\]\+\)/) {
-        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q/) next
+        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q|_ck_l=/) next
         f = FILENAME; sub(/.*\//, "", f); printf "%s:%s ", f, FNR
     }' "$LIB"/*.sh)
 check "grep -o de link ou HP maximo sempre com uma linha so" "" "$_soltos"
@@ -3419,7 +3423,7 @@ printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva <img src='/images/icon/g
 _r=$( TMP="$_td19"; . "$LIB/info.sh" > /dev/null 2>&1
       printf '%s|%s' "`erva_gratis clanfight "$_td19/erva"`" "`erva_gratis clanfight "$_td19/erva_ouro"`" )
 check "erva_gratis: gratis passa, paga em ouro fica de fora" "/clanfight/grass/?r=3|" "$_r"
-_r=`grep -c 'erva_gratis' "$LIB/clanfight.sh" "$LIB/clandmg.sh" | grep -c ':1$'`
+_r=`grep -c 'erva_gratis' "$LIB/clanfight.sh" "$LIB/clandmg.sh" | grep -c ':[1-9]$'`
 check "Torneio e Duelo usam a erva_gratis" 2 "$_r"
 rm -rf "$_td19"; unset _td19
 
@@ -3763,7 +3767,7 @@ _r=$( TMP="$_td20/tr77h"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > 
       echo $(( `date +%s` - 61 * 60 )) > "$TMP/last_train"; fetch_train_stats
       printf '%s' "`wc -l < "$TMP/req" | tr -d ' '`" )
 check "fora das lutas: /train de hora em hora (30 min nao, 61 min sim)" "0 1" "$_r"
-grep -q '^ *\*" -fix "\*) SLS_MAXTIME=17; fetch_train_stats 10' "$LIB/info.sh" \
+sed -n '/^hpmp() {/,/^}/p' "$LIB/info.sh" | grep -q 'if fetch_train_stats 10 2>/dev/null; then' \
     && ok "Vale: HP e mana maximos conferidos no inicio, como nas outras lutas" \
     || bad "Vale: entra com o HP maximo de horas atras"
 
@@ -3935,8 +3939,539 @@ _r=`( cd "$_td20" && . "$LIB/info.sh" > /dev/null 2>&1
       itens_gratis undying it.html; printf '[%s][%s]' "\`cat GRASS\`" "\`cat STONE\`" )`
 check "itens_gratis: erva com preco em ouro fora, pedra gratis dentro" "[][/undying/stone/?r=8]" "$_r"
 
+# Coliseu (3.9.81): o preparo so quando ha luta. Modo grafico uma vez por
+# worker; /train so antes de entrar. Antes, cada tentativa sem luta da
+# madrugada fazia os dois.
+#   _col81 luta|nada -> pedidos de tres tentativas
+_col81() {
+    ( TMP="$_td20/col81_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/coliseum.sh" > /dev/null 2>&1
+      unset COLISEU_GRAFICO; FUNC_coliseum=y; : > "$TMP/req"
+      run_curl_exec() { _u=${1#http://jogo}; _u=${_u%%\?*}; echo "$_u" >> "$TMP/req"; printf %s "$_u" > "$TMP/.ult_req"
+          if [ "$PG" = luta ]; then echo "<img src='/images/icon/level.png'/> <a href='/coliseum/enterFight/?r=`wc -l < "$TMP/req"`'>Entrar</a>"
+          else echo "<img src='/images/icon/level.png'/> <a href='/coliseum/'>Coliseu</a>"; fi; }
+      # TREINO=sai: o full_atualizar pede o /train (leitura vencida).
+      full_atualizar() { [ "$TREINO" = sai ] && { echo /train >> "$TMP/req"; printf /train > "$TMP/.ult_req"; }; echo 4608 > "$1"; }
+      batalha_marcar() { :; }; time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      coliseum_luta() { :; }
+      PG="$1"; cd "$TMP"
+      if [ "$PG" = luta ]; then
+          # Para na inscricao (batalha_marcar sai do subshell): basta ver a
+          # ordem do preparo.
+          ( batalha_marcar() { echo "entra=$go_stop" >> "$TMP/req"; exit 0; }; coliseum_fight > /dev/null 2>&1 )
+      else
+          coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1; coliseum_fight > /dev/null 2>&1
+      fi
+      tr '\n' ' ' < "$TMP/req" )
+}
+check "coliseu sem luta: 1 pedido por tentativa (grafico uma vez, sem /train)" \
+    "/settings/graphics/0 /coliseum /coliseum /coliseum " "`_col81 nada`"
+# O clique sai sempre da ultima pagina: depois do /train o /coliseum e
+# relido e o nonce e o dele (r=4, nao o r=2 da pagina de antes do /train).
+check "coliseu com luta: /train e o /coliseum relido antes de entrar" \
+    "/settings/graphics/0 /coliseum /train /coliseum entra=/coliseum/enterFight/?r=4 " "`TREINO=sai _col81 luta`"
+check "coliseu com luta, HP maximo em dia: entra com a pagina lida" \
+    "/settings/graphics/0 /coliseum entra=/coliseum/enterFight/?r=2 " "`TREINO=fica _col81 luta`"
+check "painel: /questrnd aparece como Missao Aleatoria, /quest como Missoes" "Missão Aleatória|Missões" \
+    "`cd "$_td20" && . "$LIB/panel.sh" > /dev/null 2>&1; mkdir -p ab81; printf '/questrnd/take/' > ab81/pagina; aba_de_v ab81; printf '%s|' "$_ABA"; printf '/quest/' > ab81/pagina; aba_de_v ab81; printf '%s' "$_ABA"`"
+
+# status.sh -batalhas (lib/batalhas.sh): resumo da ultima batalha de cada evento, por conta, lendo o
+# sls.log (e o .1 da rotacao). Somente leitura.
+mkdir -p "$_td20/bt/BR_Ana" "$_td20/bt/BR_Bia"
+printf '%s\n' "https://jogo 12:25" "King of the Immortals will be started..." "Em batalha - HP: 900" \
+    "Alvo aliado — trocando de alvo" "Em batalha - HP: 300" "Battle over. (o jogo declarou o fim da batalha)" "King ok" \
+    > "$_td20/bt/BR_Ana/sls.log.1"
+printf '%s\n' "https://jogo 22:25" "King of the Immortals will be started..." "Em batalha - HP: 800" \
+    "Battle over. (assassinado por Zé (log da batalha))" "King ok" \
+    "https://jogo 21:55" "Valley of the Immortals will be started... 21h:55m" "Em batalha undying" \
+    "Vale: 1 golpes (hit 1, mana 0), erva 1, pedra 0; primeiro golpe 22:00:04, ultimo 0s depois" "Undying ok" \
+    > "$_td20/bt/BR_Ana/sls.log"
+printf '%s\n' "https://jogo 16:25" "King of the Immortals will be started..." "Em batalha - HP: 50" > "$_td20/bt/BR_Bia/sls.log"
+_r=`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas | sed 's/  */ /g'`
+check "batalhas.sh: ultima batalha de cada evento, por conta" "== Rei
+ Ana 22:25 1 acoes HPmin 800 trocas 0 fogo 0 assassinado por Zé (log da batalha)
+ Bia 16:25 1 acoes HPmin 50 trocas 0 fogo 0 em andamento (ou sem fim no log)
+
+== Vale
+ Ana 21:55 1 acoes HPmin - trocas 0 fogo 0 - >> 1 golpes (hit 1, mana 0), erva 1, pedra 0; primeiro golpe 22:00:04, ultimo 0s depois" "$_r"
+check "batalhas.sh: filtro por evento e por conta" "== Rei
+ Bia 16:25 1 acoes HPmin 50 trocas 0 fogo 0 em andamento (ou sem fim no log)" \
+    "`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas Rei Bia | sed 's/  */ /g'`"
+
+# ---- 3.9.83: defeitos das batalhas (revisao de 12/10), sem mudar estrategia
+# Luta de volta zera a contagem do "fora": a 2a transicao da luta nao encerra
+# na hora (antes: a marca da 1a valia para sempre).
+_r=`( TMP="$_td20/f83a"; mkdir -p "$TMP"; export TMP; . "$LIB/info.sh" > /dev/null 2>&1
+      printf '%s' "<img src='/images/icon/level.png'/> <a href='/logout'>sair</a> Saguao" > "$TMP/fora.html"
+      luta_inicio; _lt_lutou=1; _lt_fora_desde=$(( \`date +%s\` - 300 )); _lt_invalidas=2
+      luta_hp 5000; luta_hp 4800
+      if luta_acabou "$TMP/fora.html" clanfight > /dev/null; then printf 'saiu'; else printf 'ficou'; fi
+      printf ' inval=%s' "$_lt_invalidas" )`
+check "luta de volta: a 2a transicao nao encerra na hora (fora zerado)" "ficou inval=0" "$_r"
+# Ressurreicao sem resposta nao gasta a trava: ate duas novas tentativas.
+_r=`( TMP="$_td20/f83b"; URL=http://jogo; SLS_PACING=0; mkdir -p "$TMP"; export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; return 1; }
+      luta_inicio
+      for _i in 1 2 3 4; do
+          printf '%s' "<a href='/king/unrip/?r=5'>Reviver</a>" > "$TMP/SRC"
+          if ressuscitar king "$TMP/SRC" > /dev/null; then printf 'T'; else printf 'n'; fi
+      done )`
+check "ressuscitar: pedido sem resposta tenta de novo (2x), depois trava" "TTTn" "$_r"
+# A hora da agenda e lida depois da ida a rede (clan_id e retomada): um
+# /clan lento ou uma luta retomada que cruzam o 12:30 nao caem no Rei fora
+# da janela (3.9.87; antes, so a retomada relia a hora).
+#   _hr87 clan|retomada -> ramos que rodaram
+_hr87() {
+    ( TMP="$_td20/hr87_$1"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      _M=29; relogio_sync() { _HH=12; _MM=$_M; }; RUN=-boot
+      if [ "$1" = clan ]; then CLD=""; clan_id() { _M=30; CLD=1; }; batalha_retomar() { return 1; }
+      else CLD=1; batalha_retomar() { _M=30; return 0; }; fi
+      evento_dedicar() { :; }; evento_espera() { :; }; king_start() { printf 'REI '; }; start() { printf 'ROTINA'; }
+      sls_play 2>/dev/null )
+}
+check "cronograma: hora lida depois do clan_id lento" ROTINA "`_hr87 clan`"
+check "cronograma: hora lida depois de uma retomada" ROTINA "`_hr87 retomada`"
+unset -f _hr87
+# Releitura dupla: com a pagina sem luta, uma leitura por volta (eram duas).
+#   _rl83 MODULO SECAO FUNCAO -> pedidos de pagina em 12s de relogio virtual
+_rl83() {
+    ( TMP="$_td20/rl83_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/$1.sh" > /dev/null 2>&1
+      _pg="$TMP/pagina.html"
+      printf "%s" "<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 8000 <a href='/logout'>sair</a> Saguao" > "$_pg"
+      for _f in SRC src.html x_src; do cp "$_pg" "$TMP/$_f"; done
+      echo 10000 > "$TMP/FULL"; echo 10000 > "$TMP/x_full"; src_ram="$TMP/x_src"; full_ram="$TMP/x_full"
+      echo 100000 > "$TMP/relogio"; : > "$TMP/req"; LUTA_FORA_MAX=600
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; cat "$_pg"; }
+      fetch_page() { echo "$1" >> "$TMP/req"; cp "$_pg" "${2:-$TMP/SRC}"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 12 )); }
+      func_unset() { :; }
+      cd "$TMP" && $3 > /dev/null 2>&1
+      wc -l < "$TMP/req" | tr -d ' ' )
+}
+for _m in "clanfight clanfight clanfight_fight" "altars altars altars_fight" "flagfight flagfight flagfight_fight"; do
+    set -- $_m
+    _r=`_rl83 "$1" "$2" "$3"`
+    if [ "$_r" -ge 5 ] && [ "$_r" -le 16 ]; then ok "$1: sem luta na tela, uma leitura por volta ($_r em 12s)"
+    else bad "$1: releitura dupla sem luta na tela ($_r em 12s)"; fi
+done
+# A releitura de /king fica DENTRO do "if _reconf = 0" (antes vinha antes dele).
+_r=`sed -n '/^  cl_access() {/,/^  }/p' "$LIB/king.sh" | awk -v a='_reconf:-0}" = 0 ]; then' -v b='run_curl_exec "${URL}/king"' 'index($0, a) && !i { i = NR } index($0, b) && !r { r = NR } END { print (i && r && i < r) ? "dentro" : "fora" }'`
+check "Rei: a reconfirmacao rele /king uma vez so" dentro "$_r"
+check "BREAK_LOOP zerado antes da 1a leitura (cinco modulos)" "5" \
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight; do sed -n '/^  luta_inicio/,/^  cf_access$/p' "$LIB/$_m.sh" | grep -c '^  : > BREAK_LOOP$'; done | awk '{ s += $1 } END { print s }')"
+check "espera da recarga nunca passa de LA (relogio voltando)" "6" \
+    "`cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" "$LIB/clancommand.sh" | grep -c '\[ "\$_resta" -le "\$LA" \] || _resta=\$LA'`"
+# Erva depois da cura: link (nonce) da pagina nova.
+_r=`( TMP="$_td20/f83e"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/clanfight.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 1000 "
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/dodge/?r=2'>d</a><a href='/clanfight/heal/?r=3'>c</a><a href='/clanfight/grass/?r=7'>Erva (5)</a>" > "$TMP/SRC"
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=11'>a</a><a href='/clanfight/dodge/?r=12'>d</a><a href='/clanfight/grass/?r=9'>Erva (4)</a>" > "$TMP/pos"
+      echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; cat "$TMP/pos"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      luta_teto() { echo $(( \`cat "$TMP/relogio"\` + 2 )); }
+      func_unset() { :; }
+      cd "$TMP" && clanfight_fight > /dev/null 2>&1
+      grep -o 'grass/?r=[0-9]*' "$TMP/req" | head -n 1 )`
+check "Torneio: a erva depois da cura usa o link da pagina nova" "grass/?r=9" "$_r"
+# Rotina: com batalha pendente (sessao caida na luta) nao roda as atividades,
+# e nao tenta outra retomada: quem chama acabou de tentar (3.9.86).
+_r=`( TMP="$_td20/f83f"; mkdir -p "$TMP"; export TMP; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      batalha_marcar king
+      batalha_retomar() { printf 'retomou '; return 0; }
+      servidor_mudo() { printf 'ATIVIDADES '; return 0; }
+      tarefas_livres; printf '| '
+      batalha_limpar
+      tarefas_livres )`
+check "rotina: batalha pendente segura as atividades, sem nova retomada" \
+    "| ATIVIDADES Servidor sem resposta - atividades na proxima volta" "$_r"
+check "start: retomada logo depois do login" 1 \
+    "`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c '^    batalha_retomar$'`"
+# evento_cancelar so apaga a batalha do proprio evento; anotacao vale ate o
+# teto da luta + 10 min.
+_r=`( TMP="$_td20/f83g"; mkdir -p "$TMP"; export TMP; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      batalha_marcar flagfight; evento_cancelar clancoliseum; batalha_pendente && printf 'fica '
+      evento_cancelar flagfight; batalha_pendente || printf 'sai '
+      printf 'king %s\n' $(( \`date +%s\` - 35 * 60 )) > "$TMP/batalha"; batalha_pendente && printf 'vale35 '
+      printf 'king %s\n' $(( \`date +%s\` - 45 * 60 )) > "$TMP/batalha"; batalha_pendente || printf 'vence45' )`
+check "evento_cancelar: so a propria batalha; anotacao ate teto+10min" "fica sai vale35 vence45" "$_r"
+
+# ---- 3.9.84: rotina e login (revisao de 12/10)
+# Versao do log: nunca atras do ultimo commit (estava parada em 3.9.64).
+_vn=`sed -n 's/^versionNum="\(.*\)"$/\1/p' "$LIB/info.sh" | head -n 1`
+_vg=`git -C "$ROOT" log --format=%s 2>/dev/null | grep -o '(3\.[0-9]*\.[0-9]*)' | tr -d '()' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`
+if [ -z "$_vg" ]; then ok "versionNum: sem git aqui, nada a comparar ($_vn)"
+elif [ "`printf '%s\n%s\n' "$_vg" "$_vn" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`" = "$_vn" ]; then ok "versionNum ($_vn) nao fica atras do ultimo commit ($_vg)"
+else bad "versionNum ($_vn) atras do ultimo commit ($_vg)"; fi
+unset _vn _vg
+check "evento especial: a chamada direta marca o portao (sem repetir no start)" 1 \
+    "`sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' "$LIB/run.sh" | grep -c '^ *ativ_marcar evento$'`"
+check "modo -cl: arena so pelo portao (tarefas_livres), sem echo|grep" "0 0" \
+    "`sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c '^ *arena_duel$'` `sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c 'echo "\$RUN" | grep'`"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; URL=http://jogo
+      HOUR=""; _o=\`func_crono -q\`; func_crono -q; printf '[%s] %s' "$_o" "${HOUR:+hora}" )`
+check "func_crono -q: so atualiza a hora, sem escrever no log" "[] hora" "$_r"
+check "reconexao: um /user depois do login, sem sleep 1 (eram dois)" "2 0" \
+    "`sed -n '/^login_autenticar() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '"\${URL}/user"'` `sed -n '/^login_autenticar() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *sleep 1$'`"
+_r=`( TMP="$_td20/f84c"; mkdir -p "$TMP"; export TMP; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' '@@@' > "$TMP/cript_file"; : > "$TMP/req"
+      run_curl() { case "$*" in *sign_in*data*|*data*sign_in*) echo POST >> "$TMP/req" ;; *) echo GET >> "$TMP/req" ;; esac
+                   printf '%s' "<form><input name='pass'></form>"; }
+      login_lock() { echo LOCK >> "$TMP/req"; }; login_unlock() { echo UNLOCK >> "$TMP/req"; }
+      login_logoff > /dev/null 2>&1; printf 'rc=%s ' $?; grep -c POST "$TMP/req"; grep -c LOCK "$TMP/req" )`
+# Desde a 3.9.87 a credencial e lida antes da trava: ilegivel, nem trava.
+check "reconexao: credencial ilegivel nao vira POST nem pega a trava" "rc=1 0
+0" "$_r"
+check "trava de login: espera de 3 em 3s, PID lido sem cat" "1 1 0" \
+    "`sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *sleep 3$'` `sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c '_n" -lt 60'` `sed -n '/^login_lock() {/,/^}/p' "$LIB/sls.sh" | grep -c 'cat "\$LOCKDIR/pid"'`"
+check "fim de luta sem pausa morta (fora o Duelo, entre as rodadas)" 0 \
+    "`cat "$LIB/flagfight.sh" "$LIB/king.sh" "$LIB/altars.sh" "$LIB/clanfight.sh" "$LIB/clancoliseum.sh" "$LIB/clancommand.sh" "$LIB/undying.sh" | grep -c '^  sleep 1[05]s$'`"
+check "play.sh: espera o worker sair em vez de 2s fixos por conta" 0 \
+    "`sed -n '/^kill_worker_tree() {/,/^}/p' "$ROOT/play.sh" | grep -c '^    sleep 2$'`"
+
+# ---- 3.9.85: menos processos na rotina, o mesmo resultado ----
+# Os comandos externos viram funcoes que anotam a chamada e repassam.
+_cnt85() { for _c in grep sed head tr awk cat date; do eval "$_c() { echo $_c >> \"\$TMP/cmd\"; command $_c \"\$@\"; }"; done; }
+_r=`( TMP="$_td20/f85a"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; _cnt85; : > "$TMP/cmd"
+      FIXHP=""; ACC_ENE=1555; ACC_LVL=""
+      parse_status "<title>X</title><img src='/images/icon/health.png' alt='hp'/>
+<img src='/images/icon/health.png' alt='hp'/> <span class='white'>65312</span> | <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>809</span>
+<img src='/images/icon/level.png' alt='lvl'/> 90 <img src='/images/icon/gold.png' alt='g'/> 1.234 <img src='/images/icon/silver.png' alt='s'/> 408,1M
+<img src='/images/icon/gold.png' alt='g'/> 7"
+      unset -f grep sed head tr awk cat date
+      printf '%s/%s/%s/%s/%s ' "$ACC_HP" "$ACC_MP" "$ACC_LVL" "$ACC_GOLD" "$ACC_SILVER"; grep -c '^grep$' "$TMP/cmd"; grep -c '^tr$' "$TMP/cmd" )`
+check "parse_status: os cinco numeros num grep so, energia sem tr" "65312/809/90/1.234/408,1M 1
+0" "$_r"
+_r=`( TMP="$_td20/f85b"; mkdir -p "$TMP"; . "$LIB/session_check.sh" > /dev/null 2>&1; _cnt85; : > "$TMP/cmd"
+      _cr=\`printf '\\r'\`; printf '[%s]' "\`extract_username "<head><title>  gatuno $_cr</title>"\`"; command wc -l < "$TMP/cmd"
+      printf '[%s]' "\`extract_username "<title></title><title>Outra</title>"\`"
+      printf '[%s]' "\`extract_username "<title>NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN</title>"\`" )`
+check "extract_username: titulo comum sem processo; vazio e comprido pelo grep" "[gatuno]0
+[Outra][NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN]" "$_r"
+_r=`( TMP="$_td20/f85c"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1; _cnt85
+      printf 'FUNC_trade=n\r\nFUNC_trade_dias\nALLIES=a:b\n' > "$TMP/config.cfg"; : > "$TMP/cmd"
+      load_config; unset -f grep sed head tr awk cat date; printf '%s %s %s ' "$FUNC_trade" "$FUNC_trade_dias" "$ALLIES"; grep -c '^grep$' "$TMP/cmd"
+      grep -c '^FUNC_trade_dias=365$' "$TMP/config.cfg"; grep -c '=' "$TMP/config.cfg" )`
+check "load_config: chaves que faltam num awk so (era um grep por chave)" "n 365 a:b 1
+1
+22" "$_r"
+_r=`( TMP="$_td20/f85d"; mkdir -p "$TMP/p"; . "$LIB/check.sh" > /dev/null 2>&1; _cnt85
+      FUNC_collect_mission_rewards=y; FUNC_check_rewards=y
+      fetch_page() { echo "$1" >> "$TMP/req"; case "$1" in
+          /quest/) [ -f "$TMP/q1" ] && echo "<a href='/quest/end/10?r=5'>" > "$TMP/SRC" || echo "<a href='/quest/end/012?r=9'><a href='/quest/end/1?r=3'> <a href='/quest/end/1?r=4'>
+<a href='/quest/openChest/2/?r=8'>" > "$TMP/SRC" ;;
+          /quest/end/1*) : > "$TMP/q1"; : > "$TMP/SRC" ;;
+          /relic/reward/) echo "<a href='/relic/reward/3?r=1'><a href='/relic/reward/11/?r=2'>" > "$TMP/SRC"; : > "$TMP/r" ;;
+          *) : > "$TMP/SRC" ;; esac; }
+      : > "$TMP/cmd"; check_missions > /dev/null; check_rewards > /dev/null; unset -f grep sed head tr awk cat date; tr '\n' ' ' < "$TMP/req"; grep -c '^grep$' "$TMP/cmd" )`
+check "missoes e reliquias: um grep por pagina, os mesmos cliques" "/quest/ /quest/openChest/2/?r=8 /quest/ /quest/end/1?r=3 /quest/ /quest/end/10?r=5 /quest/ /collector/ /relic/reward/ /relic/reward/11/?r=2 /relic/reward/ 8" "$_r"
+_r=`( TMP="$_td20/f85e"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { echo "$1" >> "$TMP/d"; case "$1" in +%M%S) echo 5602 ;; +%M) echo 56 ;; +%S) echo 02 ;; +%s) echo 1000 ;; esac; }
+      sleep() { :; }; evento_dedicar
+      [ "\`cat "$TMP/em_evento"\`" = $(( 1000 + 240 - $$ % 10 )) ] && printf 'hora_certa '; wc -l < "$TMP/d" )`
+check "evento_dedicar: minuto e segundo de um date so" "hora_certa 2" "$_r"
+_r=`( TMP="$_td20/f85f"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      batalha_pendente() { return 0; }; batalha_retomar() { echo RETOMOU >> "$TMP/r"; }
+      clan_id() { echo ROTINA >> "$TMP/r"; }; stats_liberado() { echo ROTINA >> "$TMP/r"; return 1; }
+      tarefas_livres > /dev/null 2>&1; printf 'rc=%s ' $?; cat "$TMP/r" 2>/dev/null | tr '\n' ' ' )`
+check "tarefas_livres: com batalha pendente nao roda a rotina nem tenta a 3a retomada" "rc=0 " "$_r"
+_r=`( TMP="$_td20/f85g"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { printf '%s' "<a href=/altars/dod"; return 18; }
+      printf '%s' "<a href=/altars/unrip/?r=777>rev</a>" > "$TMP/pag"; luta_inicio altars > /dev/null 2>&1
+      ressuscitar altars "$TMP/pag" > /dev/null 2>&1; printf 'rc=%s reviveu=%s falhas=%s' $? "$_reviveu" "$_rs_falhas" )`
+check "ressuscitar: pagina cortada (curl 18) nao gasta a ressurreicao" "rc=0 reviveu=0 falhas=1" "$_r"
+check "Vale: o primeiro golpe so dispensa a releitura quando respondeu inteiro" "1 1" \
+    "`grep -c 'time_exit 17 && \[ "\${TE_RC:-0}" = 0 \] && \[ -s "\$TMP/SRC" \] && _VL_PAGINA0=1' "$LIB/undying.sh"` `grep -c 'if \[ "\${_VL_PAGINA0:-0}" != 1 \]; then' "$LIB/undying.sh"`"
+_r=`( TMP="$_td20/f85h"; mkdir -p "$TMP"; export TMP; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' 'login=a&pass=b' | base64 > "$TMP/cript_file"
+      # Primeiro /user: o jogo diz que a conta saiu; dai em diante, sem rede.
+      run_curl() { [ -f "$TMP/n" ] && return 7; : > "$TMP/n"; printf '%s' 'x jsInterface.event("user=0;") y'; }
+      login_lock() { :; }; login_unlock() { :; }
+      login_logoff 2>&1 | grep -c 'falha ao reconectar (sem resposta do servidor)' )`
+check "reconexao: o log diz quando foi rede, e nao senha recusada" 1 "$_r"
+unset -f _cnt85
+
+# ---- 3.9.87: itens aprovados pelo dono ----
+# Coliseu da madrugada: sem luta, um pulso por minuto (o resto do minuto e
+# como um minuto comum); com luta, como antes.
+#   _cp87 nada|luta -> chamadas em tres voltas no 01:15 e uma no 01:25
+_cp87() {
+    ( TMP="$_td20/cp87_$1"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      _HORA=01:15; relogio_sync() { _HH=${_HORA%:*}; _MM=${_HORA#*:}; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=-boot
+      coliseum_fight() { echo COL >> "$TMP/r"; if [ "$ACHA" = nada ]; then COLISEU_SEM_LUTA=1; else COLISEU_SEM_LUTA=0; fi; }
+      tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { echo ESPERA >> "$TMP/r"; }
+      ACHA=$1; sls_play; sls_play; sls_play; _HORA=01:25; sls_play
+      tr '\n' ' ' < "$TMP/r" )
+}
+check "Coliseu sem luta: um pulso por minuto, o resto do minuto e comum" "COL ESPERA ESPERA COL " "`_cp87 nada`"
+check "Coliseu com luta: pulso de novo no mesmo minuto, como antes" "COL COL COL COL " "`_cp87 luta`"
+# Rei: pagina vazia (rede) antes da releitura nao adianta a morte do rei; a
+# virada de pagina de verdade (pagina do jogo sem acao) adianta.
+#   _rei87 vazia|virada -> quantas vezes a fase "Rei morto" apareceu
+_rei87() {
+    ( TMP="$_td20/rei87_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/king.sh" > /dev/null 2>&1
+      _f="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 9000 <a href='/logout'>sair</a>"
+      _comrei="$_f <a href='/king/attack/?r=1'>a</a><a href='/king/kingatk/?r=2'>k</a><a href='/king/dodge/?r=3'>d</a>"
+      _semrei="$_f <a href='/king/attack/?r=4'>a</a><a href='/king/dodge/?r=5'>d</a>"
+      printf '%s' "$_comrei" > "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      PRIM=$1
+      run_curl_exec() { echo "$1" >> "$TMP/req"; case `wc -l < "$TMP/req"` in
+          *[!0-9]1|1) [ "$PRIM" = vazia ] || printf '%s' "$_f" ;;
+          *[!0-9]2|2) printf '%s' "$_semrei" ;;
+          *)          printf '%s' "$_comrei" ;; esac; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 20 )); }; func_unset() { :; }
+      cd "$TMP" && king_fight 2>&1 | grep -c 'Rei morto' )
+}
+check "Rei: pagina vazia antes da releitura nao troca a fase" 0 "`_rei87 vazia`"
+check "Rei: virada de pagina do jogo adianta a morte do rei, como antes" 1 "`_rei87 virada`"
+# Cura: pedido que nem chegou ao servidor (curl 7) nao gasta a recarga de
+# 90s; tempo esgotado (28) gasta, porque o elixir pode ter sido usado.
+#   _rec87 CODIGO_DO_CURL -> pedidos de cura em 12s de relogio virtual
+_rec87() {
+    ( TMP="$_td20/rec87_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/clanfight.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 1000 <a href='/logout'>sair</a>"
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" > "$TMP/pag"
+      cp "$TMP/pag" "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      RC=$1
+      run_curl_exec() { echo "$1" >> "$TMP/req"
+          case "$1" in */heal/*) [ -f "$TMP/falhou" ] || { : > "$TMP/falhou"; return "$RC"; } ;; esac
+          cat "$TMP/pag"; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 12 )); }; func_unset() { :; }
+      cd "$TMP" && clanfight_fight > /dev/null 2>&1
+      grep -c '/heal/' "$TMP/req" )
+}
+check "cura sem conexao (curl 7): tenta de novo, a recarga nao foi gasta" 2 "`_rec87 7`"
+check "cura com tempo esgotado (curl 28): recarga gasta, sem segundo elixir" 1 "`_rec87 28`"
+check "recarga so com o pedido no servidor: 7 modulos de cla e eventos, Rei e Coliseu" "12 2 2" \
+    "`cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" "$LIB/clancommand.sh" | grep -c 'if \[ "\$_saiu" = 1 \]; then'` `grep -c 'pedido_nao_saiu && _saiu=0' "$LIB/king.sh"` `grep -c 'pedido_nao_saiu && _saiu=0' "$LIB/coliseum.sh"`"
+# Vale: o /train do hpmp sai uma vez so quando o fetch_train_stats acabou de
+# ler um (sem a mana na pagina, o segundo dava a mesma); sem resposta, sai
+# o segundo como antes.
+#   _hp87 responde|mudo -> pedidos de /train
+_hp87() {
+    ( TMP="$_td20/hp87_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"; : > "$TMP/SRC"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      MODO=$1
+      run_curl() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; [ "$MODO" = mudo ] || echo "Saude: 100 (4608) Energia: 1555"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      FIXHP=""; FIXMP=""; ACC_ENE=""
+      hpmp -fix; grep -c '/train' "$TMP/req" )
+}
+check "Vale: hpmp sem o segundo /train quando o primeiro respondeu" 1 "`_hp87 responde`"
+check "Vale: hpmp com o primeiro /train mudo pede o segundo, como antes" 2 "`_hp87 mudo`"
+# Painel: a Home do descanso no lugar do /user, so depois de conferida.
+#   _st87 CASO -> pedidos de /user em quatro leituras | HOME_STATS
+_st87() {
+    ( TMP="$_td20/st87_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _cab() { printf "<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 90 <img src='/images/icon/gold.png' alt='g'/> %s <img src='/images/icon/silver.png' alt='s'/> 408,1M" "$1"; }
+      printf '%s' "<title>Grimlock</title>`_cab 396` <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
+      case "$1" in
+          igual)   _cab 396 > "$TMP/REST" ;;
+          difere)  _cab 397 > "$TMP/REST" ;;
+          sem)     printf '%s' "<img src='/images/icon/level.png'/> Home" > "$TMP/REST" ;;
+      esac
+      run_curl() { echo "$1" >> "$TMP/req"; cat "$TMP/user"; }
+      fetch_train_stats() { :; }; messages_info() { :; }
+      _v=$1
+      for _i in 1 2 3 4; do
+          if [ "$_v" = velha ] || { [ "$_v" = igual ] && [ "$_i" = 4 ]; }; then
+              echo $(( `date +%s` - 200 )) > "$TMP/.home_ok"; [ "$_v" = velha ] && _cab 396 > "$TMP/REST"
+          else echo "`date +%s`" > "$TMP/.home_ok"; fi
+          atualiza_stats > /dev/null 2>&1
+      done
+      printf '%s|%s' "`grep -c '/user' "$TMP/req"`" "${HOME_STATS:--}" )
+}
+check "painel: Home conferida uma vez, depois sem /user (velha de novo: /user)" "2|1" "`_st87 igual`"
+check "painel: Home com outro numero, 3 conferencias e fica no /user" "4|0" "`_st87 difere`"
+check "painel: Home sem os icones do cabecalho, sempre /user" "4|-" "`_st87 sem`"
+check "painel: Home de mais de 2 min, sempre /user" "4|-" "`_st87 velha`"
+check "login: uma autenticacao so (login_autenticar) no login e na reconexao" "1 1 0" \
+    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
+_r=`( TMP="$_td20/la87"; mkdir -p "$TMP"; export TMP; URL=http://jogo
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' 'login=Ze&pass=a b' | base64 > "$TMP/cript_file"
+      login_lock() { echo LOCK >> "$TMP/req"; }; login_unlock() { echo UNLOCK >> "$TMP/req"; }
+      run_curl() { case "$*" in *data-urlencode*) _in=\`cat\`; echo "POST $_in" >> "$TMP/req"; return "${POSTRC:-0}" ;; esac
+                   echo "GET ${1#http://jogo}" >> "$TMP/req"; [ "$1" = http://jogo/user ] && printf ok; }
+      login_autenticar; printf '%s ' "$LOGIN_ERRO"; POSTRC=7 login_autenticar; printf '%s|' "$LOGIN_ERRO"
+      tr '\n' ',' < "$TMP/req" )`
+check "login_autenticar: trava, pagina de login, POST pelo stdin, /user, solta; rede no POST" \
+    "credencial rede|LOCK,GET /?sign_in=1,POST a b,GET /user,UNLOCK,LOCK,GET /?sign_in=1,POST a b,GET /user,UNLOCK," "$_r"
+# Rei, ramo "sem link de ataque" do laco: a releitura com o unrip ressuscita
+# (desde a 3.9.83 encerrava a luta como morto).
+_r=`( TMP="$_td20/rei87u"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/king.sh" > /dev/null 2>&1
+      _f="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 9000 <a href='/logout'>sair</a>"
+      printf '%s' "$_f <a href='/king/heal/?r=1'>c</a>" > "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; case "$1" in
+          */unrip/*) printf '%s' "$_f <a href='/king/attack/?r=9'>a</a><a href='/king/kingatk/?r=8'>k</a>" ;;
+          *) [ -f "$TMP/morreu" ] && printf '%s' "$_f <a href='/king/attack/?r=9'>a</a>" || { : > "$TMP/morreu"; printf '%s' "$_f <a href='/king/unrip/?r=77'>rev</a>"; } ;; esac; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 12 )); }; func_unset() { :; }
+      cd "$TMP" && king_fight > "$TMP/out" 2>&1
+      printf '%s %s' "\`grep -c '/king/unrip/?r=77' "$TMP/req"\`" "\`grep -c 'declarou o personagem morto' "$TMP/out"\`" )`
+check "Rei: releitura do laco com unrip ressuscita (nao encerra como morto)" "1 0" "$_r"
+# HP maximo antes de agir numa pagina lida: o /train saiu, a pagina e relida.
+#   _fr87 sai|fica -> pedidos
+_fr87() {
+    ( TMP="$_td20/fr87_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      printf %s /clancommand/ > "$TMP/.ult_req"; M=$1
+      full_atualizar() { [ "$M" = sai ] && { echo /train >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; }; :; }
+      run_curl_exec() { echo "${1#http://jogo}" >> "$TMP/req"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      full_relendo "$TMP/FULL" /clancommand/ "$TMP/pg"; printf 'rc=%s ' $?; tr '\n' ' ' < "$TMP/req" )
+}
+check "full_relendo: com o /train no meio, rele a pagina" "rc=0 /train /clancommand/ " "`_fr87 sai`"
+check "full_relendo: sem pedido no meio, nada" "rc=1 " "`_fr87 fica`"
+# Na luta em andamento os links tem nonce (?r=): rele. Na inscricao o link
+# leva o id do torneio: sem releitura, que falhando apagava o link (3.9.88).
+check "Torneio de Equipe: HP maximo sem nonce velho na luta, inscricao sem releitura" "1 1" \
+    "`grep -c 'full_relendo "\$TMP/FULL" /clancommand/ "\$src_ram"' "$LIB/clancommand.sh"` `grep -c '^ *full_atualizar ' "$LIB/clancommand.sh"`"
+# -batalhas: evento que termina sem a linha "ok" nao engole o Coliseu
+# seguinte; a troca por aliado aparece em todos os eventos.
+mkdir -p "$_td20/bt87/BR_Ana"
+printf '%s\n' "https://jogo 11:25" "Torneio de equipe: lider sem inscrever - aguardando a luta" \
+    "Torneio de equipe: nenhuma luta na pagina (guardada em x)" \
+    "https://jogo 11:45" "Coliseum" "  Entering..." "Em batalha - HP: 700" "The battle is over!" \
+    > "$_td20/bt87/BR_Ana/sls.log"
+check "batalhas.sh: evento sem 'ok' fecha e o Coliseu seguinte aparece" "== Coliseu
+ Ana 11:45 1 acoes HPmin 700 trocas 0 fogo 0 -
+
+== Equipe
+ Ana 11:25 0 acoes HPmin - trocas 0 fogo 0 nenhuma luta na pagina" \
+    "`SLS_HOME="$_td20/bt87" sh "$ROOT/status.sh" -batalhas | sed 's/  */ /g'`"
+_r=`( . "$LIB/allies.sh" > /dev/null 2>&1; _aliado=1; _al_fogo_ate=0; _al_seguidas=0; ALIADO_TROCAS_MAX=3
+      troca_aliado 100 )`
+check "troca por aliado escreve no log (o resumo conta em todos os eventos)" "Alvo aliado — trocando de alvo" "$_r"
+unset -f _cp87 _rei87 _rec87 _hp87 _st87 _fr87
+
+# ---- 3.9.88: correcoes da revisao da 3.9.87 ----
+# Pulso do Coliseu: a marca do "sem luta" leva o dia. So com HH:MM, a noite
+# seguinte com luta em todos os pulsos anteriores pulava o mesmo minuto.
+#   _cp88 -> chamadas: 04:25 sem luta (dia 12), cinco pulsos com luta e o
+#            04:25 do dia 13 com luta
+_cp88() {
+    ( TMP="$_td20/cp88"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      relogio_sync() { _DD=${_DIAH%% *}; _h=${_DIAH#* }; _HH=${_h%:*}; _MM=${_h#*:}; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=-boot
+      coliseum_fight() { echo "COL$_HH:$_MM" >> "$TMP/r"; if [ "$ACHA" = nada ]; then COLISEU_SEM_LUTA=1; else COLISEU_SEM_LUTA=0; fi; }
+      tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { echo ESPERA >> "$TMP/r"; }
+      ACHA=nada; _DIAH="12 04:25"; sls_play
+      ACHA=luta
+      for _DIAH in "13 00:35" "13 01:05" "13 02:15" "13 03:45" "13 04:15" "13 04:25"; do sls_play; done
+      tr '\n' ' ' < "$TMP/r" )
+}
+check "Coliseu: a marca do pulso sem luta nao vale na noite seguinte" \
+    "COL04:25 COL00:35 COL01:05 COL02:15 COL03:45 COL04:15 COL04:25 " "`_cp88`"
+# Conferencia da Home no atualiza_stats: a subida de nivel no meio dela
+# ainda apaga o last_train (o nivel de antes nao pode ser o da Home).
+_r=`( TMP="$_td20/st88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
+      printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
+      run_curl() { printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>"; }
+      fetch_train_stats() { :; }; messages_info() { :; }
+      ACC_LVL=90; atualiza_stats > /dev/null 2>&1
+      [ -f "$TMP/last_train" ] && printf 'ficou' || printf 'apagado'; printf ' %s|%s' "$ACC_LVL" "${HOME_STATS:--}" )`
+check "painel: subida de nivel durante a conferencia da Home apaga o last_train" "apagado 91|1" "$_r"
+unset -f _cp88
+# ---- 3.9.89: revisao da 3.9.87 (o que faltava na 3.9.88) ----
+# Guarda do Coliseu: a marca leva o dia (o worker vive dias) e nao vale no
+# modo -cl.
+#   _cp88 MODO -> chamadas: 01:15 duas vezes no dia 1, 01:15 no dia 2
+_cp88() {
+    ( TMP="$_td20/cp88_$1"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      _D=01; relogio_sync() { _HH=01; _MM=15; _DD=$_D; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=$1
+      coliseum_fight() { echo COL >> "$TMP/r"; COLISEU_SEM_LUTA=1; }
+      coliseum_start() { :; }; messages_info() { :; }
+      tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { echo ESPERA >> "$TMP/r"; }
+      sls_play; sls_play; _D=02; sls_play
+      tr '\n' ' ' < "$TMP/r" )
+}
+check "Coliseu: a guarda de uma noite nao pula o mesmo minuto na seguinte" "COL ESPERA COL " "`_cp88 -boot`"
+check "Coliseu: no modo -cl nao ha guarda" "COL COL COL " "`_cp88 -cl`"
+# Sem resposta nao e "sem luta": o pulso tenta de novo no mesmo minuto.
+#   _cs88 vazia|sem_luta -> COLISEU_SEM_LUTA
+_cs88() {
+    ( TMP="$_td20/cs88_$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/coliseum.sh" > /dev/null 2>&1
+      FUNC_coliseum=y; COLISEU_GRAFICO=1; P=$1
+      run_curl_exec() { [ "$P" = vazia ] || echo "<img src='/images/icon/level.png'/> <a href='/coliseum/'>Coliseu</a> <a href='/logout'>sair</a>"; }
+      time_exit() { wait "$!" 2>/dev/null; }; cd "$TMP"
+      coliseum_fight > /dev/null 2>&1; printf '%s' "$COLISEU_SEM_LUTA" )
+}
+check "Coliseu: pagina sem resposta nao trava o minuto do pulso" 0 "`_cs88 vazia`"
+check "Coliseu: pagina do jogo sem luta trava o minuto, como na 3.9.87" 1 "`_cs88 sem_luta`"
+# Conferencia da Home: a subida de nivel continua apagando o last_train.
+_r=`( TMP="$_td20/lv88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
+      printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
+      printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
+      run_curl() { cat "$TMP/user"; }; fetch_train_stats() { :; }; messages_info() { :; }
+      ACC_LVL=90; atualiza_stats > /dev/null 2>&1
+      [ -f "$TMP/last_train" ] && printf 'ficou ' || printf 'apagado '; printf '%s' "$HOME_STATS" )`
+check "painel: subida de nivel na conferencia da Home apaga o last_train" "apagado 1" "$_r"
+# hpmp: /train que respondeu com pagina de erro (sem o HP maximo) ainda
+# pede o segundo, como antes da 3.9.87.
+_r=`( TMP="$_td20/hp88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"; : > "$TMP/SRC"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; echo "Erro interno"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; printf %s /train > "$TMP/.ult_req"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      FIXHP=""; FIXMP=""; ACC_ENE=""; hpmp -fix; grep -c '/train' "$TMP/req" )`
+check "Vale: hpmp com o primeiro /train sem o HP maximo pede o segundo" 2 "$_r"
+# Cura que nao sai: tenta de novo ate duas vezes; a terceira conta como feita
+# (com so a cura falhando, ela sairia a cada volta sem pausa).
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; _o=""
+      for _rc in 7 7 7 7 0 7; do TE_RC=$_rc; if pedido_nao_saiu; then _o="$_o n"; else _o="$_o s"; fi; done
+      printf '%s' "$_o" )`
+check "pedido_nao_saiu: tres seguidas sem sair contam como feita" " n n s n s n" "$_r"
+_r=$( ( TMP="$_td20/rec88"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/clanfight.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 1000 <a href='/logout'>sair</a>"
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" > "$TMP/pag"
+      cp "$TMP/pag" "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"; case "$1" in */heal/*) return 7 ;; esac; cat "$TMP/pag"; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 20 )); }; func_unset() { :; }
+      cd "$TMP" && clanfight_fight > /dev/null 2>&1
+      printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" ) )
+check "cura sempre sem conexao: 3 tentativas e a recarga de 90s vale, o ataque segue" "3 4" "$_r"
+unset -f _cp88 _cs88
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
-unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80
+unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

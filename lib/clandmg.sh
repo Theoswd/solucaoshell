@@ -11,8 +11,6 @@ clandmgfight_fight() {
   LA=4
   HPER=48
   RPER=15
-  awk -v ush="$(cat FULL)" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
-
   cf_access() {
     # ALVO CINZA, UMA VEZ POR PAGINA. Toda pagina nova da luta passa por
     # aqui (cada requisicao do laco, a releitura e o ressuscitar), e o
@@ -86,8 +84,10 @@ clandmgfight_fight() {
   awk -v ush="$(cat FULL)" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio clandmgfight
-  cf_access
+  # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
+  # o BREAK_LOOP nela, e zerar depois fazia o laco rodar mesmo assim.
   : > BREAK_LOOP
+  cf_access
   cat HP > old_HP; _old_hp="$_hp"; _caiu=0
   echo $(($(date +%s) - 20)) > last_dodge
   echo $(($(date +%s) - 90)) > last_heal
@@ -113,37 +113,48 @@ clandmgfight_fight() {
     if { [ -s HEAL ] || [ -s GRASS ]; } && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
+      _saiu=0
       if [ -s HEAL ]; then
         (
           read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        time_exit 17; pedido_nao_saiu || _saiu=1
         sleep 0.3s
+        # A cura trocou a pagina: o link da erva (com o nonce ?r=) sai da
+        # pagina nova, nao da anterior, que o jogo ja nao aceita.
+        erva_gratis clandmgfight "$TMP/SRC" > GRASS
       fi
       if [ -s GRASS ]; then
         (
           read -r _l < GRASS; run_curl_exec "${URL}$_l" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
-        time_exit 17
+        time_exit 17; pedido_nao_saiu || _saiu=1
       fi
       cf_access
       # HP maximo (FULL) preservado: vem do /train e nao pode ser trocado
       # pelo HP atual pos-cura, senao o limiar HLHP cai a cada golpe e a
       # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_heal
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_heal
+      fi
 
     # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
+      _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_dodge
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_dodge
+      fi
 
     # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
     #
@@ -179,6 +190,9 @@ clandmgfight_fight() {
           run_curl_exec "${URL}/clandmgfight" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao: sem a marca, o cf_access
+        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        _reconf=1
         cf_access
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
@@ -190,6 +204,8 @@ clandmgfight_fight() {
         # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
+        # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
+        [ "$_resta" -le "$LA" ] || _resta=$LA
         sleep "$_resta"
       fi
     fi

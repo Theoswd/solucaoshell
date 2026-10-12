@@ -1,7 +1,14 @@
+# HP maximo e, se o /train saiu, o /coliseum relido (full_relendo, info.sh).
+# 0 = releu a pagina, 1 = nada saiu e a pagina e a mesma.
+coliseum_hpmax() { full_relendo "$full_ram" /coliseum "$src_ram"; }
+
 # shellcheck disable=SC2155
 coliseum_fight() {
     # A chave vale aqui, e nao so no coliseum_start: o horario da madrugada
     # (run.sh) chama esta funcao direto.
+    # 1 = este pulso nao achou luta (nem inscricao nem luta em andamento): o
+    # ramo da madrugada (run.sh) nao repete o pulso no mesmo minuto.
+    COLISEU_SEM_LUTA=1
     [ "$FUNC_coliseum" = "n" ] && return 0
     # Arquivos de batalha gravados no diretorio da conta (sem mktemp)
     src_ram="$TMP/col_src"
@@ -13,14 +20,18 @@ coliseum_fight() {
 
     printf "Coliseum\n"
 
-    # HP maximo
-    full_atualizar "$full_ram"
-
-    # Desativa graficos
-    (
-        run_curl_exec "$URL/settings/graphics/0" > /dev/null
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    # O PREPARO SO QUANDO HA LUTA. O modo grafico e o /train (HP maximo) saiam
+    # a cada chamada: na madrugada o Coliseu e tentado de 10 em 10 minutos, e
+    # sem luta eram 2 dos 3 pedidos de cada tentativa (~860 por noite com 18
+    # contas). O modo grafico fica gravado na conta, entao vai uma vez por
+    # worker; o /train, so antes de entrar numa luta (ver abaixo).
+    if [ -z "$COLISEU_GRAFICO" ]; then
+        (
+            run_curl_exec "$URL/settings/graphics/0" > /dev/null
+        ) </dev/null > /dev/null 2>&1 &
+        time_exit 17
+        COLISEU_GRAFICO=1
+    fi
 
     # Pagina do coliseu
     (
@@ -45,12 +56,26 @@ coliseum_fight() {
     # curl recusaria a URL.
     go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
+    # HP maximo: so com luta, antes de entrar. Se o full_atualizar pediu o
+    # /train, o nonce do enterFight ja e de uma pagina velha (o servidor
+    # recusa, como no clanquest.sh): rele o /coliseum e pega o link de novo.
+    # Assim o clique sai sempre da ultima pagina, como antes da 3.9.81, e o
+    # pulso sem luta continua sem /train.
+    if [ -n "$go_stop" ] && coliseum_hpmax; then
+        access_link=`grep -o -E '/coliseum(/[A-Za-z]+/[?]r[=][0-9]+|/)' "$src_ram" | sed -n '1p'`
+        go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
+    fi
+
     # LUTA JA EM ANDAMENTO: o worker relancado no meio de uma luta do coliseu
     # (batalha_retomar) encontra a pagina de combate, sem link de inscricao.
     # Antes isso caia em "nao foi possivel iniciar" e a conta abandonava.
     _col_estado=`estado_luta "$src_ram" coliseum`
+    # Sem resposta ou sem sessao nao e "sem luta": o pulso tenta de novo no
+    # mesmo minuto, como antes da guarda.
+    case "$_col_estado" in invalida|deslogado) COLISEU_SEM_LUTA=0 ;; esac
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
+      COLISEU_SEM_LUTA=0
       if [ -n "$go_stop" ]; then
         # Inscricao: a batalha fica anotada para o worker relancado voltar.
         batalha_marcar coliseum
@@ -77,6 +102,10 @@ coliseum_fight() {
         done
       else
         printf "  Luta do coliseu em andamento - voltando para ela\n"
+        # Retomada: sem o HP maximo em disco, le agora (o limiar de cura e
+        # dele). Depois do /train a pagina e relida: o primeiro golpe nao
+        # sai com os links de antes dele.
+        [ -s "$full_ram" ] || coliseum_hpmax
       fi
 
         cl_access() {
@@ -188,12 +217,14 @@ coliseum_fight() {
                 (
                     run_curl_exec "${URL}${HEAL}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
-                time_exit 17
+                time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
                 cl_access
                 # HP maximo (full_ram) preservado: vem do /train. Troca-lo
                 # pelo HP atual pos-cura fazia o limiar HLHP cair a cada
                 # golpe e a conta "achar" que continuava com HP cheio.
-                last_heal=$now
+                # Pedido que nem chegou ao servidor: a cura nao valeu (ver
+                # pedido_nao_saiu). O relogio do ataque marca do mesmo jeito.
+                [ "$_saiu" = 1 ] && last_heal=$now
                 last_atk=$now
 
             elif [ -n "$DODGE" ] && [ "$_grey" = 0 ] && \
@@ -202,10 +233,12 @@ coliseum_fight() {
                 (
                     run_curl_exec "${URL}${DODGE}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
-                time_exit 17
+                time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
                 cl_access
-                OLDHP=$USH; _caiu=0
-                last_dodge=$now
+                if [ "$_saiu" = 1 ]; then
+                    OLDHP=$USH; _caiu=0
+                    last_dodge=$now
+                fi
                 last_atk=$now
 
             elif [ -n "$ATKRND" ] && \
@@ -242,6 +275,8 @@ coliseum_fight() {
                         run_curl_exec "${URL}/coliseum" > "$src_ram"
                     ) </dev/null > /dev/null 2>&1 &
                     time_exit 17
+                    # A releitura acima ja e a reconfirmacao (ver clanfight.sh).
+                    _reconf=1
                     cl_access
                     # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
                     sleep 1
@@ -315,6 +350,5 @@ coliseum_start() {
         fi
     else
         printf "Battle or event time...\n"
-        sleep 5s
     fi
 }

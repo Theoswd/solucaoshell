@@ -255,24 +255,32 @@ clancommand_fight() {
     if [ -s HEAL ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
+      _saiu=0
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cc_access
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_heal
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_heal
+      fi
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
+      _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
-      time_exit 17
+      time_exit 17; pedido_nao_saiu || _saiu=1
       cc_access
-      cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-      date +%s > last_dodge
+      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      if [ "$_saiu" = 1 ]; then
+        cat HP > old_HP; _old_hp="$_hp"; _caiu=0
+        date +%s > last_dodge
+      fi
 
     # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE (troca_aliado,
     # em allies.sh, com o fogo amigo). So por aliado, como nas outras
@@ -307,6 +315,9 @@ clancommand_fight() {
           run_curl_exec "$URL/clancommand/" > "$src_ram"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
+        # A releitura acima ja e a reconfirmacao: sem a marca, o cc_access
+        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        _reconf=1
         cc_access
         sleep 1
       else
@@ -317,6 +328,8 @@ clancommand_fight() {
         # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
+        # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
+        [ "$_resta" -le "$LA" ] || _resta=$LA
         sleep "$_resta"
       fi
     fi
@@ -325,7 +338,8 @@ clancommand_fight() {
   rm -f "$src_ram"
   unset src_ram cc_access _cc_acao _emluta _reconf _atk0 _latk _resta
   printf "Clancommand ok\n"
-  sleep 10s
+  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
+  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 
@@ -346,7 +360,9 @@ clancommand_start() {
   if [ "`estado_luta "$src_ram" clancommand`" = luta ]; then
     printf "Torneio de equipe em andamento - voltando para a luta\n"
     batalha_marcar clancommand
-    full_atualizar "$TMP/FULL"
+    # O /train, se sair, vem depois desta pagina: a luta comeca com ela
+    # relida (os links dela ja nao valeriam).
+    full_relendo "$TMP/FULL" /clancommand/ "$src_ram"
     clancommand_fight
     clancommand_inscrever
     return 0
@@ -380,7 +396,7 @@ clancommand_start() {
     # pagina, nao ha o que esperar. Libera a conta em vez de deixa-la dez
     # minutos parada (mesmo criterio do clancoliseum_start).
     printf "Torneio de equipe: sem inscricao disponivel agora - pulando\n"
-    evento_cancelar 2>/dev/null
+    evento_cancelar clancommand 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
   fi
@@ -392,12 +408,16 @@ clancommand_start() {
   # um worker relancado procurar uma luta que so comeca horas depois.
   if [ -n "$_cc_seg" ] && [ "$_cc_seg" -gt 600 ]; then
     _cc_antecipar "$src_ram" "$_cc_link" "$_cc_seg"
-    evento_cancelar 2>/dev/null
+    evento_cancelar clancommand 2>/dev/null
     rm -f "$src_ram"; unset src_ram _cc_link _cc_seg
     return 0
   fi
 
   # FASE B — O INICIO ESTA PERTO: ENTRA E LUTA.
+  # O link da inscricao leva o id do torneio, nao um nonce de clique (ver o
+  # topo do arquivo): o /train no meio nao o invalida, e reler a pagina aqui
+  # era um pedido a mais que, falhando, apagava o link e deixava a equipe
+  # fora do torneio.
   full_atualizar "$TMP/FULL"
   batalha_marcar clancommand
   if [ -n "$_cc_link" ]; then
