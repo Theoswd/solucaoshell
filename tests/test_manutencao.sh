@@ -1055,8 +1055,9 @@ _orfao=0
 _lista=$(sed -n '/^for _lib in/,/^do$/p' "$LIB/sls.sh" | tr ' ' '\n' | grep '\.sh$')
 for _f in "$LIB"/*.sh; do
     _b=$(basename "$_f")
-    # Estes sao carregados por caminho proprio, nao pelo laco.
-    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh) continue ;; esac
+    # Estes sao carregados por caminho proprio, nao pelo laco (o batalhas.sh
+    # e executado pelo status.sh -batalhas).
+    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh|batalhas.sh) continue ;; esac
     echo "$_lista" | grep -qx "$_b" || { _orfao=$((_orfao + 1)); bad "modulo em lib/ que ninguem carrega: $_b"; }
 done
 [ "$_orfao" -eq 0 ] && ok "nenhum modulo orfao em lib/"
@@ -3968,6 +3969,29 @@ case "$_r" in
 esac
 check "painel: /questrnd aparece como Missao Aleatoria, /quest como Missoes" "Missão Aleatória|Missões" \
     "`cd "$_td20" && . "$LIB/panel.sh" > /dev/null 2>&1; mkdir -p ab81; printf '/questrnd/take/' > ab81/pagina; aba_de_v ab81; printf '%s|' "$_ABA"; printf '/quest/' > ab81/pagina; aba_de_v ab81; printf '%s' "$_ABA"`"
+
+# status.sh -batalhas (lib/batalhas.sh): resumo da ultima batalha de cada evento, por conta, lendo o
+# sls.log (e o .1 da rotacao). Somente leitura.
+mkdir -p "$_td20/bt/BR_Ana" "$_td20/bt/BR_Bia"
+printf '%s\n' "https://jogo 12:25" "King of the Immortals will be started..." "Em batalha - HP: 900" \
+    "Alvo aliado — trocando de alvo" "Em batalha - HP: 300" "Battle over. (o jogo declarou o fim da batalha)" "King ok" \
+    > "$_td20/bt/BR_Ana/sls.log.1"
+printf '%s\n' "https://jogo 22:25" "King of the Immortals will be started..." "Em batalha - HP: 800" \
+    "Battle over. (assassinado por Zé (log da batalha))" "King ok" \
+    "https://jogo 21:55" "Valley of the Immortals will be started... 21h:55m" "Em batalha undying" \
+    "Vale: 1 golpes (hit 1, mana 0), erva 1, pedra 0; primeiro golpe 22:00:04, ultimo 0s depois" "Undying ok" \
+    > "$_td20/bt/BR_Ana/sls.log"
+printf '%s\n' "https://jogo 16:25" "King of the Immortals will be started..." "Em batalha - HP: 50" > "$_td20/bt/BR_Bia/sls.log"
+_r=`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas | sed 's/  */ /g'`
+check "batalhas.sh: ultima batalha de cada evento, por conta" "== Rei
+ Ana 22:25 1 acoes HPmin 800 trocas 0 fogo 0 assassinado por Zé (log da batalha)
+ Bia 16:25 1 acoes HPmin 50 trocas 0 fogo 0 em andamento (ou sem fim no log)
+
+== Vale
+ Ana 21:55 1 acoes HPmin - trocas 0 fogo 0 - >> 1 golpes (hit 1, mana 0), erva 1, pedra 0; primeiro golpe 22:00:04, ultimo 0s depois" "$_r"
+check "batalhas.sh: filtro por evento e por conta" "== Rei
+ Bia 16:25 1 acoes HPmin 50 trocas 0 fogo 0 em andamento (ou sem fim no log)" \
+    "`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas Rei Bia | sed 's/  */ /g'`"
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81

@@ -58,12 +58,16 @@ while [ "$#" -gt 0 ]; do
         -n)        shift; PANEL_INTERVAL="$1" ;;
         -cols|--cols|-dpi|--dpi) PANEL_COLS_INFO=1 ;;
         -icones|--icones|-emoji|--emoji) PANEL_ICONS_INFO=1 ;;
+        # Resumo das ultimas batalhas (lib/batalhas.sh): so le os logs.
+        -batalhas|--batalhas) shift; exec sh "$LIBDIR/batalhas.sh" "$@" ;;
         -h|--help)
-            printf "uso: ./status.sh [-1] [-n SEGUNDOS] [-cols] [-icones]\n"
+            printf "uso: ./status.sh [-1] [-n SEGUNDOS] [-cols] [-icones] [-batalhas [EVENTO] [CONTA]]\n"
             printf "  -1        imprime uma vez e sai\n"
             printf "  -n SEG    intervalo de atualizacao (padrao 5; 10 no Termux)\n"
             printf "  -cols     regua de calibracao da largura da tela\n"
             printf "  -icones   desenha os tres conjuntos de icones, para escolher\n"
+            printf "  -batalhas ultima batalha de cada evento por conta (EVENTO: Rei, Vale,\n"
+            printf "            Altares, Torneio, Duelo, ColiseuCla, Bandeiras, Equipe, Coliseu)\n"
             exit 0
             ;;
     esac
