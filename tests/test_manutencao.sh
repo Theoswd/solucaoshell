@@ -4367,6 +4367,39 @@ _r=`( . "$LIB/allies.sh" > /dev/null 2>&1; _aliado=1; _al_fogo_ate=0; _al_seguid
 check "troca por aliado escreve no log (o resumo conta em todos os eventos)" "Alvo aliado — trocando de alvo" "$_r"
 unset -f _cp87 _rei87 _rec87 _hp87 _st87 _fr87
 
+# ---- 3.9.88: correcoes da revisao da 3.9.87 ----
+# Pulso do Coliseu: a marca do "sem luta" leva o dia. So com HH:MM, a noite
+# seguinte com luta em todos os pulsos anteriores pulava o mesmo minuto.
+#   _cp88 -> chamadas: 04:25 sem luta (dia 12), cinco pulsos com luta e o
+#            04:25 do dia 13 com luta
+_cp88() {
+    ( TMP="$_td20/cp88"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      relogio_sync() { _DD=${_DIAH%% *}; _h=${_DIAH#* }; _HH=${_h%:*}; _MM=${_h#*:}; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=-boot
+      coliseum_fight() { echo "COL$_HH:$_MM" >> "$TMP/r"; if [ "$ACHA" = nada ]; then COLISEU_SEM_LUTA=1; else COLISEU_SEM_LUTA=0; fi; }
+      tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { echo ESPERA >> "$TMP/r"; }
+      ACHA=nada; _DIAH="12 04:25"; sls_play
+      ACHA=luta
+      for _DIAH in "13 00:35" "13 01:05" "13 02:15" "13 03:45" "13 04:15" "13 04:25"; do sls_play; done
+      tr '\n' ' ' < "$TMP/r" )
+}
+check "Coliseu: a marca do pulso sem luta nao vale na noite seguinte" \
+    "COL04:25 COL00:35 COL01:05 COL02:15 COL03:45 COL04:15 COL04:25 " "`_cp88`"
+# Conferencia da Home no atualiza_stats: a subida de nivel no meio dela
+# ainda apaga o last_train (o nivel de antes nao pode ser o da Home).
+_r=`( TMP="$_td20/st88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
+      printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
+      run_curl() { printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>"; }
+      fetch_train_stats() { :; }; messages_info() { :; }
+      ACC_LVL=90; atualiza_stats > /dev/null 2>&1
+      [ -f "$TMP/last_train" ] && printf 'ficou' || printf 'apagado'; printf ' %s|%s' "$ACC_LVL" "${HOME_STATS:--}" )`
+check "painel: subida de nivel durante a conferencia da Home apaga o last_train" "apagado 91|1" "$_r"
+unset -f _cp88
+
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83
 

@@ -363,9 +363,13 @@ atualiza_stats() {
     # Pagina logada: a sessao respondeu (libera a varredura, ver servidor_mudo).
     sessao_marcar
     # Conferencia da Home (acima): os numeros dela antes, os do /user depois.
+    # O nivel de antes volta para o parse_status: com o da Home no lugar, a
+    # subida de nivel nesta conferencia nao apagava o last_train.
     if [ -z "$HOME_STATS" ] && [ -n "$_st_home" ]; then
+        _st_lvl="$ACC_LVL"
         status_ler "$_st_home"
         _st_h="$ACC_HP|$ACC_MP|$ACC_LVL|$ACC_GOLD|$ACC_SILVER"
+        ACC_LVL="$_st_lvl"; unset _st_lvl
     fi
     parse_status "$_pg"
     if [ -n "$_st_h" ]; then

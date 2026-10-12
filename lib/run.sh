@@ -161,13 +161,15 @@ sls_play() {
             # minuto comum (o ramo (*)). Com luta, nada muda: a luta leva
             # minutos, e uma luta que acabe ainda no minuto do pulso pode
             # tentar outra, como antes.
-            if [ "$_COL_PULSO" = "$_HH:$_MM" ]; then
+            # A marca leva o dia: so a hora valia na noite seguinte, e com
+            # luta em todos os pulsos antes dele o mesmo HH:MM era pulado.
+            if [ "$_COL_PULSO" = "$_DD $_HH:$_MM" ]; then
                 tarefas_livres
                 func_sleep
                 func_crono -q
             else
                 coliseum_fight
-                [ "$COLISEU_SEM_LUTA" = 1 ] && _COL_PULSO="$_HH:$_MM"
+                [ "$COLISEU_SEM_LUTA" = 1 ] && _COL_PULSO="$_DD $_HH:$_MM"
                   # PAUSA PARA CHECAR MISSOES. O Coliseu comum nao esta entre os
                   # cinco eventos de prioridade, entao entre as lutas o bot
                   # confere o checklist do cla e roda a arena no intervalo dela.
