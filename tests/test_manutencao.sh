@@ -29,6 +29,11 @@ LIB="$ROOT/lib"
 
 PASS=0
 FAIL=0
+# Disjuntor global (info.sh) desligado na suite: as falhas simuladas dos
+# testes iriam para o ~/.sls/net de verdade e segurariam os testes seguintes.
+# A secao 56 o liga num HOME proprio.
+SLS_DISJUNTOR=0
+export SLS_DISJUNTOR
 ok()   { PASS=$((PASS + 1)); printf "  [PASS] %s\n" "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf "  [FALHA] %s\n" "$1"; }
 check(){ # check "descricao" valor_esperado valor_obtido
@@ -4502,6 +4507,69 @@ _r=`( eval "$(sed -n '/^relanca_espera() {/,/^}/p' "$LIB/panel.sh")"; _o=""
           relanca_espera ${_a% *} ${_a#* }; _o="$_o $_RL_N:$_RL_E"; done; printf '%s' "$_o" )`
 check "relancamento: espera crescente e zerada apos 15 min" " 0:60 1:60 2:120 3:300 4:600 9:600 0:60 0:60 0:60" "$_r"
 rm -rf "$_td55"; unset _td55 _r
+
+printf "\n=== 56. disjuntor global do servidor ===\n"
+_td56=`mktemp -d`
+# Ambiente comum: HOME e TMP proprios, relogio controlado em $_td56/t, a Home
+# da sonda em $_td56/home (vazio = servidor mudo) e os pedidos em $_td56/req.
+_dj56() {
+    ( HOME="$_td56/h"; TMP="$_td56/tmp"; URL=http://jogo; SLS_TAG=BR; SLS_PACING=0; SLS_DISJUNTOR=1
+      export HOME TMP URL SLS_TAG SLS_PACING SLS_DISJUNTOR; mkdir -p "$HOME/.sls" "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      date() { case "$1" in +%s) cat "$_td56/t" ;; *) command date "$@" ;; esac; }
+      run_curl() { echo "$1" >> "$_td56/req"; cat "$_td56/home" 2>/dev/null; }
+      eval "$1" )
+}
+_pg56="<html>x jsInterface.event(\"user=7;level=9\")</html>"
+_nova56() { rm -rf "$_td56/h" "$_td56/tmp"; : > "$_td56/req"; : > "$_td56/home"; echo 1000 > "$_td56/t"; }
+_nova56
+_r=`_dj56 'disjuntor_falha; disjuntor_falha; [ -f "$HOME/.sls/net/BR.aberto" ] && printf aberto || printf fechado'`
+check "disjuntor: a mesma conta duas vezes nao abre" "fechado" "$_r"
+# Tres contas distintas (a conta e a pasta dela, $TMP).
+_nova56
+for _p in a b; do _dj56 "TMP=\$TMP/$_p; disjuntor_falha" > /dev/null; done
+_r=`_dj56 'TMP=$TMP/c; disjuntor_falha; [ -f "$HOME/.sls/net/BR.aberto" ] && printf aberto || printf fechado'`
+case "$_r" in *aberto) ok "disjuntor: tres contas sem resposta em 30s abrem" ;; *) bad "disjuntor: tres contas nao abriram ($_r)" ;; esac
+case "$_r" in *"[disjuntor] BR fora do ar: 3 contas"*) ok "disjuntor: o log diz quantas contas" ;; *) bad "disjuntor: log da abertura ($_r)" ;; esac
+_nova56
+for _p in "a te" b; do _dj56 "TMP='\$TMP/$_p'; disjuntor_falha" > /dev/null; done; echo 1031 > "$_td56/t"
+_r=`_dj56 'TMP=$TMP/c; disjuntor_falha > /dev/null; [ -f "$HOME/.sls/net/BR.aberto" ] && printf aberto || printf fechado'`
+check "disjuntor: falhas fora da janela de 30s nao contam (nome com espaco)" "fechado" "$_r"
+# Aberto: segura e sonda; Home muda continua aberto; um so pedido a cada 20 s.
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
+_r=`_dj56 'disjuntor_segura && printf S || printf L; disjuntor_segura && printf S || printf L'`
+check "disjuntor aberto, servidor mudo: segura e sonda uma vez so" "SS 1" "$_r `grep -c . "$_td56/req"`"
+echo 1021 > "$_td56/t"; printf '%s' "$_pg56" > "$_td56/home"
+_r=`_dj56 'disjuntor_segura > /dev/null 2>&1 && printf S || printf L; [ -f "$HOME/.sls/net/BR.aberto" ] && printf A || printf F'`
+check "disjuntor: sonda que recebe a pagina do jogo fecha e libera quem sondou" "LF" "$_r"
+check "disjuntor: segunda sonda so depois de 20s" 2 "`grep -c . "$_td56/req"`"
+# Volta escalonada: espera $$ % 21 s depois do fechamento (aqui o PID do sh do teste).
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.fechou"
+_r=`_dj56 'e=$(( $$ % 21 )); echo $(( 1000 + e - 1 )) > "$_td56/t"; a=L; [ "$e" -gt 0 ] && { disjuntor_segura && a=S; }
+           echo $(( 1000 + e )) > "$_td56/t"; disjuntor_segura && b=S || b=L; printf "%s%s" "$a" "$b"'`
+case "$_r" in SL|LL) ok "disjuntor: volta escalonada (segura ate \$\$ % 21 s, depois segue) ($_r)" ;; *) bad "disjuntor: volta escalonada ($_r)" ;; esac
+# Qualquer pagina logada fecha; 30 min aberto fecha sozinho; SLS_DISJUNTOR=0 desliga.
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
+_r=`_dj56 'sessao_marcar > /dev/null; [ -f "$HOME/.sls/net/BR.aberto" ] && printf A || printf F'`
+check "disjuntor: pagina logada de qualquer conta (sessao_marcar) fecha" "F" "$_r"
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"; echo 2800 > "$_td56/t"
+_r=`_dj56 'disjuntor_segura > /dev/null && printf S || printf L'`
+check "disjuntor: aberto ha 30 min fecha sozinho" "L" "$_r"
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
+_r=`_dj56 'SLS_DISJUNTOR=0; disjuntor_segura && printf S || printf L; disjuntor_falha; printf " %s" "$(ls "$HOME/.sls/net" | grep -c falhas)"'`
+check "disjuntor: SLS_DISJUNTOR=0 nao segura nem registra" "L 0" "$_r"
+# Os portoes: com o disjuntor aberto, tarefas_livres e start nao pedem nada.
+_nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
+_r=`_dj56 '. "$LIB/crono.sh" > /dev/null 2>&1; echo 1000 > "$_td56/h/.sls/net/BR.sonda_ult"
+           batalha_pendente() { return 1; }; clan_id() { echo clan_id >> "$_td56/req"; }
+           atualiza_stats() { echo stats >> "$_td56/req"; }; stats_liberado() { return 0; }; CLD=""
+           tarefas_livres > /dev/null 2>&1
+           login_logoff() { echo login >> "$_td56/req"; }; func_crono() { :; }; func_sleep() { :; }
+           start > /dev/null 2>&1; printf "%s" "$?"'`
+check "disjuntor: tarefas_livres e start nao pedem nada com o disjuntor aberto" "1 0" "$_r `grep -c . "$_td56/req"`"
+grep -q 'rm -rf "\$HOME/.sls/net"' "$ROOT/stop.sh" && ok "stop.sh limpa o estado do disjuntor" || bad "stop.sh sem limpar ~/.sls/net"
+grep -q 'if disjuntor_segura; then' "$LIB/sls.sh" && ok "login de entrada espera o disjuntor" || bad "login de entrada ignora o disjuntor"
+rm -rf "$_td56"; unset _td56 _r _pg56 _p; unset -f _dj56 _nova56
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

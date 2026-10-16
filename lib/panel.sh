@@ -1278,6 +1278,21 @@ while true; do
                 printf 'T%samarelo%s%s\n' "$_US" "$_US" "$_msg"
             fi
 
+            # Disjuntor global aberto (info.sh): servidor fora do ar.
+            for _dj_f in "$HOME/.sls/net/"*.aberto; do
+                [ -f "$_dj_f" ] || continue
+                ler_arq "$_dj_f"
+                case "$_LIDO" in ''|*[!0-9]*) _LIDO=$_agora_ep ;; esac
+                _dj_tag=${_dj_f##*/}; _dj_tag=${_dj_tag%.aberto}
+                if [ "$LARG" -lt 50 ]; then
+                    _msg="$_dj_tag fora do ar - so batalhas"
+                else
+                    _msg="servidor $_dj_tag fora do ar ha $(( (_agora_ep - _LIDO) / 60 )) min — so batalhas, o resto espera"
+                fi
+                printf 'T%svermelho%s%s\n' "$_US" "$_US" "$_msg"
+            done
+            unset _dj_f _dj_tag
+
             # Quantas contas precisam de atencao, e o que fazer.
             if [ "$n_off" -gt 0 ] && [ "${PANEL_SUPERVISE:-0}" != "1" ]; then
                 if [ "$LARG" -lt 50 ]; then

@@ -206,6 +206,13 @@ do_login() {
 login_delay=30
 login_try=0
 while true; do
+    # Disjuntor aberto: o login espera a sonda (disjuntor_segura) em vez de
+    # cada conta tentar a cada 20-40s.
+    if disjuntor_segura; then
+        [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
+        sleep 20
+        continue
+    fi
     if do_login; then
         break
     fi

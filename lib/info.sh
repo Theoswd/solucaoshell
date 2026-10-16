@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.92"
+versionNum="3.9.93"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -371,7 +371,12 @@ itens_gratis() { # SECAO ARQUIVO
 # A sessao esta viva: carimba $TMP/last_ok. Usado dentro da luta, onde o
 # descansar() nao pode rodar (voltaria a Home e abandonaria a batalha): o
 # link de golpe so aparece para quem esta logado.
-sessao_marcar() { date +%s > "$TMP/last_ok" 2>/dev/null; }
+sessao_marcar() {
+    date +%s > "$TMP/last_ok" 2>/dev/null
+    # Pagina do jogo chegou: o servidor voltou (fecha o disjuntor, se aberto).
+    [ -f "$HOME/.sls/net/${SLS_TAG:-BR}.aberto" ] && disjuntor_fechar resposta
+    return 0
+}
 
 
 # SESSAO CAIDA OU SERVIDOR MUDO?   sessao_estado ARQUIVO   (ou "-" = stdin)
@@ -409,8 +414,129 @@ sessao_estado() {
 }
 
 # Servidor sem resposta: carimbo para o painel dizer "sem resposta" em vez
-# de "sessao caida" quando a conta nao confirma a sessao ha minutos.
-servidor_mudo_marcar() { date +%s > "$TMP/last_rede" 2>/dev/null; }
+# de "sessao caida" quando a conta nao confirma a sessao ha minutos. Conta
+# tambem para o disjuntor global.
+servidor_mudo_marcar() {
+    date +%s > "$TMP/last_rede" 2>/dev/null
+    disjuntor_falha
+    return 0
+}
+
+# DISJUNTOR GLOBAL DO SERVIDOR (um por servidor, comum as contas do aparelho)
+#
+# Com o servidor fora do ar, cada conta seguia tentando por conta propria —
+# N contas pedindo justamente quando ele nao da conta. Quando
+# SLS_DISJ_CONTAS (3) contas diferentes concluem "sem resposta" em
+# SLS_DISJ_JANELA (30) s, o disjuntor abre: fora de batalha nenhuma conta
+# pede nada (rotina, varredura e login seguram, ver disjuntor_segura) e so
+# uma por vez sonda a Home a cada 20 s. Batalha continua (regra do dono):
+# a luta tem hora. Fecha quando a sonda ou qualquer conta recebe uma pagina
+# do jogo; as contas voltam escalonadas em 0-20 s ($$ % 21). Aberto ha mais
+# de 30 min fecha sozinho (estado velho depois de um stop). SLS_DISJUNTOR=0
+# desliga.
+#
+# Arquivos em ~/.sls/net/TAG.*: falhas (epoch<TAB>pasta da conta), aberto e fechou
+# (epoch), sonda (trava mkdir com o PID), sonda_ult (epoch da ultima sonda).
+disjuntor_base() { _DJ="$HOME/.sls/net/${SLS_TAG:-BR}"; }
+
+disjuntor_falha() {
+    [ "${SLS_DISJUNTOR:-1}" = 0 ] && return 0
+    disjuntor_base
+    mkdir -p "$HOME/.sls/net" 2>/dev/null
+    _dj_t=`date +%s`
+    printf '%s\t%s\n' "$_dj_t" "${TMP:-$$}" >> "$_DJ.falhas" 2>/dev/null
+    if [ ! -f "$_DJ.aberto" ]; then
+        # Um awk: conta as contas distintas na janela e ja apara o arquivo.
+        _dj_n=`awk -F '\t' -v agora="$_dj_t" -v jan="${SLS_DISJ_JANELA:-30}" -v sai="$_DJ.falhas.$$" '
+            $1 + 0 >= agora - jan { print > sai; if (!($2 in v)) { v[$2] = 1; n++ } }
+            END { print n + 0 }' "$_DJ.falhas" 2>/dev/null`
+        mv -f "$_DJ.falhas.$$" "$_DJ.falhas" 2>/dev/null
+        case "$_dj_n" in ''|*[!0-9]*) _dj_n=0 ;; esac
+        if [ "$_dj_n" -ge "${SLS_DISJ_CONTAS:-3}" ]; then
+            echo "$_dj_t" > "$_DJ.aberto" 2>/dev/null
+            rm -f "$_DJ.fechou" 2>/dev/null
+            printf "[disjuntor] %s fora do ar: %s contas sem resposta em %ss — fora de batalha, so a sonda pede\n" \
+                "${SLS_TAG:-BR}" "$_dj_n" "${SLS_DISJ_JANELA:-30}"
+        fi
+    fi
+    unset _dj_t _dj_n
+    return 0
+}
+
+disjuntor_fechar() {   # MOTIVO
+    disjuntor_base
+    [ -f "$_DJ.aberto" ] || return 0
+    _dj_a=""; { read -r _dj_a < "$_DJ.aberto"; } 2>/dev/null
+    _dj_t=`date +%s`
+    rm -f "$_DJ.aberto" "$_DJ.falhas" 2>/dev/null
+    echo "$_dj_t" > "$_DJ.fechou" 2>/dev/null
+    case "$_dj_a" in ''|*[!0-9]*) _dj_a=$_dj_t ;; esac
+    printf "[disjuntor] %s de volta (%s) depois de %ss — contas voltam em ate 20s\n" \
+        "${SLS_TAG:-BR}" "$1" $(( _dj_t - _dj_a ))
+    unset _dj_a _dj_t
+    return 0
+}
+
+# Uma sonda por vez no aparelho, no maximo a cada 20 s.
+disjuntor_sondar() {   # AGORA
+    _dj_u=0; { read -r _dj_u < "$_DJ.sonda_ult"; } 2>/dev/null
+    case "$_dj_u" in ''|*[!0-9]*) _dj_u=0 ;; esac
+    _dj_i=$(( $1 - _dj_u ))
+    if [ "$_dj_i" -ge 0 ] && [ "$_dj_i" -lt 20 ]; then unset _dj_u _dj_i; return 0; fi
+    if ! mkdir "$_DJ.sonda" 2>/dev/null; then
+        _dj_p=""; { read -r _dj_p < "$_DJ.sonda/pid"; } 2>/dev/null
+        case "$_dj_p" in
+            ''|*[!0-9]*) unset _dj_u _dj_i _dj_p; return 0 ;;
+            *) kill -0 "$_dj_p" 2>/dev/null && { unset _dj_u _dj_i _dj_p; return 0; }
+               rm -rf "$_DJ.sonda" 2>/dev/null
+               mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; } ;;
+        esac
+    fi
+    echo $$ > "$_DJ.sonda/pid" 2>/dev/null
+    echo "$1" > "$_DJ.sonda_ult" 2>/dev/null
+    SLS_MAXTIME=17
+    run_curl "${URL}/" > "$TMP/.sonda" 2>/dev/null
+    unset SLS_MAXTIME
+    if [ "`sessao_estado "$TMP/.sonda"`" != sem_resposta ]; then
+        disjuntor_fechar sonda
+    fi
+    rm -rf "$_DJ.sonda" "$TMP/.sonda" 2>/dev/null
+    unset _dj_u _dj_i _dj_p
+    return 0
+}
+
+# 0 = segure (sem pedir nada fora de batalha); 1 = siga.
+disjuntor_segura() {
+    [ "${SLS_DISJUNTOR:-1}" = 0 ] && return 1
+    disjuntor_base
+    if [ ! -f "$_DJ.aberto" ]; then
+        # Volta escalonada: cada conta espera $$ % 21 s depois do fechamento.
+        [ -f "$_DJ.fechou" ] || return 1
+        _dj_f=""; { read -r _dj_f < "$_DJ.fechou"; } 2>/dev/null
+        case "$_dj_f" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$_dj_f" = "${_DJ_LIBERADO:-}" ] && { unset _dj_f; return 1; }
+        _dj_i=$(( `date +%s` - _dj_f ))
+        if [ "$_dj_i" -lt 0 ] || [ "$_dj_i" -ge $(( $$ % 21 )) ]; then
+            _DJ_LIBERADO=$_dj_f; unset _dj_f _dj_i; return 1
+        fi
+        unset _dj_f _dj_i
+        return 0
+    fi
+    _dj_a=""; { read -r _dj_a < "$_DJ.aberto"; } 2>/dev/null
+    case "$_dj_a" in ''|*[!0-9]*) _dj_a=0 ;; esac
+    _dj_t=`date +%s`
+    if [ $(( _dj_t - _dj_a )) -ge 1800 ] || [ "$_dj_t" -lt "$_dj_a" ]; then
+        disjuntor_fechar "30 min aberto"
+        unset _dj_a _dj_t
+        return 1
+    fi
+    disjuntor_sondar "$_dj_t"
+    unset _dj_a _dj_t
+    # Quem sondou e achou o servidor de volta segue na hora.
+    [ -f "$_DJ.aberto" ] && return 0
+    disjuntor_base; _DJ_LIBERADO=""; { read -r _DJ_LIBERADO < "$_DJ.fechou"; } 2>/dev/null
+    return 1
+}
 
 # INTERVALO MINIMO ENTRE LOGINS DE CONTAS DIFERENTES DO MESMO APARELHO.
 # N logins do mesmo IP em poucos segundos recebem a resposta de senha errada.
