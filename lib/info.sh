@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.91"
+versionNum="3.9.92"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -169,7 +169,11 @@ fetch_page() {
     fi
 
     SLS_MAXTIME=17
-    run_curl_exec "${URL}${relative_url}" > "$output_file" 2>/dev/null &
+    # -D: cabecalhos num arquivo, para registrar 429/5xx — o curl devolve 0
+    # nesses casos. So registro: a pagina de erro nao e do jogo e o
+    # sessao_estado ja a trata como "sem_resposta".
+    : > "${TMP:-.}/.fp_hdr" 2>/dev/null
+    run_curl_exec "${URL}${relative_url}" -D "${TMP:-.}/.fp_hdr" > "$output_file" 2>/dev/null &
     _fp_pid=$!
     unset SLS_MAXTIME
 
@@ -192,6 +196,18 @@ fetch_page() {
         return 1
     fi
     unset _fp_rc
+    # Codigo HTTP da ultima resposta (depois dos redirects), sem processo:
+    # so o read do shell. 4xx/5xx vai para o ERROR_DEBUG e para .http_erro.
+    _fp_http=""
+    while IFS=' ' read -r _fp_l1 _fp_l2 _fp_l3; do
+        case "$_fp_l1" in HTTP/*) _fp_http="$_fp_l2" ;; esac
+    done < "${TMP:-.}/.fp_hdr" 2>/dev/null
+    case "$_fp_http" in
+        [45][0-9][0-9])
+            printf "http %s: %s\n" "$_fp_http" "$relative_url" >> "${TMP:-.}/ERROR_DEBUG"
+            printf "%s %s\n" "$_fp_http" "`date +%s`" > "${TMP:-.}/.http_erro" 2>/dev/null ;;
+    esac
+    unset _fp_http _fp_l1 _fp_l2 _fp_l3
     return 0
 }
 

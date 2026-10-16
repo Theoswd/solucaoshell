@@ -33,7 +33,8 @@ PID_FILE="${SLS_STATUS_FILE%.status}.pid"
 echo "$$" > "$PID_FILE"
 echo "starting" > "$SLS_STATUS_FILE"
 
-termux-wake-lock 2>/dev/null
+# Sob o play.sh o wake-lock ja foi pedido (SLS_WAKELOCK=1).
+[ -n "$SLS_WAKELOCK" ] || termux-wake-lock 2>/dev/null
 
 printf "[%s] %s — worker PID=%s\n" "$SLS_TAG" "$SLS_USER" "$$"
 

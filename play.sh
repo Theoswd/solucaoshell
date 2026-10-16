@@ -31,6 +31,12 @@ export SLSDIR
 ACCOUNTS_FILE=$(resolve_accounts_file)
 
 termux-wake-lock 2>/dev/null
+# O wake-lock vale para o Termux inteiro: pedido uma vez aqui, workers e
+# sls.sh (que herdam a variavel) nao repetem — cada pedido sobe um "am" do
+# Android, no aparelho que mata a sessao acima de 32 processos. Rodados a
+# mao, sem o play.sh, eles pedem o seu.
+SLS_WAKELOCK=1
+export SLS_WAKELOCK
 STATUS_DIR="$HOME/.sls/status"
 
 # --restart / -r : derruba e sobe tudo de novo. Sem ele, as contas que ja

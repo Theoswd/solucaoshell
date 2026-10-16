@@ -89,14 +89,17 @@ HP_ATUAL=900                                   # curou
 LIMIAR_DEPOIS=$(hlhp "$HP_MAXIMO" "$HPER")     # continua 480
 check "HP maximo preservado apos cura" 1000 "$HP_MAXIMO"
 check "Limiar de cura estavel (nao sobe/desce a cada golpe)" "$LIMIAR_ANTES" "$LIMIAR_DEPOIS"
-# Prova de regressao: nenhum modulo reintroduz o overwrite no branch de cura
-if grep -nE 'cat (HP|USH) > FULL|cat USH > "\$full_ram"|echo "\$USH" > "\$full_ram"|_fullat="\$_hpat"' \
-        "$ROOT"/king.sh "$ROOT"/clanfight.sh "$ROOT"/clandmg.sh "$ROOT"/altars.sh \
-        "$ROOT"/coliseum.sh "$ROOT"/flagfight.sh >/dev/null 2>&1; then
-    bad "algum modulo ainda sobrescreve o HP maximo com o HP atual"
-else
-    ok "nenhum modulo sobrescreve o HP maximo com o HP atual"
-fi
+# Prova de regressao: nenhum modulo reintroduz o overwrite no branch de cura.
+# Os modulos ficam em lib/: com "$ROOT" o grep nao achava os arquivos (codigo
+# 2) e o teste passava sem ter lido nada. Codigo 2 agora e falha.
+grep -nE 'cat (HP|USH) > FULL|cat USH > "\$full_ram"|echo "\$USH" > "\$full_ram"|_fullat="\$_hpat"' \
+        "$LIB"/king.sh "$LIB"/clanfight.sh "$LIB"/clandmg.sh "$LIB"/altars.sh \
+        "$LIB"/coliseum.sh "$LIB"/flagfight.sh >/dev/null 2>&1
+case $? in
+    0) bad "algum modulo ainda sobrescreve o HP maximo com o HP atual" ;;
+    1) ok "nenhum modulo sobrescreve o HP maximo com o HP atual" ;;
+    *) bad "regressao do HP maximo: modulos de batalha nao encontrados em lib/" ;;
+esac
 
 printf "\n=== 4. Liga dos Favoritos: recompensa separada das lutas ===\n"
 # Sourceia as funcoes REAIS da league.sh e simula o servidor via fetch_page.
@@ -4471,6 +4474,34 @@ unset -f _cp88 _cs88
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83
+
+printf "\n=== 55. codigo HTTP, wake-lock unico, relancamento crescente ===\n"
+_td55=`mktemp -d`
+# fetch_page registra 4xx/5xx (curl devolve 0 nesses casos) sem mudar o retorno.
+_r=`( TMP="$_td55"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { printf 'HTTP/1.1 302 Found\r\n\r\nHTTP/1.1 502 Bad Gateway\r\n\r\n' > "$3"; printf 'erro'; }
+      fetch_page /king/ "$TMP/p"; printf 'rc=%s ' "$?"
+      grep -c 'http 502: /king/' "$TMP/ERROR_DEBUG" 2>/dev/null || printf 0 )`
+check "fetch_page: HTTP 502 vai para o ERROR_DEBUG e o retorno continua 0" "rc=0 1" "$_r"
+_r=`( TMP="$_td55/ok"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { printf 'HTTP/2 200 \r\n\r\n' > "$3"; printf 'pagina'; }
+      fetch_page /user/ "$TMP/p"; printf 'rc=%s %s' "$?" "$(cat "$TMP/p")"
+      [ -f "$TMP/.http_erro" ] && printf ' marcado' )`
+check "fetch_page: HTTP 200 nao marca erro e a pagina sai inteira" "rc=0 pagina" "$_r"
+# Wake-lock pedido uma vez pelo play.sh; worker.sh e sls.sh so pedem rodados a mao.
+grep -q '^export SLS_WAKELOCK' "$ROOT/play.sh" \
+    && grep -q '^\[ -n "\$SLS_WAKELOCK" \] || termux-wake-lock' "$LIB/worker.sh" \
+    && grep -q 'if \[ -z "\$SLS_WAKELOCK" \] && \[ -d /data/data/com.termux' "$LIB/sls.sh" \
+    && ok "wake-lock: so o play.sh pede; worker e sls.sh pedem apenas sem ele" \
+    || bad "wake-lock pedido de novo por worker/sls sob o play.sh"
+# Espera antes de relancar: 1, 1, 2, 5, 10, 10 min; 15 min sem relancar zera.
+_r=`( eval "$(sed -n '/^relanca_espera() {/,/^}/p' "$LIB/panel.sh")"; _o=""
+      for _a in "0 30" "1 30" "2 30" "3 30" "4 30" "9 30" "5 900" "" "x 10"; do
+          relanca_espera ${_a% *} ${_a#* }; _o="$_o $_RL_N:$_RL_E"; done; printf '%s' "$_o" )`
+check "relancamento: espera crescente e zerada apos 15 min" " 0:60 1:60 2:120 3:300 4:600 9:600 0:60 0:60 0:60" "$_r"
+rm -rf "$_td55"; unset _td55 _r
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

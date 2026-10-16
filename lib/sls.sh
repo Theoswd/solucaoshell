@@ -51,7 +51,7 @@ fi
 [ -z "$RUN" ] && RUN='-boot'
 export RUN
 
-if [ -d /data/data/com.termux/files/usr/share/doc ]; then
+if [ -z "$SLS_WAKELOCK" ] && [ -d /data/data/com.termux/files/usr/share/doc ]; then
     termux-wake-lock 2>/dev/null
 fi
 

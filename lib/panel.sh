@@ -745,6 +745,19 @@ ler_arq() {
     return 0
 }
 
+# Espera antes de relancar um worker morto.   relanca_espera N DESDE
+#   N = relancamentos seguidos (.relancado_n), DESDE = segundos desde o ultimo.
+# Em _RL_N a contagem (zera apos 15 min sem relancar) e em _RL_E a espera:
+# 1 min nos dois primeiros, depois 2, 5 e 10 min — um worker que cai ao
+# subir nao fica gastando login e processos todo minuto. Sem processo: o
+# painel chama isto a cada desenho para cada conta parada.
+relanca_espera() {
+    _RL_N=$1
+    case "$_RL_N" in ''|*[!0-9]*) _RL_N=0 ;; esac
+    case "$2" in ''|*[!0-9-]*) ;; *) [ "$2" -ge 900 ] && _RL_N=0 ;; esac
+    case "$_RL_N" in 0|1) _RL_E=60 ;; 2) _RL_E=120 ;; 3) _RL_E=300 ;; *) _RL_E=600 ;; esac
+}
+
 # Nome da aba em que a conta esta agora, em _ABA, traduzido de $1/pagina
 # (gravado pelo fetch_page); "/" vira "Pagina Principal". Sem $(...): o
 # painel chama isto para cada conta a cada redesenho.
@@ -1039,17 +1052,23 @@ while true; do
             # O diretorio antes do marcador: sem ele a conta nova seria
             # relancada a cada desenho.
             mkdir -p "$acc_dir" 2>/dev/null
+            # Espera crescente para quem morre seguido (relanca_espera).
+            ler_arq "$acc_dir/.relancado_n"
+            _rl_n=$_LIDO
             ler_arq "$acc_dir/.relancado"
             case "$_LIDO" in ''|*[!0-9]*) _LIDO=0 ;; esac
             _LIDO=$(( _agora_ep - _LIDO ))
-            if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge 60 ]; then
+            relanca_espera "$_rl_n" "$_LIDO"
+            if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge "$_RL_E" ]; then
                 echo "$_agora_ep" > "$acc_dir/.relancado" 2>/dev/null
+                echo $(( _RL_N + 1 )) > "$acc_dir/.relancado_n" 2>/dev/null
                 [ "$status" = "dead" ] && echo "dead" > "$status_file"
                 printf "[monitor] subindo worker\n" >> "$acc_dir/sls.log" 2>/dev/null
                 # A credencial do accounts.conf: conta nova nao tem cript_file.
                 limpa_campo "$_enc"
                 launch_worker "$srv" "$user" "$_CF" > /dev/null 2>&1
             fi
+            unset _rl_n
         fi
 
         # loading/login_retry sao contas SUBINDO, nao paradas.
