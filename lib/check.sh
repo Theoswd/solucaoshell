@@ -1,24 +1,11 @@
 # check.sh
 #
-# O CONTADOR DESTE ARQUIVO TEM NOME PROPRIO.
-#
-# Era um `i` solto: `for i in 1 2`, `i=$((i + 1))`. Nao existe escopo em sh,
-# entao o valor sobrava no ambiente do worker depois da funcao retornar
-# (medido: check_missions deixava i=17, check_rewards deixava i=12). E o
+# Contador com nome proprio (_ck_i), nunca `i`: sh nao tem escopo e o
 # func_cat usa `${i:-60}` como tempo de espera do ciclo ocioso.
-#
-# Hoje isso nao custa nada, porque o func_cat so e chamado de dentro do
-# func_sleep, que define o i logo antes (conferido: a espera sai 15s, nao
-# 17s). Mas basta alguem chamar o func_cat de outro lugar para o bot passar
-# a descansar 12 segundos em vez de 60.
 
-# UM GREP POR PAGINA, NAO UM POR INDICE.
-#
-# As missoes (0 a 16) e as reliquias (0 a 11) eram procuradas com um
-# grep|sed por indice, ~90 processos a cada 20 min por conta, quase sempre
-# sem link nenhum. Agora _ck_lista guarda os links da pagina numa linha
-# cada, e _ck_lista volta a ler so depois de um clique (a pagina mudou). O
-# _ck_link acha o primeiro link do indice na lista, como o grep|sed achava.
+# UM GREP POR PAGINA, NAO UM POR INDICE: _ck_lista guarda os links da pagina
+# numa linha cada (reler so depois de um clique); _ck_link acha o primeiro
+# link do indice na lista.
 _ck_lista() {
     _ck_l=`grep -o -E "${1}[?]r=[0-9]+" "$TMP/SRC"`
 }
@@ -45,11 +32,8 @@ check_missions() {
 
     fetch_page "/quest/"
 
-    # A RESPOSTA DE UM CLIQUE NAO E A LISTA DE MISSOES.
-    #
-    # O SRC passa a ser a pagina de resultado do bau (ou da missao), entao o
-    # proximo link era procurado na pagina errada: saia um por passagem. Cada
-    # clique rele /quest/, que tambem traz o nonce novo.
+    # A resposta de um clique nao e a lista de missoes: cada clique rele
+    # /quest/, que tambem traz o nonce novo.
     _ck_lista "/quest/openChest/[0-9]+/"
     for _ck_i in 1 2; do
         if _ck_link "/quest/openChest/$_ck_i/?"; then
@@ -77,8 +61,7 @@ check_missions() {
     done
 
     fetch_page "/collector/"
-    # "sed -n 1p": link repetido na pagina virava duas linhas e o curl
-    # recusava a URL, sem nada no log.
+    # "sed -n 1p": link repetido viraria duas linhas e o curl recusaria a URL.
     click=`grep -o -E "/collector/reward/element/[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -n "$click" ]; then
         fetch_page "$click"
@@ -124,11 +107,8 @@ use_elixir() {
         return
     fi
 
-    # CORRECAO: pegava o i-esimo link (`sed -n "${_ck_i}p"`) de uma pagina que
-    # muda a cada uso — os indices desalinhavam apos o primeiro elixir — e
-    # reaproveitava o nonce `?r=` da PRIMEIRA leitura, que o servidor pode
-    # recusar. Agora rebusca a pagina a cada volta (nonce fresco) e usa sempre
-    # o PRIMEIRO link disponivel; quando nao ha mais, encerra.
+    # Rebusca a pagina a cada volta (nonce ?r= fresco; a pagina muda a cada
+    # uso) e usa sempre o PRIMEIRO link; quando nao ha mais, encerra.
     _ck_i=1
     while [ "$_ck_i" -le 4 ]; do
         fetch_page "/inv/chest/"

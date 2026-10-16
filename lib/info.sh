@@ -1,67 +1,27 @@
 #!/bin/sh
 
-# CORRECAO: versionNum era definido apenas DENTRO de script_slogan(),
-# funcao que nunca e chamada no fluxo do worker. Resultado: o messages_info
-# imprimia "solucaoshell v | ..." com a versao vazia.
-versionNum="3.9.89"
-# Aguarda o ultimo job em background terminar, ate N segundos.
-#
-# CORRECAO: a versao original rodava dentro de ( ... ) e extraia o PID com
-#   TEFPID=`echo "$!" | grep -o -E '([0-9]{2,6})'`
-# A regex trunca PIDs com 7+ digitos (pid_max pode chegar a 4194304), o que
-# fazia o kill acertar um processo QUALQUER do usuario. Agora usa $! direto.
-# O "sleep antes do teste" foi mantido de proposito: ele impoe ~1s de
-# espacamento entre requisicoes, que e um limitador de taxa natural.
+# Versao global: o messages_info a imprime.
+versionNum="3.9.92"
+# Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
+# O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
     TEFPID=$!
     [ -z "$TEFPID" ] && return 0
 
-    # Espacamento deliberado entre requisicoes: limitador de taxa natural,
-    # herdado da versao original (que o obtinha do primeiro "sleep 1" do
-    # laco de espera).
-    #
-    # CORRECAO: este "sleep" ignorava o SLS_PACING, a chave que o play.sh ja
-    # liga sozinho no Termux acima de 3 contas justamente para nao deixar um
-    # processo parado por requisicao. O fetch_page a respeitava; o time_exit,
-    # nao — e e ele que serve TODO o codigo de batalha, que e onde o pico de
-    # processos acontece. Com 6 contas em evento eram 6 "sleep" parados que a
-    # configuracao mandava nao existir.
-    #
-    # Com SLS_PACING=0 quem espaca as requisicoes e o proprio tempo de ida e
-    # volta ao servidor (meio segundo a dois), como o comentario do fetch_page
-    # ja documentava. Fora do Termux o padrao continua 1.
+    # Espacamento deliberado entre requisicoes (limitador de taxa).
+    # SLS_PACING=0 (o play.sh liga no Termux acima de 3 contas) dispensa o
+    # sleep: o tempo de ida e volta ja espaca, e cada processo conta no
+    # limite de ~32 do Android.
     _te_pace="${SLS_PACING:-1}"
     case "$_te_pace" in ''|*[!0-9]*) _te_pace=1 ;; esac
     [ "$_te_pace" -gt 0 ] && sleep "$_te_pace"
     unset _te_pace
 
-    # CORRECAO CRITICA (SIGKILL / "signal 9" no Android 12+):
-    #
-    # A versao anterior esperava com
-    #     while [ n -lt 17 ]; do sleep 1; kill -0 PID; done
-    # ou seja ate 17 forks de /bin/sleep POR REQUISICAO, mais o subshell e
-    # o curl. Cada conta faz dezenas de requisicoes por ciclo; com 6 contas
-    # em paralelo a arvore de processos do Termux passa facilmente dos 32
-    # processos "fantasma" que o Android 12+ tolera — e o sistema responde
-    # matando a sessao inteira com SIGKILL, sem aviso. E exatamente o
-    # "[Process completed (signal 9)]" que aparece no meio do lancamento.
-    #
-    # O prazo agora e imposto pelo proprio curl (--max-time, em run_curl),
-    # entao o processo em segundo plano TEM hora marcada para morrer e
-    # basta um "wait" — que nao cria processo nenhum.
-    #
-    # O argumento continua sendo aceito por compatibilidade com os 100+
-    # pontos de chamada, mas quem corta agora e o curl. Nos pontos que
-    # chamam run_curl direto o prazo passa de 17s para os 45s padrao do
-    # run_curl; o --connect-timeout de 15s ja cobre o caso comum (servidor
-    # fora do ar) e o valor maior foi mantido de proposito para nao
-    # apertar o login, que e a parte mais fragil do fluxo. Quem precisar
-    # de prazo curto define SLS_MAXTIME antes da chamada, como o
-    # fetch_page faz.
+    # So "wait", sem laco de "sleep 1" (SIGKILL do Android 12+ acima de ~32
+    # processos): o curl tem prazo (--max-time) e morre sozinho.
     wait "$TEFPID" 2>/dev/null
     _te_rc=$?
-    # Codigo do curl (0 = pagina inteira), para quem precisa distinguir uma
-    # pagina cortada (18, 56) de uma resposta completa.
+    # Codigo do curl: distingue pagina cortada (18, 56) de resposta completa.
     TE_RC=$_te_rc
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
@@ -74,15 +34,10 @@ time_exit() {
     return 0
 }
 
-# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35: nome, conexao ou
-# TLS recusados, depois de um time_exit.) So nesses casos uma acao com
-# recarga (cura, escudo, esquiva) e tratada como nao feita e pode sair de
-# novo: com tempo esgotado ou pagina cortada o servidor pode ja ter usado o
-# elixir, e repetir gastaria outro.
-#
-# Tres seguidas que nao sairam contam como feita: com so esse pedido falhando
-# (e a releitura respondendo) a cura sairia a cada volta, sem pausa e sem
-# ataque.
+# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35, depois de um
+# time_exit.) So entao uma acao com recarga (cura, escudo, esquiva) pode sair
+# de novo: com tempo esgotado ou pagina cortada o elixir pode ja ter sido
+# usado. Tres seguidas contam como feita, senao a cura sairia a cada volta.
 pedido_nao_saiu() {
     case "${TE_RC:-0}" in
         6|7|35)
@@ -95,44 +50,20 @@ pedido_nao_saiu() {
 }
 
 # Funcao central de requisicao via curl.
-#
-# CORRECOES:
-#  --proto/--proto-redir : impede que um redirect leve a requisicao (e o
-#                          corpo do POST de login) para fora de HTTPS.
-#  --max-redirs          : limita cadeia de redirecionamento.
+#  --proto/--proto-redir : redirect nao leva o POST de login para fora de HTTPS.
 #  --connect-timeout /
-#  --max-time            : sem isso, um socket pendurado travava o worker
-#                          para sempre (as chamadas de login sao sincronas).
-#                          O valor agora sai de $SLS_MAXTIME (45s por
-#                          padrao): antes era fixo e o corte real de 17s
-#                          vinha do laco de "sleep 1" do time_exit. Quem
-#                          impoe o prazo passa a ser o curl; o time_exit so
-#                          espera, sem gastar processo.
-#  -sS em vez de -s      : mantem silencio de progresso MAS mostra erros,
-#                          que antes eram engolidos ("parou e nao sei por que").
+#  --max-time            : socket pendurado nao trava o worker; o prazo sai
+#                          de $SLS_MAXTIME (45s por padrao).
+#  -sS                   : sem progresso, mas mostra erros.
 #
-# Registra em $TMP/pagina o caminho da requisicao que esta saindo.
-#
-# CORRECAO (painel "ATIVIDADE EM CONJUNTO" congelado): esse registro ficava
-# dentro do fetch_page, com o comentario "como todo acesso passa por aqui,
-# basta uma linha para cobrir o jogo inteiro". Nao passa. allies.sh,
-# altars.sh, arena.sh, clancoliseum.sh, clandmg.sh, clanfight.sh,
-# coliseum.sh, flagfight.sh, king.sh, loginlogoff.sh e undying.sh — ou seja
-# TODO o codigo de batalha, mais de 100 pontos de chamada — usam run_curl
-# direto e nunca tocavam nesse arquivo.
-#
-# Como o unico fetch_page do fim do ciclo e o descansar(), que volta para
-# "/", o painel lia "/" e mostrava "Pagina Principal" praticamente o tempo
-# todo, sem nunca acompanhar a batalha em andamento. Registrando aqui, no
-# unico ponto por onde TODA requisicao passa de verdade, a coluna passa a
-# seguir a conta ao vivo.
+# Grava em $TMP/pagina o caminho da requisicao que sai: e aqui, e nao no
+# fetch_page, porque o codigo de batalha chama run_curl direto.
 _rc_track() {
     [ -n "$TMP" ] || return 0
     [ -n "$URL" ] || return 0
-    # $TMP/.ult_req: a ULTIMA requisicao de verdade. Diferente do $TMP/pagina,
-    # que o atualiza_stats restaura para o painel, este ninguem reescreve —
-    # e o que o cq_pagina consulta para saber se algo saiu depois da leitura
-    # guardada.
+    # $TMP/.ult_req: a ULTIMA requisicao de verdade. O $TMP/pagina o
+    # atualiza_stats restaura; este ninguem reescreve (o cq_pagina e o
+    # full_relendo o comparam para saber se algo saiu depois de uma leitura).
     for _rc_a in "$@"; do
         case "$_rc_a" in
             "$URL")
@@ -163,17 +94,9 @@ _rc_run() {
         *)        _rc_p="--proto =https --proto-redir =https" ;;
     esac
 
-    # PRAZO DAS PAGINAS DE BATALHA: 17s, NAO 45s.
-    #
-    # Todo o codigo de luta chama "time_exit 17", mas desde que o prazo passou
-    # para o curl esse 17 e ignorado e a luta esperava os 45s padrao. Nos
-    # logs de 12/09 o Coliseu de tres contas enfileirou 107 requisicoes sem
-    # resposta — a 45s cada, pulsos de 13 a 23 minutos. Resposta de acao de
-    # luta que chega depois de 17s ja nao serve: a luta andou, e o laco rele
-    # a pagina de qualquer jeito. Login, /train e o resto seguem com 45s.
-    #
-    # Sem processo novo: so case e expansao do shell (teto de 32 processos do
-    # Android 12). SLS_MAXTIME, quando definido, continua valendo por cima.
+    # PRAZO DAS PAGINAS DE BATALHA: 17s, NAO 45s. Resposta de luta depois de
+    # 17s ja nao serve (a luta andou). Login, /train e o resto seguem com 45s.
+    # So case e expansao, sem processo novo. SLS_MAXTIME vale por cima.
     _rc_mt="$SLS_MAXTIME"
     if [ -z "$_rc_mt" ]; then
         _rc_mt=45
@@ -226,40 +149,18 @@ _rc_run() {
 # Uso normal: roda o curl como filho e devolve a saida.
 run_curl() { _rc_run "" "$@"; }
 
-# Uso em segundo plano: SUBSTITUI o processo pelo curl, em vez de deixar um
-# shell parado esperando por ele.
-#
-# CORRECAO (SIGKILL / "signal 9"): "run_curl ... &" forka um shell que so
-# serve para lancar o curl e esperar — dois processos onde um basta. Com o
-# exec o filho VIRA o curl (comprovado: sem exec ficam dash+sleep, com exec
-# fica so o sleep).
-#
-# Isso importa porque o Android 12+ mata a sessao inteira acima de 32
-# processos filhos, e a conta estava justamente no limite:
-#     13 persistentes (play.sh + 6 worker.sh + 6 sls.sh)
-#   + 6 x 3 por requisicao (subshell + curl + sleep)  = 31
-# Qualquer grep de parsing que nascesse junto estourava. Sem o subshell:
-#     13 + 6 x 2 = 25, com folga para os processos transitorios.
+# Uso em segundo plano: o filho VIRA o curl (exec), sem shell parado
+# esperando. O Android 12+ mata a sessao inteira acima de ~32 processos
+# filhos, e cada processo por requisicao conta x6 contas.
 run_curl_exec() { _rc_run "exec" "$@"; }
 
-# Acessa qualquer pagina pelo caminho relativo.
-#
-# CORRECAO (SIGKILL / "signal 9"): a espera era feita com time_exit, que
-# sondava com "sleep 1" — subshell + curl + ate 17 forks de sleep, ou seja
-# ate 19 processos POR PAGINA. Com 6 contas e dezenas de paginas por ciclo,
-# o limite de processos "fantasma" do Android 12+ era estourado e a sessao
-# do Termux inteira morria com SIGKILL.
-#
-# Agora sao 3 processos fixos por pagina (subshell + curl + o sleep de
-# espacamento) e o prazo e imposto pelo proprio curl. Medido em 10 paginas
-# contra um servidor de 2,5s: 30 forks de sleep antes, 10 depois, no mesmo
-# tempo total. De quebra o codigo passa a saber POR QUE a requisicao
-# falhou, em vez de so "acabou o tempo".
+# Acessa qualquer pagina pelo caminho relativo (padrao: grava em $TMP/SRC).
+# Falha: 1, codigo do curl em ERROR_DEBUG e $TMP/.curl_erro.
 fetch_page() {
     relative_url="$1"
     output_file="${2:-$TMP/SRC}"
 
-    # Link vazio pedia a Home e o chamador seguia como se tivesse clicado.
+    # Link vazio: nao pede a Home (o chamador seguiria como se tivesse clicado).
     if [ -z "$relative_url" ]; then
         : > "$output_file"
         # A ultima pagina pedida aponta o modulo que chamou.
@@ -268,25 +169,17 @@ fetch_page() {
     fi
 
     SLS_MAXTIME=17
-    run_curl_exec "${URL}${relative_url}" > "$output_file" 2>/dev/null &
+    # -D: cabecalhos num arquivo, para registrar 429/5xx — o curl devolve 0
+    # nesses casos. So registro: a pagina de erro nao e do jogo e o
+    # sessao_estado ja a trata como "sem_resposta".
+    : > "${TMP:-.}/.fp_hdr" 2>/dev/null
+    run_curl_exec "${URL}${relative_url}" -D "${TMP:-.}/.fp_hdr" > "$output_file" 2>/dev/null &
     _fp_pid=$!
     unset SLS_MAXTIME
 
-    # ESPACAMENTO ENTRE REQUISICOES
-    #
-    # O "sleep 1" fica EM PARALELO com a requisicao, nao depois dela.
-    #
-    # E o mesmo espacamento minimo de 1s por requisicao que a versao
-    # anterior tinha — nela a primeira volta do laco de espera corria
-    # junto com o curl. Colocado depois do curl, ele viraria 1s de atraso
-    # somado a CADA pagina: com ~90 paginas por ciclo, mais de um minuto
-    # perdido por conta, por ciclo. Medido: 10 paginas em 30s (em paralelo)
-    # contra 35s (em serie).
-    # SLS_PACING=0 dispensa esse processo: o proprio tempo de ida e volta
-    # da requisicao (meio segundo a dois no servidor do jogo) ja espaca as
-    # chamadas. Vale no Android 12, onde CADA processo conta para o limite
-    # de 32 — sao 6 "sleep" parados, um por conta, so para esperar.
-    # O play.sh liga isso sozinho quando detecta que o limite aperta.
+    # ESPACAMENTO: o "sleep 1" corre EM PARALELO com a requisicao, nao
+    # depois (em serie somaria 1s a cada pagina). SLS_PACING=0 o dispensa
+    # (ver time_exit).
     _fp_pace="${SLS_PACING:-1}"
     case "$_fp_pace" in ''|*[!0-9]*) _fp_pace=1 ;; esac
     [ "$_fp_pace" -gt 0 ] && sleep "$_fp_pace"
@@ -303,34 +196,31 @@ fetch_page() {
         return 1
     fi
     unset _fp_rc
+    # Codigo HTTP da ultima resposta (depois dos redirects), sem processo:
+    # so o read do shell. 4xx/5xx vai para o ERROR_DEBUG e para .http_erro.
+    _fp_http=""
+    while IFS=' ' read -r _fp_l1 _fp_l2 _fp_l3; do
+        case "$_fp_l1" in HTTP/*) _fp_http="$_fp_l2" ;; esac
+    done < "${TMP:-.}/.fp_hdr" 2>/dev/null
+    case "$_fp_http" in
+        [45][0-9][0-9])
+            printf "http %s: %s\n" "$_fp_http" "$relative_url" >> "${TMP:-.}/ERROR_DEBUG"
+            printf "%s %s\n" "$_fp_http" "`date +%s`" > "${TMP:-.}/.http_erro" 2>/dev/null ;;
+    esac
+    unset _fp_http _fp_l1 _fp_l2 _fp_l3
     return 0
 }
 
 # ============================================================
 #  LEITURA DA PAGINA DE COMBATE — UMA PASSADA SO
 #
-#  Os modulos de batalha liam o MESMO arquivo 23 vezes por chamada: sete
-#  grep, nove sed, dois awk e cinco "$(cat ...)" em substituicao de comando.
-#  Como a leitura roda duas ou tres vezes por volta do laco, davam 50 a 70
-#  processos por volta, POR CONTA.
-#
-#  Isso importa no Android 12, onde a sessao inteira e morta acima de 32
-#  processos filhos. O pico acontece justamente no evento, quando todas as
-#  contas entram no mesmo minuto:
-#
-#      1 play.sh + 6 workers                       =  7 permanentes
-#      6 x (subshell->curl + sleep do time_exit)   = 12
-#      6 x ~2 transitorios de parsing              = 12
-#                                                    ----
-#                                                     31
-#
-#  Um grep a mais estoura. Aqui um unico awk le a pagina uma vez e grava os
-#  mesmos arquivos, com as mesmas expressoes: 23 processos viram 1.
+#  Um unico awk (e nao grep/sed por campo): no evento todas as contas lutam
+#  juntas e o Android 12 mata a sessao acima de ~32 processos.
 #
 #  Uso:  combate_ler SECAO HPER RPER ARQUIVO
 #  Saida: imprime "1" se a pagina ainda e de luta, "0" se acabou.
 #  Grava: ATK ATKRND DODGE HEAL STONE KINGATK GRASS HP HP2 RHP HLHP
-#         no diretorio corrente, como antes.
+#         no diretorio corrente.
 #  Erva e pedra so sao gravadas quando o botao NAO cobra ouro.
 combate_ler() {
     awk -v sec="$1" -v hper="$2" -v rper="$3" '
@@ -459,10 +349,8 @@ erva_gratis() { # SECAO ARQUIVO
         }' "$2" 2>/dev/null
 }
 
-# Erva e pedra de graca de uma pagina de luta, num awk so: grava GRASS e
-# STONE no diretorio corrente (vazio quando nao ha, ou quando o botao cobra
-# ouro), com a mesma regra do erva_gratis e do combate_ler. Usado no Vale,
-# que le os golpes (hit/mana) por conta propria.
+# Erva e pedra de graca, num awk so: grava GRASS e STONE no diretorio
+# corrente (vazio se nao ha ou se cobra ouro). Usado no Vale.
 itens_gratis() { # SECAO ARQUIVO
     awk -v sec="$1" '
         function item(nome, arq,    l, r, c) {
@@ -480,21 +368,9 @@ itens_gratis() { # SECAO ARQUIVO
         END { item("grass", "GRASS"); item("stone", "STONE") }' "$2" 2>/dev/null
 }
 
-# A sessao esta viva: carimba a hora da ultima confirmacao.
-#
-# POR QUE ISTO EXISTE
-#
-# Quem escrevia o last_ok era so o descansar(), no fim de cada ciclo. Dentro
-# de um evento o ciclo nao termina: o modulo entra em 15:55, espera ate as
-# 16:00 num laco de sleep e so entao luta, com teto de 600s. Sao dez, quinze
-# minutos sem passar pelo descanso — e o painel, que cobra confirmacao a
-# cada 4 minutos, anunciava "sessao caida" em praticamente todo evento, com
-# a conta lutando normalmente.
-#
-# Nao da para chamar o descansar ali: ele volta para a Home e ABANDONARIA a
-# batalha. Mas a confirmacao ja existe de graca dentro da luta: a pagina de
-# combate so responde com o link de golpe para quem esta logado. Onde o
-# modulo reconhece esse link, a sessao esta provada — e e so carimbar.
+# A sessao esta viva: carimba $TMP/last_ok. Usado dentro da luta, onde o
+# descansar() nao pode rodar (voltaria a Home e abandonaria a batalha): o
+# link de golpe so aparece para quem esta logado.
 sessao_marcar() { date +%s > "$TMP/last_ok" 2>/dev/null; }
 
 
@@ -504,21 +380,14 @@ sessao_marcar() { date +%s > "$TMP/last_ok" 2>/dev/null; }
 #   deslogado     pagina do jogo SEM conta: a sessao caiu de verdade
 #   sem_resposta  vazia, cortada ou nao e pagina do jogo: NAO DIZ NADA
 #
-# Nos logs de 12/09, das 922 vezes em que o descanso anunciou "Sessao caiu",
-# 557 terminaram em "falha ao reconectar" com curl sem conexao, 40 sem
-# desfecho, 126 relogaram depois de erro de curl e 92 nem estavam deslogadas:
-# ~88% era o SERVIDOR sem responder. O bot apagava o cookie (sessao de 30
-# dias), refazia o login inteiro — que tambem falhava — e somava requisicoes
-# justamente na hora em que o servidor ja nao dava conta (00h-01h, Coliseu).
+# Servidor mudo nao e sessao caida: relogar a toa apaga o cookie e soma
+# pedidos quando o servidor ja nao da conta.
 #
 # O SINAL E DO PROPRIO JOGO. Toda pagina do jogo termina com
 #     jsInterface.event("user=12345;level=43")
-# e a de quem nao esta logado com "user=0" — conferido nas 117 paginas salvas
-# das contas (todas user>0) e no /, /user e /king sem cookie (user=0; o /user
-# anonimo e um "Error 404" sem formulario de login nem link de entrada, que
-# os testes antigos davam por "sessao viva? nao" = caida).
-# Pagina cortada antes do rodape cai nos sinais do topo: formulario ou link
-# de login = deslogado; icone de nivel = viva. Um awk, nenhum outro processo.
+# e a de quem nao esta logado com "user=0" (o /user anonimo e um "Error 404"
+# sem formulario de login). Pagina cortada antes do rodape cai nos sinais do
+# topo: formulario ou link de login = deslogado; icone de nivel = viva.
 sessao_estado() {
     if [ "$1" != "-" ] && [ ! -s "$1" ]; then
         echo sem_resposta
@@ -544,12 +413,9 @@ sessao_estado() {
 servidor_mudo_marcar() { date +%s > "$TMP/last_rede" 2>/dev/null; }
 
 # INTERVALO MINIMO ENTRE LOGINS DE CONTAS DIFERENTES DO MESMO APARELHO.
-#
-# A trava do login (login_lock, em sls.sh) serializa, mas dois logins podiam
-# sair colados: quando o servidor derruba varias sessoes de uma vez, o mesmo
-# IP autentica N vezes em poucos segundos e a resposta e a mesma de senha
-# errada — contas boas caem no backoff longo. Chamada de dentro da trava,
-# com o carimbo comum a todas as contas. SLS_LOGIN_GAP=0 desliga.
+# N logins do mesmo IP em poucos segundos recebem a resposta de senha errada.
+# Chamada de dentro da trava (login_lock, em sls.sh), com carimbo comum a
+# todas as contas. SLS_LOGIN_GAP=0 desliga.
 LOGIN_STAMP="$HOME/.sls/.login.ultimo"
 login_espacar() {
     _le_g=${SLS_LOGIN_GAP:-10}
@@ -584,23 +450,9 @@ servidor_mudo() {
     return $_sm_rc
 }
 
-# Primeiro link de ACAO de um evento, preferindo o que tem nonce (?r=N).
-#
-# CORRECAO (conta abandonando o evento): os modulos extraiam o link com uma
-# alternacao do tipo
-#     /altars(/[A-Za-z]+/?r=[0-9]+|/)
-# cujo segundo ramo casa o caminho NU "/altars/". Como "/altars/" aparece em
-# qualquer link da pagina e o "sed -n 1p" pega a primeira ocorrencia, o
-# ACCESS virava quase sempre o caminho nu — nunca o link de dodge/ataque.
-#
-# O laco de entrada espera justamente por "dodge" nesse arquivo, entao ele
-# nunca era satisfeito: a conta queimava o tempo limite, entrava no laco de
-# luta sem estar na luta, via "Battle over" na primeira volta e voltava para
-# a rotina comum. No painel isso aparece como a conta trocando o evento por
-# "Cla" no meio do horario — abandonando o evento.
-#
-# Aqui o link com nonce tem prioridade; o caminho nu so e devolvido quando
-# nao existe nenhuma acao disponivel, que e a informacao verdadeira.
+# Primeiro link de ACAO de um evento (link_acao ARQUIVO SECAO). O link com
+# nonce (?r=N) tem prioridade; o caminho nu "/SECAO/" so sai quando nao ha
+# nenhuma acao (ele aparece em qualquer link da pagina).
 link_acao() {
     _la_f="$1"; _la_p="$2"
     [ -r "$_la_f" ] || { printf ''; unset _la_f _la_p; return 1; }
@@ -616,27 +468,6 @@ link_acao() {
 # ============================================================
 #  ESTADO DA LUTA — O PERSONAGEM SO SAI QUANDO O JOGO DECLARA
 #
-#  POR QUE UMAS CONTAS ABANDONAVAM E OUTRAS NAO
-#
-#  Cada conta e um processo proprio, com rede, sessao e PID proprios. O que
-#  tirava uma conta da batalha dependia do que acontecia com ELA:
-#
-#   1. Duas leituras seguidas sem o link de esquiva — curl cortado pelo
-#      --max-time, pagina de erro, transicao, sessao derrubada pelo servidor
-#      (o que com varias contas do mesmo IP e comum) — e o modulo gravava
-#      BREAK_LOOP com o personagem vivo. Numa conta a rede tropeca, na outra
-#      nao.
-#   2. O teto fixo de 10 minutos, contado da entrada de cada conta.
-#   3. O Android matando o worker (SIGKILL) e o painel relancando: o worker
-#      novo nao sabia da batalha e caia na rotina.
-#   4. E o que transformava tudo isso em FUGA de verdade: o descansar() pedia
-#      /?out_gate_confirm=true — a confirmacao de "Fuja da batalha" — a cada
-#      chamada. O evento_espera o chama de 30 em 30s logo depois do modulo de
-#      luta; o start() e o func_cat, ao fim de cada ciclo. Toda conta que caia
-#      por qualquer um dos motivos acima confirmava a fuga sozinha.
-#
-#  A REGRA AGORA
-#
 #  O laco de luta so termina quando o JOGO declara:
 #      morto   HP do cabecalho em 0, ou /<evento>/unrip/
 #      fim     ?close=reward, ou o ?end_fight do coliseu
@@ -646,8 +477,9 @@ link_acao() {
 #  segundos: sem botao de luta e sem ressurreicao na tela, a luta acabou para
 #  ela. Leitura invalida nao conta para nada; sessao caida reconecta e
 #  continua. A batalha fica gravada em $TMP/batalha desde a inscricao: o
-#  worker relancado volta para ela, e o descansar() nunca confirma a fuga
-#  enquanto ela estiver pendente.
+#  worker relancado (SIGKILL do Android) volta para ela, e o descansar()
+#  nunca confirma a fuga (/?out_gate_confirm=true) enquanto ela estiver
+#  pendente.
 # ============================================================
 
 # Segundos seguidos sem sinal de luta, na pagina do evento, para aceitar que
@@ -655,17 +487,8 @@ link_acao() {
 LUTA_FORA_MAX="${LUTA_FORA_MAX:-90}"
 
 # O MESMO "SEM LUTA", DEPOIS DE A CONTA TER LUTADO: 15s, NAO 90s.
-#
-# Os 90s existem para o inicio (a luta demora a aparecer na pagina). Depois
-# que a conta ja teve a luta na tela, uma pagina do evento valida, sem nenhum
-# botao de acao (ataque, esquiva, cura, pedra, erva, golpe), sem o out_gate e
-# sem o unrip, e a luta que acabou para ela — morta sem ressurreicao, ou a
-# batalha terminou. Nos logs de 12/09, 140 de 184 saidas de batalha passaram
-# pelos 90s relendo a pagina a toa.
-#
-# Por que ainda 15s, e nao na primeira pagina: a virada da morte do Rei troca
-# a pagina por um instante, e o Imortal some com o golpe na troca de turno.
-# 15s sao 3 a 6 releituras sem nenhum botao — transicao nao dura isso.
+# Nao na primeira pagina: a virada da morte do Rei troca a pagina por um
+# instante, e o Imortal some com o golpe na troca de turno.
 LUTA_FORA_LUTOU="${LUTA_FORA_LUTOU:-15}"
 
 # Teto de seguranca, em minutos, do laco de luta e da batalha pendente. So e
@@ -812,20 +635,12 @@ luta_assassino() {
 
 # QUEM E O ALVO DA VEZ?   alvo_nome ARQUIVO -> nome (espacos viram "_")
 #
-# A leitura antiga — o 2o "Nome<espaco><simbolo>" da pagina — devolvia
-# "Fulano_&" em TODAS as 48 paginas de luta do Rei capturadas em 12/09, de
-# todas as contas: um nome qualquer do rodape, nunca o alvo. A protecao de
-# aliados comparava esse nome e nunca poupava ninguem. Nas batalhas de cla o
-# nome do alvo nem era lido (so o do cla, com o mesmo tipo de regex).
-#
 # Marcacao real, logo acima dos botoes (Rei e Torneio dos Clas):
 #   <img .../race/1.png' alt=''/> Minha Conta <span class='nwr'>
 #       <img src='/images/icon/health.png' alt='hp'/> 35656</span>      <- voce
 #   <img .../race/0.png' alt=''/> Inimigo <span class='nwr'>
 #       <img src='/images/icon/health.png' alt='hp'/>&nbsp;8092</span>  <- alvo
-# O alvo e o do "&nbsp;" (o mesmo que o HP2 ja usa para o HP do inimigo).
-# Conferido nas 76 paginas de Rei e Torneio: nome certo em todas ("Rei"
-# enquanto o rei vive). Um awk: substitui grep+sed.
+# O alvo e o do "&nbsp;" (o mesmo que o HP2 usa). "Rei" enquanto o rei vive.
 alvo_nome() {
     [ -s "$1" ] || return 0
     awk -v q="'" '
@@ -846,15 +661,10 @@ alvo_nome() {
 
 # O ALVO ESTA INVULNERAVEL?   alvo_grey ARQUIVO   (0 = sim)
 #
-# Os modulos testavam 'txt smpl grey' na pagina INTEIRA. Nas 28 paginas de
-# luta capturadas em 12/09 a marca so apareceu no botao "Troca o alvo"
-# DESATIVADO (href sem acao, fim de batalha com poucos alvos):
+# Procura 'txt smpl grey' fora do botao de trocar de alvo, que tambem a usa
+# quando desativado e nao diz nada sobre o alvo:
 #     <a class='nbtn b_grey' href='/clanfight/'><span class='lbl'>
 #         <span class='txt smpl grey'>Troca o alvo</span>
-# Nessas leituras a conta parava de atacar e so relia a pagina. O botao de
-# trocar de alvo (desativado ou attackrandom/atkrnd) nao diz nada sobre o
-# alvo: sai da busca. O resto da pagina — inclusive o botao de ataque —
-# continua valendo. Um awk, o mesmo custo do grep que substitui.
 alvo_grey() {
     [ -s "$1" ] || return 1
     awk -v q="'" '
@@ -895,23 +705,14 @@ luta_inicio() {
 
 # MORTE COM A LUTA AINDA NA TELA.   luta_hp HP  ->  0 = morte confirmada
 #
-# Medido nos logs (Rei, 11/09 16:25): depois da morte a pagina CONTINUA com
-# botoes de acao e o HP lido e 0 — 321 leituras seguidas, 27 minutos, com a
-# conta "lutando" morta ate o teto de seguranca. O estado_luta poe botao na
-# tela antes da morte (para um HP mal lido nao tirar ninguem da luta), e o
-# modulo nem chegava a consulta-lo com acao disponivel.
-#
-# Chamada a cada leitura COM luta na tela. Um 0 isolado pode ser leitura
-# falha — o parser devolve 0 (ou vazio) quando nao acha o numero —, entao a
-# morte so vale com TRES leituras seguidas em zero, e so depois de a conta ter
-# tido vida nesta luta.
+# Depois da morte a pagina pode CONTINUAR com botoes de acao e HP 0, e o
+# estado_luta poe botao antes da morte. Chamada a cada leitura COM luta na
+# tela. Um 0 isolado pode ser leitura falha, entao a morte so vale com TRES
+# leituras seguidas em zero, e so depois de a conta ter tido vida na luta.
 luta_hp() {
     # Chamada so com a luta na tela: a conta lutou (ver LUTA_FORA_LUTOU).
     _lt_lutou=1
-    # A LUTA VOLTOU: a contagem do "fora" recomeca. Sem isto a marca de uma
-    # transicao antiga ficava valendo, e a segunda transicao da luta (15s ou
-    # 90s depois da primeira) ja encerrava na hora, com a conta viva. O
-    # mesmo para as leituras invalidas seguidas.
+    # A LUTA VOLTOU: a contagem do "fora" e das invalidas recomeca.
     _lt_fora_desde=""; _lt_invalidas=0
     # So o primeiro numero: o arquivo de HP de alguns modulos traz uma linha
     # por ocorrencia na pagina, e espaco a esquerda sobra do sed.
@@ -984,27 +785,16 @@ luta_acabou() {
                 unset _lz_e; return 1
             fi
             # SEM SESSAO E SEM TENTATIVA AGORA: SAI DO LACO, NAO DA BATALHA.
-            #
-            # Sem este ramo a luta seguia relendo a pagina de login a cada 1-2s
-            # ate o teto de 30 minutos — a conta presa numa luta em que nao
-            # pode agir. Agora o laco termina, mas a batalha continua anotada
-            # em $TMP/batalha: o descansar reconecta no ritmo dele e o
-            # batalha_retomar volta para a luta assim que a sessao voltar.
+            # A batalha continua em $TMP/batalha: o descansar reconecta no
+            # ritmo dele e o batalha_retomar volta para a luta.
             LUTA_MOTIVO="sessao caiu e ainda nao reconectou (a batalha sera retomada)"
             LUTA_SESSAO_CAIU=1
             unset _lz_e; return 0
             ;;
         fora)
-            # FIM ESCRITO PELO JOGO, DEPOIS DE TER LUTADO.
-            #
-            # Paginas reais de 12/09 (224 amostras, 104 com luta ativa):
-            #   Rei    "Batalha finalizada!"  8 + 10 paginas de saida
-            #   Vale   "Vitória!"             12 + 12
-            #   Torneio "Luta acabou!"        2
-            # Nenhum dos tres em pagina com luta ativa. So vale depois de a
-            # conta ter lutado: antes da luta o saguao do Rei ainda mostra o
-            # resultado da batalha ANTERIOR. Sem estes textos, a saida esperava
-            # os 15s relendo a pagina.
+            # FIM ESCRITO PELO JOGO: Rei "Batalha finalizada!", Vale
+            # "Vitoria!", Torneio "Luta acabou!". So depois de a conta ter
+            # lutado: antes, o saguao do Rei mostra a batalha ANTERIOR.
             if [ "${_lt_lutou:-0}" = 1 ] && \
                grep -q -E 'Batalha finalizada!|Vit[^ <]{1,8}ria!|Luta acabou!' "$1" 2>/dev/null; then
                 LUTA_MOTIVO="o jogo declarou o fim da batalha"
@@ -1033,11 +823,8 @@ luta_acabou() {
             unset _lz_e _lz_max _lz_mot; return 1
             ;;
         *)
-            # invalida: leitura que nao prova nada. Nao conta para o "fora".
-            #
-            # Mas com a rede fora TODA leitura e invalida, e o laco relia a
-            # cada 1-2s ate o teto. A partir da terceira seguida, respira 3s
-            # entre as releituras.
+            # invalida: nao conta para o "fora". Da terceira seguida em diante
+            # (rede fora), respira 3s entre as releituras.
             _lt_invalidas=$(( ${_lt_invalidas:-0} + 1 ))
             [ "$_lt_invalidas" -ge 3 ] && sleep 3
             unset _lz_e; return 1
@@ -1045,27 +832,12 @@ luta_acabou() {
     esac
 }
 
-# HP MAXIMO PARA A LUTA, SEM PEDIR /train A CADA EVENTO.
-#
-# O fetch_train_stats ja le o /train (no login e a cada 3 min, no
-# atualiza_stats) e guarda o HP maximo no FIXHP. Os modulos de batalha pediam
-# a mesma pagina de novo so para gravar o arquivo deles — uma requisicao a
-# mais por entrada de evento, no minuto em que todas as contas do aparelho
-# estao pedindo. Agora gravam o FIXHP; o /train so sai quando ele ainda nao
-# foi lido.
-#
-# A 3.9.59 guardava a leitura por 30 min com UM carimbo para os quatro
-# arquivos (FULL, flag_full, ccol_full, col_full): o evento que carimbava
-# fazia os outros seguirem com o arquivo antigo deles — de outro dia, com o
-# HP de antes de subir de nivel, e a cura saia tarde.
+# HP MAXIMO PARA A LUTA: grava o FIXHP no arquivo do evento (FULL, flag_full,
+# ccol_full, col_full); o /train de reserva so sai sem FIXHP valido.
 full_atualizar() { # arquivo_do_HP_maximo
-    # HP MAXIMO LIDO NO INICIO DA BATALHA. Pedido do dono do bot: e na luta
-    # que o HP maximo importa (o limiar de cura sai dele), entao e aqui que
-    # ele e conferido - com troca de equipamento, a batalha seguinte ja usa o
-    # valor novo. Lido ha menos de 10 min (eventos seguidos, os pulsos do
-    # Coliseu), vale o que ja esta. Na retomada de uma luta em andamento nao
-    # rele: a conta volta direto para ela. Prazo de 17s, como as paginas de
-    # luta: o /train sai no minuto de inscricao.
+    # Regra do dono: HP maximo conferido no INICIO DA BATALHA (o limiar de
+    # cura sai dele). Lido ha menos de 10 min, vale o que esta. Na retomada
+    # de uma luta em andamento nao rele. Prazo de 17s, como as paginas de luta.
     if [ "${_BR_ATIVO:-0}" != 1 ]; then
         SLS_MAXTIME=17
         fetch_train_stats 10 2>/dev/null
@@ -1109,18 +881,9 @@ full_relendo() {
 }
 
 # Alvo da inscricao, escalonado por conta: MMSS base mais 0 a VAO-1 segundos
-# (VAO padrao 30).
-#
-# Todas as contas do aparelho acordavam no MESMO segundo (:59:30) e pediam o
-# enterFight juntas — N inscricoes do mesmo IP no mesmo instante, o padrao de
-# rajada que o servidor estrangula. O deslocamento sai do PID, entao e fixo
-# por conta, e o alvo fica dentro do minuto (segundos < 60) e nunca depois do
-# :59:30 de antes: a base e o inicio do minuto. Conferido no Torneio de
-# 16/09 11:00: as contas inscritas entre :59:00 e :59:29 lutaram todas.
-#
-# O Rei, os Altares, o Coliseu do Cla e o Vale usam VAO 10 a partir de :x9:50:
-# a espera deles pela luta rele a pagina a cada 2-3s, e 30s adiantados eram
-# mais pedidos do que a rajada que o escalonamento evita.
+# (VAO padrao 30), fixo por PID. N inscricoes do mesmo IP no mesmo segundo
+# sao a rajada que o servidor estrangula. O Rei, os Altares, o Coliseu do Cla
+# e o Vale usam VAO 10 a partir de :x9:50 (a espera deles rele a cada 2-3s).
 janela_alvo() { # MMSS_base [VAO] -> MMSS
     printf '%s' $(( $1 + $$ % ${2:-30} ))
 }
@@ -1130,14 +893,8 @@ janela_alvo() { # MMSS_base [VAO] -> MMSS
 #   espera_janela DE ATE      (MMSS: espera_janela 5500 5930)
 #
 # Dorme enquanto o relogio estiver em [DE, ATE). Passou de ATE — ou o minuto
-# ja virou e ficou abaixo de DE —, sai na hora.
-#
-# Os modulos usavam `while (case M:S in (59:[3-5][0-9]) exit 1;; esac)`, ou
-# seja "dorme ate o relogio MOSTRAR 59:30". Antes do laco saem tres
-# requisicoes, ate 45s cada: chegando atrasado numa rede lenta, o relogio ja
-# tinha passado de 59:59 e a proxima vez que mostraria 59:30 era UMA HORA
-# depois. A conta ficava presa ate la, perdendo o evento e os da hora
-# seguinte (das Bandeiras de 10:10, o Coliseu do Cla e o Torneio).
+# ja virou e ficou abaixo de DE —, sai na hora (esperar o relogio MOSTRAR
+# uma hora prenderia por uma hora quem chega atrasado).
 espera_janela() {
     while :; do
         _ej=`date +%M%S`
@@ -1150,14 +907,8 @@ espera_janela() {
 
 # MORREMOS? RESSUSCITA E VOLTA PARA A LUTA.   ressuscitar SECAO ARQUIVO
 #
-# Isto morava dentro do king.sh, em duas copias, e SO o Rei tratava a morte.
-# Nos outros eventos a conta morria e a luta simplesmente acabava — no altar
-# isso e sair do evento com tempo de sobra, que foi o relato ("varias contas
-# abandonaram o altar").
-#
-# O GATILHO E SINAL DO JOGO, NAO DEDUCAO NOSSA. O "/SECAO/unrip/" so aparece
-# na pagina de quem morreu. Por isso esta funcao pode ser chamada sem medo
-# antes de encerrar: se nao ha unrip, ela nao faz nada e nao pede nada.
+# O "/SECAO/unrip/" so aparece na pagina de quem morreu: sem unrip, nao faz
+# nada e nao pede nada (pode ser chamada sem medo antes de encerrar).
 #
 #   0 = ressuscitou, e ARQUIVO ja tem a pagina DEPOIS do unrip
 #   1 = nao ha unrip na pagina, ou ja se ressuscitou e ainda nao houve vida
@@ -1170,16 +921,12 @@ ressuscitar() {
     # verdade na tela — isto e, quando a ressurreicao tiver funcionado.
     _reviveu=1
     printf "Morreu (%s) - ressuscitando e voltando para a luta\n" "$1"
-    # RELE A PAGINA DO UNRIP, e nao so clica: seguir usando os links da
-    # pagina anterior nao funciona, porque os nonces (?r=) dela ja morreram.
+    # Grava a pagina do unrip em ARQUIVO: os nonces (?r=) da anterior morreram.
     (
         run_curl_exec "${URL}${_rs_l}" > "$2"
     ) </dev/null > /dev/null 2>&1 &
-    # PEDIDO SEM RESPOSTA NAO GASTA A RESSURREICAO. A trava valia mesmo com o
-    # unrip cortado pela rede: a releitura ainda mostrava o unrip, o
-    # ressuscitar recusava e o luta_acabou declarava a conta morta. Ate duas
-    # novas tentativas por luta. Pagina cortada no meio (curl 18 ou 56) conta
-    # como sem resposta, nao so o tempo esgotado.
+    # PEDIDO SEM RESPOSTA (ou cortado, curl 18/56) NAO GASTA A RESSURREICAO:
+    # ate duas novas tentativas por luta.
     if ! time_exit 17 || [ "${TE_RC:-0}" != 0 ] || [ ! -s "$2" ]; then
         _rs_falhas=$(( ${_rs_falhas:-0} + 1 ))
         [ "$_rs_falhas" -le 2 ] && _reviveu=0
@@ -1189,11 +936,9 @@ ressuscitar() {
 }
 
 hpmp() {
-    # INICIO DO VALE: HP e mana maximos conferidos como no inicio das outras
-    # batalhas (ver full_atualizar): relidos se a leitura tem mais de 10 min.
-    # O /train de baixo so sai se o fetch_train_stats nao acabou de ler um:
-    # com a pagina recem-lida e sem a mana nela, pedir de novo dava a mesma
-    # pagina. Sem resposta (ou sem pedido, leitura em dia), sai como antes.
+    # INICIO DO VALE (-fix): HP e mana maximos relidos se a leitura tem mais
+    # de 10 min (ver full_atualizar). O /train de baixo so sai se o
+    # fetch_train_stats nao acabou de ler um com o HP maximo.
     _hp_fix=0; _hp_leu=0
     case " $* " in
         *" -fix "*)
@@ -1202,8 +947,7 @@ hpmp() {
             SLS_MAXTIME=17
             if fetch_train_stats 10 2>/dev/null; then
                 _hp_ur2=""; { read -r _hp_ur2 < "$TMP/.ult_req"; } 2>/dev/null
-                # Leu e achou o HP maximo: so faltaria a mana, que viria igual.
-                # Pagina de erro (sem o HP) ainda tenta o segundo, como antes.
+                # Leu e achou o HP maximo: outro /train daria a mesma pagina.
                 [ "$_hp_ur2" = "$_hp_ur" ] || [ -z "$FIXHP" ] || _hp_leu=1
             fi
             unset SLS_MAXTIME _hp_ur _hp_ur2 ;;
@@ -1220,13 +964,11 @@ hpmp() {
     fi
     unset _hp_fix _hp_leu
 
-    # Mesma leitura do parse_status. O " | " dos padroes antigos era
-    # alternancia do ERE: a mana dentro de <span> saia vazia (MPPER 0).
+    # Mesma leitura do parse_status (ate 40 nao-digitos entre icone e numero).
     NOWHP=`grep -o -E "health\.png' alt='hp'/>[^0-9]{0,40}[0-9]{1,9}" "$TMP/SRC" | grep -o -E '[0-9]{1,9}$' | head -n1`
     NOWMP=`grep -o -E "mana\.png' alt='mp'/>[^0-9]{0,40}[0-9]{1,9}" "$TMP/SRC" | grep -o -E '[0-9]{1,9}$' | head -n1`
 
-    # CORRECAO: se a requisicao foi cortada pelo time_exit, FIXHP/FIXMP ficam
-    # vazios e o awk fazia divisao por zero -> "nan"/"inf" nas comparacoes.
+    # FIXHP/FIXMP vazios (requisicao cortada): sem divisao por zero.
     if [ -n "$NOWHP" ] && [ -n "$FIXHP" ] && [ "$FIXHP" -gt 0 ] 2>/dev/null; then
         HPPER=`awk -v nowhp="$NOWHP" -v fixhp="$FIXHP" 'BEGIN { printf "%.2f", nowhp / fixhp * 100 }'`
     else
@@ -1240,36 +982,17 @@ hpmp() {
     fi
 }
 
-# Extrai os dados da conta de uma pagina /user ja baixada e grava em
-# $TMP/stats, que o painel do play.sh le. Nenhuma requisicao extra: o
-# login_logoff() ja baixa essa pagina a cada ciclo.
-#
-# Campos nao encontrados viram "-" em vez de ficarem vazios, para o painel
-# nao mentir sobre um valor que nao conseguiu ler.
-#
-# Padroes confirmados contra o HTML real do jogo:
-#   <title>NomeDaConta</title>
-#   health.png' alt='hp'/> <span class='white'>65312</span>
-#   mana.png' alt='mp'/> 470</span>
-#   icon/level.png' alt=''/> 40 nivel
-#   mana.png' alt=''/> Energia: 2125
-
-# Extrai os dados da conta de uma pagina /user ja baixada e grava em
-# $TMP/stats, lido pelo painel do play.sh. Sem requisicao extra: o
-# login_logoff() ja baixa essa pagina a cada ciclo.
-#
-# Padroes confirmados contra o HTML real:
-#   <title>NomeDaConta</title>
+# Os cinco numeros do cabecalho (HP, energia, nivel, ouro, prata) de uma
+# pagina em ACC_HP, ACC_MP, ACC_LVL, ACC_GOLD e ACC_SILVER, sem gravar nada.
+# Padroes do HTML real:
 #   health.png' alt='hp'/> <span class='white'>65312</span>
 #   mana.png' alt='mp'/> 346
 #   icon/level.png' alt='lvl'/> 90
 #   icon/gold.png' alt='g'/> 396
 #   icon/silver.png' alt='s'/> 408,1M
-# Energia so aparece em /train: mana.png' alt=''/> Energia: 2125
-# Os cinco numeros do cabecalho (HP, energia, nivel, ouro, prata) de uma
-# pagina em ACC_HP, ACC_MP, ACC_LVL, ACC_GOLD e ACC_SILVER, sem gravar nada.
-# E a leitura do parse_status (ver os comentarios dele); o atualiza_stats a
-# usa tambem para conferir a Home contra o /user.
+# Ate 40 nao-digitos entre icone e numero (o jogo intercala tags): o numero
+# e sempre o PRIMEIRO depois do icone. Um grep para os cinco; vale o
+# primeiro de cada icone. Ouro e prata ficam como o jogo mostra ("408,1M").
 status_ler() {
     ACC_HP=""; ACC_MP=""; ACC_LVL=""; ACC_GOLD=""; ACC_SILVER=""
     _ps_l=`printf '%s' "$1" | grep -o -E \
@@ -1296,29 +1019,8 @@ parse_status() {
     _pg="$1"
     [ -n "$_pg" ] || return 1
 
-    # DISTANCIA LIVRE ENTRE O ICONE E O NUMERO.
-    #
-    # CORRECAO (energia mostrando so o teto): entre o icone e o valor o jogo
-    # intercala tags e espacos —
-    #     <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>809</span>
-    # e o seletor do MP exigia o numero a no maximo 4 caracteres do icone e
-    # PROIBIA "<" no meio. Qualquer <span> ali zerava a leitura. Com o ACC_MP
-    # vazio, o campo de energia caia no unico valor que restava — o teto, do
-    # /train —, e era esse que aparecia no painel. O do HP ja tolerava um
-    # <span>, e por isso o HP funcionava e a energia nao.
-    #
-    # Agora todos usam a mesma regra: ate 40 caracteres entre o marcador e o
-    # numero, contanto que nenhum deles seja digito. Como "[^0-9]" nao casa
-    # digito, o numero capturado e sempre o PRIMEIRO depois do icone — a
-    # folga nao deixa o seletor pular para um numero vizinho.
-    #
-    # UM GREP PARA OS CINCO. Eram cinco grep|grep|head (25 processos a cada
-    # leitura do cabecalho). Os mesmos cinco padroes vao num grep so, e o
-    # numero sai do fim de cada achado no proprio shell: vale o primeiro de
-    # cada icone, como o head -n1. Os marcadores nao tem digito, entao o
-    # numero e o que vem depois do ultimo nao-digito (HP, MP, nivel) ou do
-    # primeiro digito em diante (ouro e prata, guardados como o jogo mostra:
-    # pode vir "408,1M").
+    # Cabecalho de uma pagina ja baixada -> $TMP/stats (lido pelo painel do
+    # play.sh), sem requisicao extra. Campo nao lido vira "-".
     _lvl_ant="$ACC_LVL"
     status_ler "$_pg"
     # Subiu de nivel: HP maximo e teto de energia mudaram (ver fetch_train_stats).
@@ -1329,20 +1031,10 @@ parse_status() {
     NOWHP="$ACC_HP"; NOWMP="$ACC_MP"
 
     # MAXIMO DA CONTA: O QUE O BOT LE DELA, NUNCA ABAIXO DO VALOR ATUAL.
-    #
-    # Regra do dono do bot: o maximo e o que a instancia le daquela conta.
-    # Duas leituras sao da propria conta:
-    #   - o /train (FIXHP e ACC_ENE), que ja traz o teto de cada uma — no
-    #     painel de 10/10/2026 os tetos de energia iam de 1555 (nivel 45, o
-    #     mesmo 1555 do cabecalho com a conta cheia) a 2155 (nivel 96);
-    #   - o MAIOR VALOR JA VISTO no cabecalho (o jogo so mostra o atual:
-    #     "731 | 1555"). HP e energia se regeneram ate o teto.
-    # Vale o maior dos dois: o /train da o numero certo desde a primeira
-    # leitura, e o visto impede um teto abaixo do valor atual (mais de 100%)
-    # quando o /train falha ou fica velho. Subiu de nivel, o visto recomeca.
-    # Fica em disco ($TMP/conta_max: "nivel hp energia") entre reinicios.
-    #
-    # So o painel e o log usam isto. As batalhas seguem com o FIXHP do /train.
+    # Regra do dono: vale o maior entre o teto do /train (FIXHP, ACC_ENE) e
+    # o MAIOR VALOR JA VISTO no cabecalho (recomeca ao subir de nivel), em
+    # $TMP/conta_max ("nivel hp energia"). So painel e log usam isto; as
+    # batalhas seguem com o FIXHP.
     _mx_n=""; _mx_h=0; _mx_e=0
     { read -r _mx_n _mx_h _mx_e < "$TMP/conta_max"; } 2>/dev/null
     case "$_mx_h" in ''|*[!0-9]*) _mx_h=0 ;; esac
@@ -1371,27 +1063,8 @@ parse_status() {
         HPPER=""
     fi
 
-    # ENERGIA: ATUAL / TETO.
-    #
-    # CORRECAO (o painel mostrava sempre o teto). Havia dois numeros e o bot
-    # exibia o errado:
-    #
-    #   ACC_ENE  vem de /train  ("Energia: 2109")  -> e o TETO, praticamente
-    #                                                 fixo para a conta
-    #   ACC_MP   vem do cabecalho da pagina        -> e o valor que MUDA:
-    #            (mana.png alt='mp')                  cai quando a arena gasta
-    #                                                 e sobe com a regeneracao
-    #
-    # O campo de energia do painel recebia o ACC_ENE, e o ACC_MP era lido e
-    # descartado — o painel nem chegava a exibi-lo. Resultado: uma conta com
-    # 231 de energia aparecia com 2109, que e o teto dela.
-    #
-    # Agora o campo traz os dois, no formato "atual/teto" (ex.: 809/2109),
-    # que e como o proprio jogo apresenta. Quando so um dos dois e conhecido,
-    # mostra o que houver, sem inventar o outro.
-    #
-    # O teto agora e o da propria conta (ver "maximo da conta", acima), nao o
-    # "Energia:" do /train.
+    # ENERGIA: "atual/teto" (ex.: 809/2109). ACC_MP (cabecalho) e o valor que
+    # muda; o teto e o maximo da conta, acima. Sem teto, so o atual.
     _ene_campo="-"
     if [ -n "$ACC_MP" ] && [ "$_mx_e" -gt 0 ]; then
         _ene_campo="${ACC_MP}/${_mx_e}"
@@ -1414,34 +1087,13 @@ parse_status() {
 # Dados que so existem na pagina /train: HP maximo e energia.
 # Uma requisicao por ciclo de start(), nao por minuto.
 fetch_train_stats() {
-    # ENERGIA ZERADA ANTES DE LER.
+    # ACC_ENE e zerado antes de ler: leitura que falha vira "-" no painel, e
+    # nao um numero congelado. O FIXHP (HP maximo) mantem o ultimo valor de
+    # proposito: so muda ao subir de nivel, e as lutas dependem dele.
     #
-    # CORRECAO (painel mostrando energia de horas atras): quando o /train nao
-    # respondia — rede oscilando, timeout, sessao caida — a funcao devolvia 1
-    # no "[ -n "$_t" ] || return 1" abaixo e o ACC_ENE CONTINUAVA com o valor
-    # da ultima leitura boa. Como o worker e um unico processo que vive por
-    # dias, essa variavel ficava presa: uma conta com 231 de energia aparecia
-    # no painel com 2115, o valor lido no boot, indefinidamente.
-    #
-    # Zerando aqui, uma leitura que falha resulta em "-" no painel — que e
-    # honesto (nao sabemos) em vez de errado (numero congelado). O aviso de
-    # "numeros parados" do painel cobre o resto.
-    #
-    # O FIXHP recebe tratamento diferente de proposito: ele e o HP MAXIMO, que
-    # so muda quando a conta sobe de nivel. O ultimo valor conhecido continua
-    # valido, entao mante-lo nao mente — e evita perder o percentual de HP a
-    # cada oscilacao de rede. Os dois usos dele ja sao protegidos por
-    # [ -n "$FIXHP" ].
-    #
-    # INTERVALO: fetch_train_stats [MINUTOS], 60 por padrao. O /train so traz
-    # o HP maximo e o teto de energia, que mudam ao subir de nivel ou trocar
-    # equipamento. Fora das batalhas ele so serve ao painel, uma vez por
-    # hora; no INICIO DE CADA BATALHA o full_atualizar rele se a leitura tem
-    # mais de 10 min, e e la que o HP maximo importa (limiar de cura). Era a
-    # cada 15 min o dia todo, 96 pedidos por dia por conta, quase sempre sem
-    # batalha por perto. O parse_status apaga o last_train quando o nivel
-    # muda, e a leitura seguinte ja sai. Sem HP maximo conhecido (entrada do
-    # bot), le sempre.
+    # INTERVALO: fetch_train_stats [MINUTOS], 60 por padrao (painel); no
+    # inicio de cada batalha o full_atualizar pede 10. O parse_status apaga
+    # o last_train quando o nivel muda. Sem HP maximo conhecido, le sempre.
     _ft_min="${1:-60}"
     case "$_ft_min" in ''|*[!0-9]*) _ft_min=60 ;; esac
     if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train "$_ft_min"; then
@@ -1454,21 +1106,14 @@ fetch_train_stats() {
     _t=`run_curl "${URL}/train" 2>/dev/null`
     [ -n "$_t" ] || return 1
     # Pagina de erro ou de login nao traz o HP maximo: mantem o ultimo lido
-    # (as lutas usam o FIXHP; vazio zerava o limiar de cura). So a leitura
-    # que trouxe o HP maximo conta para os 15 min.
+    # (vazio zeraria o limiar de cura). So a leitura com o HP maximo carimba.
     _fx=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
     [ -n "$_fx" ] && FIXHP=$_fx && date +%s > "$TMP/last_train" 2>/dev/null
     _fx=`printf '%s' "$_t" | grep -o -E ': [0-9]+' | sed -n '5s/: //p'`
     [ -n "$_fx" ] && FIXMP=$_fx
     unset _fx
-    # CORRECAO (energia sempre vazia): o sed era `s@.*:? ?@@`. Como `:?` e ` ?`
-    # sao ambos opcionais, o `.*` guloso casava a string INTEIRA ("Energia:
-    # 2125") e a substituicao apagava tudo, devolvendo vazio. Sobrava so o
-    # fallback abaixo, que ainda perde o sufixo K/M ("2,1M" virava "2,1").
-    # Agora a remocao e ancorada no proprio rotulo, preservando o numero e o
-    # sufixo.
-    # Mesma regra do parse_status: o rotulo e o numero quase nunca estao
-    # colados no HTML cru — entre eles vem "</span> <span class='white'>".
+    # Teto de energia, com o sufixo K/M. Mesma regra do status_ler: entre o
+    # rotulo e o numero vem "</span> <span class='white'>".
     ACC_ENE=`printf '%s' "$_t" | grep -o -E "Energia:?[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
     unset _t
 }
@@ -1495,12 +1140,8 @@ player_stats() {
 }
 
 # Le a agenda oficial do jogo em /fights/ e grava em ~/.sls/agenda.
-#
-# CORRECAO (a agenda oficial nunca era lida): este parser procurava
-# "Para iniciar: HH:MM:SS" e convertia a contagem regressiva para horario
-# absoluto. Esse texto NAO existe na pagina. O /fights/ real ("Cronograma de
-# batalhas") lista, sob cada evento, o HORARIO ABSOLUTO seguido de uma
-# descricao livre:
+# O /fights/ lista, sob cada evento, o HORARIO ABSOLUTO e uma descricao
+# livre (ignorada):
 #
 #   Vale dos Imortais
 #   10:00 BRT - Tempo para o inicio 1 hora
@@ -1508,18 +1149,7 @@ player_stats() {
 #   Coliseu do cla
 #   10:30 BRT - Nova temporada comeca em 7 de Setembro
 #
-# Como nada casava, o arquivo saia vazio e o painel caia sempre na lista
-# fixa. A lista fixa esta correta, entao o defeito era silencioso — mas a
-# agenda do jogo nunca era de fato consultada, e uma mudanca de horario
-# passaria despercebida.
-#
-# Agora le o horario absoluto direto. Alem de ser o que a pagina mostra,
-# dispensa toda a aritmetica de contagem regressiva (e o `date -d` do GNU,
-# que o toybox do Android nao tem). A descricao apos o "-" e ignorada de
-# proposito: varia com o estado do evento ("Tempo para o inicio", "Nova
-# temporada comeca em...") e nao interessa para a agenda.
-#
-# Escreve uma linha por evento: HHMM|Nome
+# Escreve uma linha por horario, ordenada: HHMM|Nome
 # Uma requisicao por ciclo de start(), e o painel apenas le o arquivo.
 atualiza_agenda() {
     _ag="$HOME/.sls/agenda"
@@ -1529,11 +1159,7 @@ atualiza_agenda() {
     unset SLS_MAXTIME
     [ -n "$_pg" ] || return 1
 
-    # CORRECAO 1 (corrida entre as contas): o arquivo temporario era
-    # "$_ag.tmp" — o MESMO para as 6 contas, porque a agenda mora em
-    # ~/.sls e nao no diretorio da conta. Os workers escreviam nele ao
-    # mesmo tempo e o "mv" de um publicava o arquivo pela metade do outro.
-    # Agora o temporario leva o PID.
+    # Temporario com o PID: a agenda e comum a todas as contas (~/.sls).
     _tmpf="${_ag}.$$.tmp"
     _rawf="${_ag}.$$.raw"
     : > "$_tmpf"
@@ -1546,12 +1172,9 @@ atualiza_agenda() {
         | grep -oE "(Vale dos Imortais|Coliseu do clã|Torneio dos Clãs|Rei dos Imortais|Altares dos Deuses|Batalha de Bandeiras|Torneio de equipe)|[0-9]{1,2}:[0-9]{2} [A-Z]{2,5}" \
         > "$_rawf" 2>/dev/null
 
-    # Um evento tem VARIOS horarios (o Vale tem tres), entao o nome vale ate
-    # aparecer o proximo nome — nao e limpo a cada horario, como fazia a
-    # versao de pares nome+contador. Horario sem nome antes e descartado.
-    #
-    # Le de ARQUIVO, nao de pipe: num pipe o laco roda em subshell e o
-    # "$_nome" guardado de uma volta para a outra se perderia.
+    # Um evento tem VARIOS horarios: o nome vale ate aparecer o proximo.
+    # Horario sem nome antes e descartado. Le de ARQUIVO, nao de pipe (no
+    # pipe o laco roda em subshell e o "$_nome" se perderia).
     _nome=""
     while IFS= read -r _ln; do
         case "$_ln" in
@@ -1560,12 +1183,8 @@ atualiza_agenda() {
                 _h=${_ln%%:*}
                 _m=${_ln#*:}; _m=${_m%% *}
                 case "$_h$_m" in *[!0-9]*) continue ;; esac
-                # Zeros a esquerda removidos na mao: "$((10#$_h))" e um
-                # bashism — o dash recusa com "arithmetic expression" e o
-                # toybox do Android tambem, o que zeraria a agenda inteira no
-                # aparelho (mesma armadilha do `date -d` que ja quebrou este
-                # parser antes). Sem isto, "08" ainda seria lido como octal
-                # por varias implementacoes de printf.
+                # Zeros a esquerda removidos na mao: "$((10#$_h))" e bashism
+                # (o dash recusa) e "08" seria octal para varios printf.
                 while :; do case "$_h" in 0?*) _h=${_h#0} ;; *) break ;; esac; done
                 while :; do case "$_m" in 0?*) _m=${_m#0} ;; *) break ;; esac; done
                 printf '%02d%02d|%s\n' "$_h" "$_m" "$_nome" >> "$_tmpf"
@@ -1577,11 +1196,8 @@ atualiza_agenda() {
     done < "$_rawf"
     rm -f "$_rawf"
 
-    # CORRECAO 4 (ordem): o proximo_evento do play.sh percorre a lista de
-    # cima para baixo e para no primeiro horario MAIOR que agora — ele
-    # espera uma agenda diaria ordenada, como a lista fixa. A pagina
-    # /fights/ nao vem em ordem cronologica, entao o painel apontava um
-    # evento qualquer. Ordena antes de publicar.
+    # Ordena: o proximo_evento do play.sh para no primeiro horario maior que
+    # agora, e o /fights/ nao vem em ordem cronologica.
     if [ -s "$_tmpf" ]; then
         sort -n "$_tmpf" > "${_tmpf}.s" 2>/dev/null && mv "${_tmpf}.s" "$_tmpf"
         mv "$_tmpf" "$_ag"

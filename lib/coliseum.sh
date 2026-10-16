@@ -4,10 +4,9 @@ coliseum_hpmax() { full_relendo "$full_ram" /coliseum "$src_ram"; }
 
 # shellcheck disable=SC2155
 coliseum_fight() {
-    # A chave vale aqui, e nao so no coliseum_start: o horario da madrugada
-    # (run.sh) chama esta funcao direto.
-    # 1 = este pulso nao achou luta (nem inscricao nem luta em andamento): o
-    # ramo da madrugada (run.sh) nao repete o pulso no mesmo minuto.
+    # A chave vale aqui tambem: o horario da madrugada (run.sh) chama direto.
+    # COLISEU_SEM_LUTA=1: este pulso nao achou luta (a madrugada nao repete
+    # o pulso no mesmo minuto).
     COLISEU_SEM_LUTA=1
     [ "$FUNC_coliseum" = "n" ] && return 0
     # Arquivos de batalha gravados no diretorio da conta (sem mktemp)
@@ -20,11 +19,8 @@ coliseum_fight() {
 
     printf "Coliseum\n"
 
-    # O PREPARO SO QUANDO HA LUTA. O modo grafico e o /train (HP maximo) saiam
-    # a cada chamada: na madrugada o Coliseu e tentado de 10 em 10 minutos, e
-    # sem luta eram 2 dos 3 pedidos de cada tentativa (~860 por noite com 18
-    # contas). O modo grafico fica gravado na conta, entao vai uma vez por
-    # worker; o /train, so antes de entrar numa luta (ver abaixo).
+    # O preparo so quando ha luta: o modo grafico fica gravado na conta (uma
+    # vez por worker); o /train, so antes de entrar numa luta.
     if [ -z "$COLISEU_GRAFICO" ]; then
         (
             run_curl_exec "$URL/settings/graphics/0" > /dev/null
@@ -52,26 +48,20 @@ coliseum_fight() {
     fi
 
     access_link=`grep -o -E '/coliseum(/[A-Za-z]+/[?]r[=][0-9]+|/)' "$src_ram" | sed -n '1p'`
-    # "sed -n 1p" em todo link: repetido na pagina, viraria duas linhas e o
-    # curl recusaria a URL.
+    # "sed -n 1p" em todo link: repetido na pagina viraria duas linhas.
     go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
-    # HP maximo: so com luta, antes de entrar. Se o full_atualizar pediu o
-    # /train, o nonce do enterFight ja e de uma pagina velha (o servidor
-    # recusa, como no clanquest.sh): rele o /coliseum e pega o link de novo.
-    # Assim o clique sai sempre da ultima pagina, como antes da 3.9.81, e o
-    # pulso sem luta continua sem /train.
+    # HP maximo so com luta, antes de entrar. Se saiu o /train, o servidor
+    # recusa o nonce (?r=) da pagina velha: rele o /coliseum e pega o link.
     if [ -n "$go_stop" ] && coliseum_hpmax; then
         access_link=`grep -o -E '/coliseum(/[A-Za-z]+/[?]r[=][0-9]+|/)' "$src_ram" | sed -n '1p'`
         go_stop=`grep -o -E '/coliseum/enterFight/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
     fi
 
-    # LUTA JA EM ANDAMENTO: o worker relancado no meio de uma luta do coliseu
-    # (batalha_retomar) encontra a pagina de combate, sem link de inscricao.
-    # Antes isso caia em "nao foi possivel iniciar" e a conta abandonava.
+    # Luta ja em andamento (worker relancado): pagina de combate sem link de
+    # inscricao; sem este ramo a conta abandonaria.
     _col_estado=`estado_luta "$src_ram" coliseum`
-    # Sem resposta ou sem sessao nao e "sem luta": o pulso tenta de novo no
-    # mesmo minuto, como antes da guarda.
+    # Sem resposta ou sem sessao nao e "sem luta": o pulso tenta de novo.
     case "$_col_estado" in invalida|deslogado) COLISEU_SEM_LUTA=0 ;; esac
 
     if [ -n "$go_stop" ] || [ "$_col_estado" = "luta" ]; then
@@ -90,8 +80,7 @@ coliseum_fight() {
 
         first_time=`date +%s`
         until grep -q -o 'coliseum/dodge/' "$src_ram" || awk -v ltime="$(($(date +%s) - first_time))" 'BEGIN { exit !(ltime > 30) }'; do
-            # Resposta vazia (rede) deixa o link vazio: sem o padrao, a
-            # espera pedia a Home a cada 3s em vez da pagina do coliseu.
+            # Resposta vazia deixa o link vazio: o padrao evita pedir a Home.
             (
                 run_curl_exec "${URL}${access_link:-/coliseum/}" > "$src_ram"
             ) </dev/null > /dev/null 2>&1 &
@@ -102,23 +91,17 @@ coliseum_fight() {
         done
       else
         printf "  Luta do coliseu em andamento - voltando para ela\n"
-        # Retomada: sem o HP maximo em disco, le agora (o limiar de cura e
-        # dele). Depois do /train a pagina e relida: o primeiro golpe nao
-        # sai com os links de antes dele.
+        # Retomada sem HP maximo em disco: le agora (com a pagina relida).
         [ -s "$full_ram" ] || coliseum_hpmax
       fi
 
         cl_access() {
             # Alvo cinza uma vez por pagina (ver o mesmo ponto no clanfight.sh).
             if alvo_grey "$src_ram"; then _grey=1; else _grey=0; fi
-            # Os relogios de cura/esquiva/ataque eram zerados AQUI, a cada
-            # leitura: a recarga de 90s da cura nunca valia e, com a vida
-            # baixa, a cura era tentada quase a cada volta. Sairam para antes
-            # do laco, onde sao iniciados uma vez so.
+            # Os relogios de cura/esquiva/ataque sao iniciados uma vez, antes
+            # do laco, nunca aqui (a recarga de 90s nunca valeria).
 
-            # Mesmo padrao dos outros modulos: 1 a 6 digitos (o {2,5} lia
-            # 123456 como 12345) e a primeira ocorrencia so. O USER que vinha
-            # aqui nao era usado por ninguem.
+            # Mesmo padrao dos outros modulos: 1 a 6 digitos, primeira ocorrencia.
             USH=`grep -o -E '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}' "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
             ENH=`grep -o -E '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}' "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p'`
 
@@ -128,8 +111,7 @@ coliseum_fight() {
             HEAL=`grep -o -E '/coliseum/heal/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
 
             RHP=`awk -v ush="$USH" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }'`
-            # Marcas da pagina: o laco comparava a cada volta, com os mesmos
-            # valores ate chegar pagina nova. Mesmo awk, mesmos textos.
+            # Marcas da pagina, calculadas uma vez por pagina.
             _cura=0; [ -n "$HEAL" ] && awk -v ush="$USH" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
             _caiu=0; [ -n "$DODGE" ] && awk -v ush="$USH" -v oldhp="$OLDHP" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
             _forte=0; [ -n "$ATKRND" ] && awk -v rhp="$RHP" -v enh="$ENH" 'BEGIN { exit !(rhp < enh) }' && _forte=1
@@ -141,11 +123,8 @@ coliseum_fight() {
                 printf "Em batalha - HP: %s\n" "$USH"
                 # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
                 if luta_hp "$USH"; then
-                  # ANTES DE ENCERRAR, TENTA VOLTAR.
-                  #
-                  # Morrer nao e o mesmo que sair do evento: havendo unrip na
-                  # pagina, ressuscitar() rele a luta e a conta continua. Era o
-                  # que faltava para as contas nao largarem o altar.
+                  # Antes de encerrar, tenta voltar: com unrip na pagina,
+                  # ressuscitar() rele a luta e a conta continua.
                   if ressuscitar coliseum "$src_ram"; then
                     cl_access
                     return
@@ -156,9 +135,8 @@ coliseum_fight() {
                     printf "Battle over. (%s)\n" "$LUTA_MOTIVO"
                 fi
             else
-                # RECONFIRMA antes de decidir: uma unica leitura sem /dodge/
-                # pode ser transicao, soluco de rede ou um link vazio ter
-                # baixado a home. Rele /coliseum uma vez e reavalia.
+                # RECONFIRMA antes de decidir: uma leitura sem /dodge/ pode ser
+                # transicao, rede ou link vazio. Rele /coliseum uma vez.
                 if [ "${_reconf:-0}" = 0 ]; then
                     _reconf=1
                     (
@@ -169,13 +147,8 @@ coliseum_fight() {
                     return
                 fi
                 _reconf=0
-                # Quem decide o fim e o jogo: morte, ou o ?end_fight da tela
-                # de encerramento (luta_acabou, em info.sh). Antes o
-                # ?end_fight so relia a pagina, sem encerrar, e o laco seguia
-                # mandando acoes ate o teto; e qualquer outra leitura sem
-                # esquiva encerrava a luta com a conta viva.
-                # MORREMOS, e a pagina ja nao mostra a luta? A releitura acima
-                # pode ter trazido o unrip — mesmo caminho do king.sh.
+                # Quem decide o fim e o jogo: morte, ou o ?end_fight da tela de
+                # encerramento (luta_acabou). A releitura pode ter trazido o unrip.
                 if ressuscitar coliseum "$src_ram"; then
                   cl_access
                   return
@@ -199,11 +172,8 @@ coliseum_fight() {
         last_dodge=$(($(date +%s) - 20))
         last_atk=$(($(date +%s) - LA))
 
-        # TETO DE SEGURANCA (luta_teto, em info.sh): so segura o laco que
-        # nunca resolve. Quem encerra a luta e o jogo, pelo luta_acabou.
-        #
-        # LINK VAZIO NUNCA VIRA REQUISICAO: cada ramo exige o proprio link
-        # na pagina; "${URL}${HEAL}" com HEAL vazio pedia a pagina inicial.
+        # Teto de seguranca (luta_teto): quem encerra a luta e o jogo.
+        # Link vazio nunca vira requisicao: cada ramo exige o proprio link.
         COL_BREAK=`luta_teto`
         # Um "date" por volta: o mesmo instante decide o teto e as recargas.
         while now=`date +%s`; [ -z "$BREAK_LOOP" ] && [ "$now" -le "$COL_BREAK" ]; do
@@ -219,11 +189,8 @@ coliseum_fight() {
                 ) </dev/null > /dev/null 2>&1 &
                 time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
                 cl_access
-                # HP maximo (full_ram) preservado: vem do /train. Troca-lo
-                # pelo HP atual pos-cura fazia o limiar HLHP cair a cada
-                # golpe e a conta "achar" que continuava com HP cheio.
-                # Pedido que nem chegou ao servidor: a cura nao valeu (ver
-                # pedido_nao_saiu). O relogio do ataque marca do mesmo jeito.
+                # full_ram nunca e trocado pelo HP atual pos-cura.
+                # Pedido que nao saiu (pedido_nao_saiu): a cura nao valeu.
                 [ "$_saiu" = 1 ] && last_heal=$now
                 last_atk=$now
 
@@ -262,27 +229,20 @@ coliseum_fight() {
                 last_atk=$now
 
             else
-                # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO.
-                # O ultimo golpe ja trouxe o HP. So relemos a pagina quando o
-                # alvo esta momentaneamente invulneravel (grey); fora disso
-                # apenas esperamos o restante da recarga, sem nova requisicao,
-                # para o intervalo entre golpes ficar em 4-5s.
-                # Rele tambem quando a leitura nao tem link de ataque: a luta
-                # so termina pelo luta_acabou, e sem esta releitura o laco
-                # dormiria sobre uma pagina sem acao ate o teto.
+                # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO. So rele com o
+                # alvo grey ou sem link de ataque; fora disso espera o restante.
                 if [ "$_grey" = 1 ] || [ -z "$ATK" ]; then
                     (
                         run_curl_exec "${URL}/coliseum" > "$src_ram"
                     ) </dev/null > /dev/null 2>&1 &
                     time_exit 17
-                    # A releitura acima ja e a reconfirmacao (ver clanfight.sh).
+                    # A releitura ja e a reconfirmacao.
                     _reconf=1
                     cl_access
                     # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
                     sleep 1
                 else
-                    # Fim do giro: mesmo instante de antes, nunca espera zero
-                    # (ver o mesmo ponto no clanfight.sh).
+                    # Fim do giro: nunca espera zero.
                     _resta=$(( LA - time_since_last_atk ))
                     [ "$_resta" -gt 0 ] || _resta=1
                     sleep "$_resta"
@@ -317,13 +277,8 @@ coliseum_start() {
             ) </dev/null > /dev/null 2>&1 &
             time_exit 20
 
-            # O LACO DA MISSAO TEM TETO.
-            #
-            # Ele so terminava quando a missao 11 sumisse da lista. Com o
-            # coliseu sem luta para entrar, o coliseum_fight voltava na hora e
-            # o laco repetia coliseum_fight + /quest/ para sempre — no dia 1
-            # do mes, das 0h as 9h, e depois das 9h tambem: a conta perdia os
-            # eventos do dia inteiro. Seis tentativas ou 20 minutos.
+            # O laco da missao 11 tem teto (seis tentativas ou 20 min): sem
+            # luta no coliseu ele repetia coliseum_fight + /quest/ para sempre.
             _q11_fim=$(( `date +%s` + 1200 ))
             _q11_n=0
             while grep -q -o -E '/coliseum/[?]quest_t[=]quest&quest_id[=]11&qz[=][a-z0-9]+' "$TMP/SRC" \

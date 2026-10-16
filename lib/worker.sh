@@ -1,11 +1,8 @@
 #!/bin/sh
 # worker.sh - Loop de uma conta individual
 
-# CORRECAO (seguranca): a credencial base64 chegava como argv[3] e ficava
-# legivel em /proc/PID/cmdline durante toda a vida do worker (que roda para
-# sempre). O "unset SLS_ENCODED" nao ajudava: ele limpa a variavel, nao o
-# argv do kernel. Agora o play.sh grava a credencial em cript_file (modo 600)
-# e o worker recebe apenas o caminho do diretorio da conta.
+# Seguranca: a credencial nunca vai no argv (legivel em /proc/PID/cmdline);
+# o play.sh grava em cript_file (modo 600) e o worker recebe so a pasta.
 SLS_SRV="$1"
 SLS_USER="$2"
 SLS_TAG="$3"
@@ -36,7 +33,8 @@ PID_FILE="${SLS_STATUS_FILE%.status}.pid"
 echo "$$" > "$PID_FILE"
 echo "starting" > "$SLS_STATUS_FILE"
 
-termux-wake-lock 2>/dev/null
+# Sob o play.sh o wake-lock ja foi pedido (SLS_WAKELOCK=1).
+[ -n "$SLS_WAKELOCK" ] || termux-wake-lock 2>/dev/null
 
 printf "[%s] %s — worker PID=%s\n" "$SLS_TAG" "$SLS_USER" "$$"
 
@@ -52,22 +50,10 @@ chmod 600 "$SLS_ACC_DIR/cript_file" 2>/dev/null
 
 echo "running" > "$SLS_STATUS_FILE"
 
-# SUBSTITUI este processo pelo sls.sh, em vez de ficar parado esperando por
-# ele num laco.
-#
-# CORRECAO (SIGKILL / "signal 9" no Android 12): o worker.sh existia so
-# para relancar o sls.sh quando ele saisse — um processo permanente POR
-# CONTA que passava a vida bloqueado. Com 6 contas sao 6 processos parados,
-# e o Android 12 mata a sessao inteira acima de 32 processos.
-#
-# Medido no aparelho do relato (Moto E22, Android 12, limite 32): o Termux
-# ja marcava 26 processos com apenas DUAS contas no ar. Com seis nao havia
-# como caber.
-#
-# Com o exec o sls.sh herda este PID, entao o arquivo .pid segue valido e o
-# stop.sh continua encontrando a conta. Quem relanca agora e o play.sh, que
-# ja verifica a cada volta do painel se o PID morreu — antes eram 15s de
-# espera aqui, agora sao no maximo 20s la, sem custar um processo parado.
-# A pasta da conta vai no cmdline so para o worker_vivo (contas.sh) saber de
-# qual conta e este PID; o sls.sh nao le o $2.
+# SUBSTITUI este processo pelo sls.sh (exec), sem ficar parado esperando:
+# o Android 12 mata a sessao inteira acima de ~32 processos, e um processo
+# parado POR CONTA nao cabe. O sls.sh herda este PID (o .pid segue valido
+# para o stop.sh); quem relanca e o play.sh, que confere o PID a cada volta
+# do painel. A pasta da conta vai no cmdline so para o worker_vivo
+# (contas.sh); o sls.sh nao le o $2.
 exec sh "$LIBDIR/sls.sh" "$RUN" "$SLS_ACC_DIR" < /dev/null

@@ -1,85 +1,43 @@
 # shellcheck disable=SC2148
 king_fight() {
   cd "$TMP" || return 1
-  # LA = intervalo unico entre QUALQUER acao (ataque, erva, pedra, cura,
-  # esquiva). O jogo recusa uma acao que venha menos de ~4-5s depois da
-  # anterior, entao todas compartilham o MESMO relogio: uma por vez, a cada 5s.
+  # LA = intervalo unico entre QUALQUER acao: o jogo recusa acao com menos de
+  # ~4-5s da anterior, entao todas dividem o mesmo relogio.
   LA=5
-  # RECARGA PROPRIA DE CADA ACAO (alem do intervalo unico de 5s):
-  #   esquiva        20s
-  #   esmalte/cura   90s  (1min30)
-  #   erva           60s  (1min)
-  #   pedra          60s  (1min)
-  # Sem elas a conta repetiria a mesma acao a cada janela de 5s — o jogo
-  # recusa e a janela vira golpe perdido. Com a recarga, entre um uso e o
-  # seguinte a conta volta a atacar.
+  # Recarga propria de cada acao (alem do LA): esquiva 20s, cura 90s,
+  # erva 60s, pedra 60s. Sem ela a mesma acao se repetiria a cada janela.
   LD=20
   LC=90
   LG=60
   LS=60
-  # LIMIAR DE VIDA, POR FASE DA BATALHA:
-  #   rei em jogo -> 38%: o que conta e dano no rei, curar cedo custa golpe.
-  #   rei morto   -> 67%: a luta segue entre jogadores e quem morre perde a
-  #                  posicao — sobreviver passa na frente do dano.
+  # Limiar de vida por fase: rei em jogo 38% (dano no rei vem primeiro);
+  # rei morto 67% (a luta segue entre jogadores e sobreviver vem primeiro).
   HPER_REI="38"
   HPER_POS="67"
   HPER="$HPER_REI"
   RPER=5
 
-  # Estado da fase (ver "MORTE DO REI" mais abaixo).
+  # Estado da fase (ver fase_ler).
   _rei_morto=0    # 1 = rei fora da arena, a luta continua entre jogadores
   _sem_rei=0      # leituras seguidas sem o golpe forte do rei na pagina
   _reconf=0       # trava da reconfirmacao do fim da luta
   _reviveu=0      # trava do unrip (nao ressuscitar em laco)
 
-  # HP maximo (vem do /train, gravado pelo king_start). Guardado em variavel
-  # para recalcular o limiar de cura NA HORA em que a fase vira, sem esperar
-  # a leitura seguinte. Lido com o "read" embutido: nenhum processo a mais.
+  # HP maximo (FULL, do king_start): recalcula o limiar na hora em que a fase vira.
   _full=0
   [ -r FULL ] && { read -r _full < FULL; } 2>/dev/null
   case "$_full" in ''|*[!0-9]*) _full=0 ;; esac
 
-  # LEITURA DA PAGINA: DE 23 PROCESSOS PARA 2.
-  #
-  # Esta funcao lia o MESMO arquivo 23 vezes — sete grep, nove sed, dois awk
-  # e cinco "$(cat ...)" — e roda duas a tres vezes por volta do laco de
-  # luta. Davam 50 a 70 processos por volta, por conta, com todas as contas
-  # entrando no evento no mesmo minuto. E o que estourava o teto de 32
-  # processos do Android 12 e trazia o "signal 9" de volta justamente em
-  # evento.
-  #
-  # Agora um unico awk le a pagina uma vez e grava os mesmos arquivos, com o
-  # mesmo conteudo — conferido byte a byte em cinco cenarios: luta completa,
-  # sem kingatk/stone, luta encerrada, pagina vazia e HP ausente.
-  #
-  # Sobram dois processos: o awk e o grep do nome do alvo, que continua
-  # separado por depender de "sed -n 2p" com substituicoes proprias.
-
-  # HA LUTA NA TELA?
-  #
-  # O combate_ler reescreve os sete arquivos de link a CADA leitura (vazio =
-  # link ausente na pagina), entao basta perguntar se sobrou ALGUMA acao do
-  # rei. Nenhum processo: sao testes embutidos do shell.
-  #
-  # ERA AQUI O DEFEITO PRINCIPAL: a luta so era reconhecida pelo link de
-  # ESQUIVA. Quando o rei morre a pagina muda de forma (some o golpe forte e,
-  # na virada, tambem a esquiva) — e o bot dava a batalha por encerrada com
-  # ataque, cura e itens ainda na tela.
+  # Ha luta na tela? O combate_ler reescreve os arquivos de link a cada
+  # leitura (vazio = ausente): basta sobrar QUALQUER acao do rei, nao so a esquiva.
   acao_disponivel() {
     [ -s KINGATK ] || [ -s ATK ]   || [ -s DODGE ] || \
     [ -s HEAL ]    || [ -s GRASS ] || [ -s STONE ]
   }
 
-  # MORTE DO REI — TROCA DE FASE
-  #
-  # A pagina nao anuncia a morte; o que ela mostra e que o golpe forte
-  # (kingatk) deixou de existir enquanto a luta continua. Tres leituras
-  # seguidas sem ele (~15s) para nao confundir com a ausencia passageira do
-  # link — e a virada de pagina da luta ja adianta essa contagem, porque
-  # sumir e voltar e o sinal mais forte de que o rei caiu.
-  #
-  # Se um novo rei for coroado o kingatk volta e a fase volta com ele: a
-  # esquiva desliga de novo e a prioridade e dano, como era antes.
+  # MORTE DO REI: a pagina nao anuncia; o kingatk some com a luta seguindo.
+  # Tres leituras seguidas sem ele (~15s) viram a fase; a virada de pagina
+  # adianta a contagem. Novo rei coroado (kingatk volta) = volta a fase do rei.
   fase_ler() {
     if [ -s KINGATK ]; then
       _sem_rei=0
@@ -105,8 +63,7 @@ king_fight() {
     if alvo_grey "$TMP/SRC"; then _grey=1; else _grey=0; fi
     set -- `combate_ler king "$HPER" "$RPER" "$TMP/SRC"`
     _emluta="$1"; RHP="$2"; HLHP="$3"; _hpat="$4"; _hp2at="$5"
-    # Nome do ALVO (ver alvo_nome, em info.sh). A leitura antiga devolvia
-    # "Fulano_&" em toda pagina do Rei: a protecao de aliados nunca agia.
+    # Nome do ALVO (alvo_nome, em info.sh), para a protecao de aliados.
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     aliado_ler
 
@@ -117,10 +74,8 @@ king_fight() {
       fase_ler
       printf "Em batalha - HP: %s\n" "$_hpat"
 
-      # MORTO COM BOTAO NA TELA (ver luta_hp, em info.sh). No Rei a pagina
-      # mantem os botoes depois da morte: a conta ficava "lutando" com HP 0
-      # ate o teto de 30 min. Primeiro tenta a ressurreicao, uma vez; sem ela,
-      # o jogo ja declarou a morte.
+      # Morto com botao na tela (luta_hp, em info.sh): o Rei mantem os botoes
+      # depois da morte. Tenta ressuscitar uma vez; sem isso, encerra.
       if luta_hp "$_hpat"; then
         if ressuscitar king "$TMP/SRC"; then
           cl_access
@@ -132,26 +87,16 @@ king_fight() {
         printf "Battle over. (%s)\n" "$LUTA_MOTIVO"
         return
       fi
-      # A trava da ressurreicao so solta com vida de verdade na tela. Antes
-      # ela zerava a cada leitura com botao, e com HP 0 + botao isso viraria
-      # um unrip a cada tres leituras.
-      # (o destravamento passou para o luta_hp, que e o ponto que ja
-    # distingue vida de zero; ver info.sh)
+      # A trava da ressurreicao so solta no luta_hp, com vida de verdade na tela.
       return
     fi
 
-    # SEM ACAO NA TELA — E NENHUM DOS CASOS ABAIXO E "BATALHA ENCERRADA":
-    #   (a) a virada do rei morto (a pagina troca de forma por um instante);
-    #   (b) a nossa morte (a pagina passa a oferecer o unrip);
-    #   (c) uma pagina de transicao ou um soluco de rede.
-    # Rele /king antes de decidir qualquer coisa — UMA vez. Na segunda
-    # passada (_reconf=1) a pagina ja e a releitura: reler de novo era um
-    # pedido a mais e deixava os links (ATK, KINGATK, HP) da leitura anterior
-    # valendo quando a luta voltava na terceira.
+    # SEM ACAO NA TELA nao e "batalha encerrada": pode ser (a) a virada do rei
+    # morto, (b) a nossa morte (unrip) ou (c) transicao/rede. Rele /king UMA
+    # vez; na segunda passada (_reconf=1) a pagina ja e a releitura.
     if [ "${_reconf:-0}" = 0 ]; then
-    # A VIRADA SO CONTA COM PAGINA DO JOGO. Resposta vazia, cortada ou que
-    # nao e do jogo (rede) nao e o rei caindo: adiantar a contagem com ela
-    # trocava a fase (esquiva liberada, limiar de cura menor) com o rei vivo.
+    # A virada so conta com pagina do jogo: resposta vazia/de rede nao e o rei
+    # caindo (trocaria a fase com o rei vivo).
     case "`estado_luta "$TMP/SRC" king`" in
       invalida|deslogado) _virada=0 ;;
       *)                  _virada=1 ;;
@@ -160,37 +105,23 @@ king_fight() {
       run_curl_exec "${URL}/king" > "$TMP/SRC"
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
-    # (b) Morremos: ressuscita e VOLTA para a luta, relendo a pagina do
-    # unrip (clicar e seguir com os links da pagina anterior nao funciona:
-    # os nonces dela ja morreram). A trava _reviveu impede o laco.
-    #
-    # As duas copias deste bloco viraram ressuscitar(), no info.sh, e com
-    # isso todos os eventos passaram a tentar voltar antes de encerrar — o
-    # Rei era o unico que tentava.
+    # (b) Morremos: ressuscita e volta para a luta relendo a pagina (os nonces
+    # da anterior ja morreram). A trava _reviveu impede o laco.
     if ressuscitar king "$TMP/SRC"; then
       cl_access
       return
     fi
 
-    # (a)/(c) A releitura de /king pode ter trazido a luta de volta — e era
-    # exatamente isso que o codigo antigo jogava fora: ele so procurava o
-    # unrip nesta pagina e, sem ele, gravava BREAK_LOOP e anunciava "Battle
-    # over" com a batalha em andamento. Reavalia UMA vez (o _reconf trava a
-    # recursao) e so entao desiste. A virada de pagina adianta a contagem da
-    # morte do rei: se na volta nao houver kingatk, a fase muda na hora.
+    # (a)/(c) A releitura pode ter trazido a luta de volta: reavalia UMA vez
+    # (_reconf trava a recursao). A virada adianta a contagem da morte do rei.
       _reconf=1
       [ "$_virada" = 1 ] && _sem_rei=3
       cl_access
       return
     fi
     _reconf=0
-    # PASSADA DA RELEITURA: esta pagina ja e a relida (aqui em cima ou no
-    # ramo "sem link de ataque" do laco, que rele /king e chega com
-    # _reconf=1). Desde a 3.9.83 esse segundo caminho pulava o ressuscitar e
-    # a virada: a conta morta via o unrip no luta_acabou e encerrava a luta,
-    # e a fase do rei morto atrasava ~15s. Os dois valem aqui tambem. O
-    # ressuscitar nao pede nada sem unrip na pagina, e a trava _reviveu
-    # impede um segundo unrip.
+    # Passada da releitura (daqui ou do ramo "sem link de ataque" do laco):
+    # ressuscitar e virada valem aqui tambem; a trava _reviveu impede outro unrip.
     if ressuscitar king "$TMP/SRC"; then
       cl_access
       return
@@ -199,9 +130,8 @@ king_fight() {
       invalida|deslogado) ;;
       *) _sem_rei=3 ;;
     esac
-    # Nem a releitura trouxe acao do Rei. Ainda assim nao e o bot quem decide
-    # que a luta acabou: so o jogo declara (morte ou fim), e e isso que o
-    # luta_acabou le. Sem declaracao, o laco segue na pagina do Rei.
+    # So o jogo declara o fim (morte ou fim), e e isso que o luta_acabou le.
+    # Sem declaracao, o laco segue.
     if luta_acabou "$TMP/SRC" king; then
       echo 1 > BREAK_LOOP
       printf "Battle over. (%s)\n" "$LUTA_MOTIVO"
@@ -210,36 +140,14 @@ king_fight() {
   }
 
   # ============================================================
-  #  LACO DE LUTA DO REI — UMA ACAO POR CICLO, 4 A 5 SEGUNDOS
-  #
-  #  RELOGIO UNICO DE ACOES (LA = 5s):
-  #  O jogo recusa qualquer acao que venha menos de ~4-5s depois da anterior
-  #  (o golpe/item "falha" e nao acerta). Por isso ATAQUE, ERVA, PEDRA, CURA e
-  #  ESQUIVA compartilham UM SO relogio (_last_act): sai UMA acao por vez, a
-  #  cada 5s. A cada janela escolhe-se UMA acao, nesta prioridade:
-  #     1) CURA (elixir/esmalte) — com a vida abaixo do limiar da fase,
-  #        recarga propria de 90s e SO com o link na pagina;
-  #     2) ESQUIVA — so com o rei ja morto, so com a vida abaixo do limiar e
-  #        so quando a cura NAO estava disponivel (sem elixir na pagina ou
-  #        ainda em recarga). Recarga propria de 20s;
-  #     3) ERVA  — so quando disponivel, de graca, recarga de 1min;
-  #     4) PEDRA — so quando disponivel, de graca, recarga de 1min;
-  #     5) ATAQUE — kingatk (golpe forte) enquanto o rei estiver na arena,
-  #        senao o ataque normal.
-  #  O _last_act e marcado no INICIO da acao, para o tempo do request contar
-  #  DENTRO do intervalo em vez de somar-se a ele. Dentro dos 5s o bot so
-  #  espera, SEM nenhuma requisicao (uma atualizacao de pagina <5s tambem
-  #  atrapalharia a proxima acao).
-  #
-  #  LINK VAZIO NUNCA VIRA REQUISICAO: todo ramo exige o arquivo do link
-  #  nao-vazio antes de agir. Pedir "${URL}$(cat ATK)" com ATK vazio baixava a
-  #  PAGINA INICIAL, e a leitura seguinte — sem nenhum link de luta — dava a
-  #  batalha por encerrada. Era o mesmo defeito ja corrigido no Vale dos
-  #  Imortais.
-  #
-  #  ESQUIVA: continua DESLIGADA enquanto o rei esta em jogo — ali cada janela
-  #  de 5s tem de virar dano no rei. Ela entra depois que o rei morre, e ainda
-  #  assim so para segurar a vida, quando nao ha elixir para usar.
+  #  LACO DE LUTA DO REI — UMA ACAO POR JANELA DE LA (5s), nesta prioridade:
+  #     1) CURA — vida abaixo do limiar da fase, recarga 90s;
+  #     2) ESQUIVA — so com o rei morto, vida abaixo do limiar e cura
+  #        indisponivel; recarga 20s (com o rei vivo cada janela e dano);
+  #     3) ERVA / 4) PEDRA — so disponiveis e de graca, recarga 1min;
+  #     5) ATAQUE — kingatk com o rei na arena, senao o normal.
+  #  _last_act marca o INICIO da acao. Dentro dos 5s so espera, sem pedido.
+  #  Link vazio nunca vira requisicao: "${URL}" sozinho baixaria a home.
   # ============================================================
   luta_inicio king
   cl_access
@@ -257,30 +165,16 @@ king_fight() {
   echo "$_last_act"   > last_atk     # o painel le last_atk como "ultima acao"
   : > BREAK_LOOP
 
-  # TETO DE SEGURANCA (luta_teto, em info.sh). Era de 10 minutos contados da
-  # entrada de CADA conta — e a luta continua entre os jogadores depois que o
-  # rei cai. Agora so segura o laco que nunca resolve (rede fora): quem
+  # Teto de seguranca (luta_teto): so segura laco que nunca resolve; quem
   # encerra a luta e o jogo, pelo luta_acabou.
   FIGHT_BREAK=`luta_teto`
   # Um "date" por volta: o mesmo instante decide o teto e o relogio de acao.
   while _agora=`date +%s`; [ ! -s "BREAK_LOOP" ] && [ "$_agora" -le "$FIGHT_BREAK" ]; do
 
-    # RELOGIO UNICO: so age uma vez a cada LA (5s). Qualquer acao (ataque,
-    # erva, pedra, cura, esquiva) antes disso "falha" no jogo, entao todas
-    # esperam o mesmo intervalo. Dentro dos 5s o bot so espera, sem NENHUMA
-    # requisicao.
     if [ $(( _agora - _last_act )) -ge "$LA" ]; then
 
-      # PRIORIDADE 1 — CURA (elixir/esmalte): vida abaixo do limiar da fase
-      # cura primeiro, para a conta nao morrer (recarga propria de 90s). So
-      # com o link na pagina. O HP maximo (FULL, do /train) NUNCA e
-      # sobrescrito pelo HP atual pos-cura.
-      #
-      # CORRECAO: havia tambem um teto de 300s ("-lt 300") nesta condicao.
-      # Como o relogio da cura so anda quando a conta cura, passados cinco
-      # minutos SEM curar a cura ficava proibida pelo resto da luta — em uma
-      # batalha de dez minutos era a metade dela sem elixir, justamente na
-      # parte em que a vida ja esta baixa.
+      # PRIORIDADE 1 — CURA (elixir/esmalte): vida abaixo do limiar, recarga
+      # 90s, sem teto de tempo. O FULL nunca e sobrescrito pelo HP atual.
       if [ -s HEAL ] && \
          awk -v ush="$_hpat" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && \
          [ $(( _agora - _last_heal )) -ge "$LC" ]; then
@@ -289,16 +183,12 @@ king_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17; _saiu=1; pedido_nao_saiu && _saiu=0
         cl_access
-        # Pedido que nem chegou ao servidor: a cura nao valeu (ver
-        # pedido_nao_saiu). O relogio unico de acoes marca do mesmo jeito.
+        # Pedido que nao saiu (pedido_nao_saiu): a cura nao valeu.
         if [ "$_saiu" = 1 ]; then _last_heal="$_agora"; echo "$_last_heal" > last_heal; fi
         _last_act="$_agora";  echo "$_last_act"  > last_atk
 
-      # PRIORIDADE 2 — ESQUIVA: SO depois da morte do rei (_rei_morto=1), so
-      # com a vida abaixo do limiar da fase e so quando a cura acima NAO
-      # pegou — ou seja, exatamente o "nao tem elixir, ve se tem esquiva".
-      # Recarga de 20s para nao virar esquiva em serie: entre uma e outra a
-      # conta volta a atacar.
+      # PRIORIDADE 2 — ESQUIVA: so com o rei morto, vida abaixo do limiar e a
+      # cura acima sem pegar. Recarga 20s.
       elif [ "$_rei_morto" = 1 ] && [ -s DODGE ] && \
            awk -v ush="$_hpat" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && \
            [ $(( _agora - _last_dodge )) -ge "$LD" ]; then
@@ -310,9 +200,8 @@ king_fight() {
         if [ "$_saiu" = 1 ]; then _last_dodge="$_agora"; echo "$_last_dodge" > last_dodge; fi
         _last_act="$_agora";   echo "$_last_act"   > last_atk
 
-      # PRIORIDADE 3 — ERVA: acao propria, SO quando disponivel (link na
-      # pagina = arquivo GRASS nao-vazio) e SO de graca — o combate_ler
-      # descarta o link quando a etiqueta do botao pede ouro. Recarga de 1min.
+      # PRIORIDADE 3 — ERVA: so com link (GRASS) e de graca (o combate_ler
+      # descarta o link pago em ouro). Recarga 1min.
       elif [ -s GRASS ] && [ $(( _agora - _last_grass )) -ge "$LG" ]; then
         (
           read -r _l < GRASS; run_curl_exec "${URL}$_l" > "$TMP/SRC"
@@ -322,8 +211,7 @@ king_fight() {
         _last_grass="$_agora"
         _last_act="$_agora"; echo "$_last_act" > last_atk
 
-      # PRIORIDADE 4 — PEDRA: mesma regra da erva — so quando disponivel
-      # (STONE nao-vazio), so de graca e com recarga de 1min.
+      # PRIORIDADE 4 — PEDRA: mesma regra da erva.
       elif [ -s STONE ] && [ $(( _agora - _last_stone )) -ge "$LS" ]; then
         (
           read -r _l < STONE; run_curl_exec "${URL}$_l" > "$TMP/SRC"
@@ -333,10 +221,8 @@ king_fight() {
         _last_stone="$_agora"
         _last_act="$_agora"; echo "$_last_act" > last_atk
 
-      # PRIORIDADE 5 — ATAQUE: kingatk (golpe forte) enquanto o rei estiver na
-      # arena; depois da morte dele sobra o ataque normal, que e como a luta
-      # entre jogadores continua. So com link de verdade e so quando o alvo
-      # NAO esta grey (invulneravel).
+      # PRIORIDADE 5 — ATAQUE: kingatk com o rei na arena, depois o normal.
+      # So com link e com o alvo fora do grey (invulneravel).
       elif { [ -s KINGATK ] || [ -s ATK ]; } && \
            [ "$_grey" = 0 ]; then
         if [ -s KINGATK ]; then
@@ -347,16 +233,8 @@ king_fight() {
           time_exit 17
           cl_access
         elif [ -s ATKRND ] && troca_aliado "$_agora"; then
-          # ALIADO NA FRENTE: TROCA DE ALVO EM VEZ DE BATER NELE.
-          #
-          # Depois que o rei morre a luta continua entre jogadores, e o alvo
-          # da vez pode ser alguem da lista de aliados. O /king/atkrnd sorteia
-          # outro alvo — e o mesmo recurso que as batalhas de cla ja usavam
-          # para nao acertar cla aliado.
-          #
-          # Consome a janela de 5s como qualquer acao: trocar de alvo tambem
-          # e uma jogada, e nao pode virar rajada. (A linha do log sai do
-          # troca_aliado.)
+          # Aliado na frente (rei morto, luta entre jogadores): o atkrnd
+          # sorteia outro alvo. Consome a janela de 5s como qualquer acao.
           (
             read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/SRC"
           ) </dev/null > /dev/null 2>&1 &
@@ -369,15 +247,12 @@ king_fight() {
           time_exit 17
           cl_access
         fi
-        # Marca o INICIO da acao (nao o fim do request): o intervalo ate a
-        # proxima acao fica em ~LA (5s), sem inflar com o tempo do request.
+        # Marca o INICIO da acao, para o request nao inflar o intervalo.
         _last_act="$_agora"; echo "$_last_act" > last_atk
 
       else
-        # Alvo grey (invulneravel), ou nenhum link de ataque nesta leitura:
-        # rele a pagina para ver quando o rei — ou o proximo alvo — libera.
-        # Conta como o turno do relogio (5s), para nao virar atualizacao em
-        # rajada (<5s tambem atrapalha).
+        # Alvo grey ou sem link de ataque: rele a pagina. Conta como o turno
+        # do relogio, para nao virar atualizacao em rajada.
         (
           run_curl_exec "${URL}/king" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
@@ -389,8 +264,7 @@ king_fight() {
       fi
 
     else
-      # Dentro do intervalo de 5s: espera o restante SEM nenhuma requisicao —
-      # uma atualizacao de pagina antes de 5s atrapalharia a proxima acao.
+      # Dentro do intervalo: espera sem requisicao (pedido <5s atrapalha).
       _resta=$(( LA - ( _agora - _last_act ) ))
       # Relogio do aparelho voltou: nunca mais que LA.
       [ "$_resta" -le "$LA" ] || _resta=$LA
@@ -400,11 +274,8 @@ king_fight() {
   done
 
   # ── SAIDA DA BATALHA ───────────────────────────────────────────────────────
-  # POS-MORTE DO REI: a luta NAO termina quando o rei cai. O laco acima segue
-  # atacando, curando e esquivando ate a pagina nao oferecer mais nenhuma acao
-  # (fim confirmado com releitura) ou ate o teto de 10 minutos.
-  # Aqui e a saida de verdade: uma ultima esquiva, se o link ainda estiver na
-  # pagina, para garantir a posicao na proxima rodada.
+  # A luta nao termina quando o rei cai. Na saida, uma ultima esquiva (se o
+  # link estiver na pagina) para garantir a posicao na proxima rodada.
   if [ -s DODGE ]; then
     printf "Saindo da batalha — esquiva final\n"
     (
@@ -417,13 +288,8 @@ king_fight() {
   unset _rei_morto _sem_rei _reconf _reviveu _virada _full HPER_REI HPER_POS
   unset _last_dodge _last_grass _last_stone LD LC LG LS
   func_unset
-  # SEM INSCRICAO DEPOIS DA LUTA. Aqui havia um apply_event: um GET e, com o
-  # link na pagina, a inscricao no Rei SEGUINTE, horas antes. O descanso logo
-  # depois achava o "Fuja da batalha" e, sem batalha anotada, confirmava a fuga.
-  # A inscricao de cada Rei e feita pelo king_start.
+  # Sem inscricao depois da luta: a de cada Rei e feita pelo king_start.
   printf "King ok\n"
-  # (Aqui havia "sleep 10s": a luta ja acabou e o que vem depois e o
-  # descanso ou a espera do evento. Era tempo morto, tambem na retomada.)
   [ -t 1 ] && clear
 }
 
@@ -439,8 +305,7 @@ king_start() {
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
     printf "King of the Immortals will be started...\n"
-    # Ate :29:50-:29:59, escalonado por conta (janela_alvo, em info.sh): todas
-    # acordavam no mesmo segundo de :30:00.
+    # Ate :29:50-:29:59, escalonado por conta (janela_alvo, em info.sh).
     espera_janela 2500 `janela_alvo 2950 10`
     (
       run_curl_exec "$URL/king/enterGame" > "$TMP/SRC"
@@ -451,15 +316,12 @@ king_start() {
     printf " Entering...\n%s\n" "`cat "$TMP/ACCESS"`"
     printf " Waiting...\n"
     cat "$TMP/SRC" | grep -o 'king/kingatk/' > "$TMP/EXIT" 2>/dev/null
-    # 60s (eram 30), e a espera tambem termina com QUALQUER acao do Rei na
-    # pagina, nao so com o golpe forte.
+    # 60s; termina tambem com QUALQUER acao do Rei na pagina.
     BREAK=$(($(date +%s) + 60))
     until [ -s "$TMP/EXIT" ] || [ "`estado_luta "$TMP/SRC" king`" = luta ] || \
           [ "$(date +%s)" -gt "$BREAK" ]; do
       printf " ...\n%s\n" "`cat "$TMP/ACCESS"`"
-      # Rele a pagina do Rei, sem clicar: "o primeiro link /king/ da pagina"
-      # podia ser o de sair da fila, clicado a cada 2s. Mesma espera dos
-      # outros eventos.
+      # Rele a pagina do Rei sem clicar (o primeiro link podia ser sair da fila).
       (
         run_curl_exec "${URL}/king/" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &

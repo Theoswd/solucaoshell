@@ -12,10 +12,7 @@ clandmgfight_fight() {
   HPER=48
   RPER=15
   cf_access() {
-    # ALVO CINZA, UMA VEZ POR PAGINA. Toda pagina nova da luta passa por
-    # aqui (cada requisicao do laco, a releitura e o ressuscitar), e o
-    # laco consultava o mesmo arquivo ate tres vezes por volta, um awk
-    # cada. O resultado e o mesmo; muda so quantas vezes e calculado.
+    # Alvo cinza uma vez por pagina.
     if alvo_grey "$TMP/SRC"; then _grey=1; else _grey=0; fi
     grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n '1p' > ATK 2>/dev/null
     grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > ATKRND 2>/dev/null
@@ -25,10 +22,7 @@ clandmgfight_fight() {
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     aliado_ler cla
     grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
-    # HP DA PAGINA, LIDO UMA VEZ. O log, a checagem de morte e as comparacoes
-    # de cura e esquiva liam o arquivo um "cat" cada, e as duas comparacoes
-    # rodavam a cada volta do laco. Os valores so mudam com pagina nova, e a
-    # comparacao e a mesma de antes (o mesmo awk, com os mesmos textos).
+    # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; { [ -s HEAL ] || [ -s GRASS ]; } && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
     _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
@@ -39,11 +33,8 @@ clandmgfight_fight() {
       printf "Em batalha clandmg - HP: %s\n" "$_hp"
       # Morto com a luta ainda na tela (ver luta_hp, em info.sh).
       if luta_hp "$_hp"; then
-        # ANTES DE ENCERRAR, TENTA VOLTAR.
-        #
-        # Morrer nao e o mesmo que sair do evento: havendo unrip na
-        # pagina, ressuscitar() rele a luta e a conta continua. Era o
-        # que faltava para as contas nao largarem o altar.
+        # Antes de encerrar, tenta voltar: com unrip na pagina, ressuscitar()
+        # rele a luta e a conta continua.
         if ressuscitar clandmgfight "$TMP/SRC"; then
           cf_access
           return
@@ -65,9 +56,8 @@ clandmgfight_fight() {
         return
       fi
       _reconf=0
-      # Nem a releitura trouxe a esquiva: quem decide o fim e o jogo.
-      # MORREMOS, e a pagina ja nao mostra a luta? A releitura acima
-      # pode ter trazido o unrip — mesmo caminho do king.sh.
+      # Nem a releitura trouxe a esquiva: quem decide o fim e o jogo. A
+      # releitura pode ter trazido o unrip.
       if ressuscitar clandmgfight "$TMP/SRC"; then
         cf_access
         return
@@ -79,13 +69,12 @@ clandmgfight_fight() {
     fi
   }
 
-  # LIMIAR DE CURA, UMA VEZ POR LUTA: depende so do HP maximo, que nao muda
-  # durante a luta (era recalculado a cada pagina).
+  # Limiar de cura uma vez por luta: depende so do HP maximo.
   awk -v ush="$(cat FULL)" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
   luta_inicio clandmgfight
   # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
-  # o BREAK_LOOP nela, e zerar depois fazia o laco rodar mesmo assim.
+  # o BREAK_LOOP nela.
   : > BREAK_LOOP
   cf_access
   cat HP > old_HP; _old_hp="$_hp"; _caiu=0
@@ -93,21 +82,14 @@ clandmgfight_fight() {
   echo $(($(date +%s) - 90)) > last_heal
   echo $(($(date +%s) - LA)) > last_atk
 
-  # TETO DE SEGURANCA (luta_teto, em info.sh). Era de 10 minutos contados da
-  # entrada de cada conta; agora so segura o laco que nunca resolve (rede
-  # fora). Quem encerra a luta e o jogo, pelo luta_acabou.
+  # Teto de seguranca (luta_teto): quem encerra a luta e o jogo, pelo luta_acabou.
   FIGHT_BREAK=`luta_teto`
-  # LINK VAZIO NUNCA VIRA REQUISICAO: cada ramo exige o proprio link na
-  # pagina. "${URL}$(cat HEAL)" com HEAL vazio baixava a PAGINA INICIAL.
-  #
-  # SEM RELEITURA NO TOPO DO LACO (era reparse redundante; cada ramo ja rele).
-  # UM "date" POR VOLTA: o mesmo instante decide o teto e a recarga.
+  # Link vazio nunca vira requisicao: cada ramo exige o proprio link na pagina.
+  # SEM RELEITURA NO TOPO DO LACO: cada ramo ja rele apos a sua acao.
+  # Um "date" por volta: o mesmo instante decide o teto e a recarga.
   while _atk0=$(date +%s); [ ! -s "BREAK_LOOP" ] && [ "$_atk0" -le "$FIGHT_BREAK" ]; do
-    # Instante do INICIO da volta: o ataque marca o last_atk com ele para o
-    # tempo do request contar DENTRO da recarga (LA), e nao somar-se a ela.
-    # (_atk0 vem da condicao do laco)
-    # Uma leitura so do last_atk por volta: dois "cat" na mesma condicao podiam
-    # devolver segundos diferentes e liberar o golpe antes da recarga.
+    # _atk0 e o INICIO da volta: o tempo do request conta dentro da recarga.
+    # Uma leitura so do last_atk por volta.
     read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     # PRIORIDADE 1 — CURA: manter a conta viva vem antes da esquiva.
     if { [ -s HEAL ] || [ -s GRASS ]; } && \
@@ -120,8 +102,7 @@ clandmgfight_fight() {
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17; pedido_nao_saiu || _saiu=1
         sleep 0.3s
-        # A cura trocou a pagina: o link da erva (com o nonce ?r=) sai da
-        # pagina nova, nao da anterior, que o jogo ja nao aceita.
+        # A cura trocou a pagina: o link da erva (nonce ?r=) sai da nova.
         erva_gratis clandmgfight "$TMP/SRC" > GRASS
       fi
       if [ -s GRASS ]; then
@@ -131,10 +112,8 @@ clandmgfight_fight() {
         time_exit 17; pedido_nao_saiu || _saiu=1
       fi
       cf_access
-      # HP maximo (FULL) preservado: vem do /train e nao pode ser trocado
-      # pelo HP atual pos-cura, senao o limiar HLHP cai a cada golpe e a
-      # conta "acha" que esta sempre cheia. So a base do dodge (old_HP) muda.
-      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      # FULL nunca e trocado pelo HP atual pos-cura; so a base do dodge muda.
+      # Pedido que nao saiu (pedido_nao_saiu): a acao nao valeu.
       if [ "$_saiu" = 1 ]; then
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_heal
@@ -150,18 +129,14 @@ clandmgfight_fight() {
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17; pedido_nao_saiu || _saiu=1
       cf_access
-      # Pedido que nem chegou ao servidor: a acao nao valeu (ver pedido_nao_saiu).
+      # Pedido que nao saiu (pedido_nao_saiu): a acao nao valeu.
       if [ "$_saiu" = 1 ]; then
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_dodge
       fi
 
-    # ALIADO NA FRENTE: TROCA DE ALVO (troca_aliado, em allies.sh).
-    #
-    # A condicao antiga tinha tambem "inimigo bem mais forte", mas o
-    # agrupamento dos && / || a anulava: na pratica so o aliado trocava, e
-    # essa e a regra do dono do bot. Ela foi escrita como de fato agia, mais
-    # o fogo amigo: so aliados na frente nao vira laco de trocas.
+    # Aliado na frente: troca de alvo (troca_aliado, em allies.sh). So por
+    # aliado (regra do dono), com fogo amigo para nao virar laco de trocas.
     elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
          troca_aliado "$_atk0"; then
       (
@@ -181,27 +156,21 @@ clandmgfight_fight() {
       cf_access
       echo "$_atk0" > last_atk
     else
-      # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO (rele so se alvo grey).
-      # Rele tambem quando a leitura nao tem link de ataque: a luta so
-      # termina pelo luta_acabou, e sem esta releitura o laco dormiria sobre
-      # uma pagina sem acao (rede, sessao, transicao) ate o teto.
+      # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO. So rele com o alvo grey
+      # ou sem link de ataque (senao dormiria sobre pagina sem acao).
       if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
         (
           run_curl_exec "${URL}/clandmgfight" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &
         time_exit 17
-        # A releitura acima ja e a reconfirmacao: sem a marca, o cf_access
-        # relia a mesma pagina de novo (dois pedidos por volta no fim da luta).
+        # A releitura ja e a reconfirmacao (sem a marca, o cf_access relia).
         _reconf=1
         cf_access
         # Sempre: com o alvo cinza e ataque na tela, a releitura seguia sem pausa.
         sleep 1
       else
-        # FIM DO GIRO. Acorda no mesmo instante de antes (LA - _latk), mas
-        # nunca com espera zero: no segundo em que _latk == LA o golpe ainda
-        # nao sai ("-gt") e o laco girava sem dormir esse segundo inteiro
-        # (19 a 37 voltas medidas, ~170 processos por golpe). Nesse segundo a
-        # pagina nao muda, entao nenhuma acao que dependa dela passa a valer.
+        # Fim do giro: nunca espera zero (com _latk == LA o "-gt" ainda nao
+        # deixa o golpe sair e o laco giraria sem dormir).
         _resta=$(( LA - _latk ))
         [ "$_resta" -gt 0 ] || _resta=1
         # Relogio do aparelho voltou (last_atk no futuro): nunca mais que LA.
@@ -217,11 +186,7 @@ clandmgfight_fight() {
   [ -t 1 ] && clear
 }
 
-# RODADAS EM LACO, UMA INSCRICAO POR RODADA.
-#
-# Depois de cada luta a funcao se chamava de novo com fetch_page enterFight +
-# apply_event (outro GET e outro enterFight) + o enterFight do ramo: tres
-# inscricoes por rodada. O apply_event do inicio repetia a do ramo das :25.
+# Rodadas em laco, uma inscricao por rodada.
 clandmgfight_start() {
   cd "$TMP" || return 1
   while :; do
@@ -239,11 +204,8 @@ clandmgfight_start() {
     ) </dev/null > /dev/null 2>&1 &
     time_exit 17
     printf "The clan duel will be started...\n"
-    # Espera ate :29:30 — e so dentro da janela (ver espera_janela, em
-    # info.sh). O laco antigo esperava o relogio MOSTRAR 29:30: chegando
-    # depois de :29:59, a conta ficava parada ate o ramo de desistencia de
-    # :45 e perdia o duelo inteiro. Agora, atrasada, ela segue direto para a
-    # inscricao — o duelo aceita entrada durante :3x, como o ramo abaixo.
+    # Espera ate :29:30, so dentro da janela (espera_janela); atrasada, segue
+    # direto para a inscricao (o duelo aceita entrada durante :3x).
     espera_janela 2500 `janela_alvo 2900`
     (
       run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"

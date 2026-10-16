@@ -3,100 +3,46 @@
 #
 # Compartilhado pelo play.sh e pelo status.sh. Por padrao e SOMENTE LEITURA:
 # desenha o que os workers escreveram em ~/.sls e nao toca em processo nenhum.
+# PANEL_SUPERVISE=1 (play.sh) faz o laco relancar worker morto; o status.sh
+# deixa em 0 e pode ser aberto e fechado sem derrubar conta nenhuma.
 #
-# O play.sh liga a supervisao com PANEL_SUPERVISE=1, que faz o laco relancar
-# worker morto. O status.sh deixa em 0 e por isso pode ser aberto e fechado a
-# vontade, sem derrubar conta nenhuma.
-#
-# Espera receber de quem sourceia: SLSDIR, STATUS_DIR, ACCOUNTS_FILE,
+# Espera de quem sourceia: SLSDIR, STATUS_DIR, ACCOUNTS_FILE,
 # server_tag(), clean_field() e — so quando PANEL_SUPERVISE=1 — launch_worker().
 
 # ============================================================
 #  PAINEL
-#  So faz sentido com terminal. Sob systemd (ou qualquer saida
-#  redirecionada) seria reimpresso a cada 20s no journal; nesse
-#  caso o laco segue supervisionando e relancando, em silencio.
+#  So faz sentido com terminal; sem tty (systemd, saida redirecionada)
+#  o laco segue supervisionando, em silencio.
 # ============================================================
 if [ -t 1 ]; then HAS_TTY=1; else HAS_TTY=0; fi
 
-# Quem sourceia este arquivo define LIBDIR. O padrao existe para o caso de
-# alguem carregar o painel sem ele: sem isto, um "$LIBDIR"/*.sh com a
-# variavel vazia viraria "/*.sh" — a raiz do sistema de arquivos.
+# Padrao para quem carrega sem LIBDIR: vazio, "$LIBDIR"/*.sh viraria "/*.sh".
 : "${LIBDIR:=${SLSDIR:-.}/lib}"
 
 # Cores
 C_RESET='\033[0m';   C_DIM='\033[2m';      C_BOLD='\033[1m'
 C_CYAN='\033[1;36m'; C_GREEN='\033[1;32m'; C_YELLOW='\033[1;33m'
-C_RED='\033[1;31m';  C_MAG='\033[1;35m';   C_WHITE='\033[1;37m'
-C_GOLD='\033[0;33m'; C_GRAY='\033[0;37m';  C_BLUE='\033[1;34m'
+C_RED='\033[1;31m';  C_WHITE='\033[1;37m'
 # 256 cores (Termux, WSL e iSH desenham): nome das contas e nivel.
-C_LARANJA='\033[1;38;5;166m'; C_VERDE='\033[0;32m'; C_LIMAO='\033[1;38;5;154m'
+C_LARANJA='\033[1;38;5;166m'
 C_LINHA='\033[38;5;240m'
-# O caractere ESC de verdade. As constantes acima sao strings com "\033"
-# literal, que so viram cor quando passam pelo printf %b — e o awk do
-# registro de combate imprime direto, sem esse tratamento.
+# ESC de verdade: as constantes acima so viram cor no printf %b, e o awk
+# do registro de combate imprime direto.
 ESC=$(printf '\033')
 
-# Emoji, simbolos simples ou texto.
-#
-# TRES MODOS, e o padrao depende do APARELHO.
-#
+# Emoji, simbolos simples ou texto:
 #     1  emoji        🧡 🔋 ▲ 💰 🥈
 #     2  simbolos     ♥ ◆ ▲ ¤ ○        (1 coluna, fonte comum)
 #     0  texto        HP Eng LV Ouro PR
-#
-# POR QUE O PADRAO NAO E FIXO.
-#
-# O modo 1 depende de o terminal ter FONTE DE EMOJI. No Windows Terminal e
-# no WSL tem, e a linha de status se le de relance. No Termux de aparelho
-# comum — Moto E22 e a faixa de entrada em volta dele — NAO tem: o que
-# aparece nao e o icone, e uma caixa vazia (ou nada), enquanto o "▸" sai
-# certinho. Isso diz exatamente o que falta: o "▸" vem do bloco de formas
-# geometricas, que toda fonte monoespacada cobre; os emoji vem de blocos que
-# so uma fonte COM emoji cobre.
-#
-# Daqui sai a consequencia que importa: TROCAR UM EMOJI POR OUTRO NAO
-# RESOLVE nesse aparelho. Faltando a fonte, faltam todos — o do Unicode 6 e
-# o do Unicode 13, com seletor de variacao e sem. O que resolve e nao
-# depender de emoji ali.
-#
-# Como o alvo deste bot e Termux, o padrao segue o aparelho:
-#
-#     Android/Termux  ->  modo 2 (simbolos)
-#     qualquer outro  ->  modo 1 (emoji)
-#
-# Assim ninguem fica sem icone e ninguem ve caixa vazia.
-#
-# ESCOLHA MANUAL, QUE SEMPRE GANHA DO PADRAO.
-#
-# Nenhuma deteccao sabe quais glifos a fonte do aparelho tem — da para saber
-# que e Android, nao que fonte o usuario instalou. Entao a palavra final e
-# de quem esta olhando a tela:
-#
-#     echo 1 > ~/.sls/emoji     emoji
-#     echo 2 > ~/.sls/emoji     simbolos simples
-#     echo 0 > ~/.sls/emoji     texto puro
-#
-#     ./status.sh -icones       desenha os tres na SUA tela, para escolher
-#                               olhando, e diz qual esta valendo e por que
-#
-# PREFERENCIA GRAVADA, PARA NAO DEPENDER DE COMO A JANELA FOI ABERTA.
-#
-# A variavel de ambiente vale so para o comando em que foi escrita. Quem
-# sobe o bot com "SLS_EMOJI=1 ./play.sh" e depois abre o painel noutra aba
-# com "./status.sh" ve os icones num lugar e texto no outro — e o mesmo
-# painel. Gravando a escolha em ~/.sls/emoji ela passa a valer para os dois,
-# e sobrevive a reinicio e a troca de terminal. A variavel de ambiente
-# continua tendo prioridade, para testar sem mexer no arquivo.
+# O modo 1 precisa de fonte de emoji no terminal; o Termux de aparelho comum
+# (Moto E22 e afins) nao tem e mostra caixa vazia (trocar um emoji por outro
+# nao resolve). Por isso o padrao: Android/Termux -> 2, qualquer outro -> 1.
+# A escolha manual sempre ganha: "echo N > ~/.sls/emoji" vale para play.sh e
+# status.sh e sobrevive a reinicio; SLS_EMOJI=N tem prioridade, so naquele
+# comando. "./status.sh -icones" desenha os tres para escolher olhando.
 
-# E Android?
-#
-# O getprop e programa do sistema Android: nao existe em PC, WSL nem iSH. O
-# PREFIX do Termux e o "uname -o" sao as outras duas pistas, para o caso de
-# o getprop nao estar no PATH daquela sessao. Qualquer uma basta.
-#
-# Em cache: isto e consultado no carregamento e o painel se redesenha a cada
-# poucos segundos.
+# E Android? getprop (so existe no Android), PREFIX do Termux ou "uname -o":
+# qualquer pista basta. Em cache: o painel se redesenha a cada poucos segundos.
 painel_e_android() {
     case "${_ANDROID_CACHE:-}" in
         1) return 0 ;;
@@ -119,9 +65,7 @@ if [ -z "$SLS_EMOJI" ] && [ -r "$HOME/.sls/emoji" ]; then
     SLS_EMOJI_FONTE=arquivo
     read -r SLS_EMOJI < "$HOME/.sls/emoji" 2>/dev/null || :
 fi
-# So 0, 1 e 2 valem como escolha. Lixo no arquivo ou variavel mal escrita
-# nao viram um modo qualquer no chute: caem no automatico, que ao menos
-# acerta o tipo de aparelho. (Use "echo", que nao acrescenta CR ao arquivo.)
+# So 0, 1 e 2 valem; lixo cai no automatico. (Use "echo", que nao poe CR.)
 case "$SLS_EMOJI" in
     0|1|2) ;;
     *)     SLS_EMOJI="" ;;
@@ -131,80 +75,46 @@ if [ -z "$SLS_EMOJI" ]; then
     if painel_e_android; then SLS_EMOJI=2; else SLS_EMOJI=1; fi
 fi
 
-# Carrega um conjunto de icones. Recebe o modo como ARGUMENTO, e nao le a
-# SLS_EMOJI direto, para o "-icones" poder desenhar os tres conjuntos na
-# mesma tela e depois devolver o que estava valendo.
+# Carrega um conjunto de icones. O modo vem por ARGUMENTO para o "-icones"
+# desenhar os tres e depois devolver o que estava valendo.
 painel_icones_carregar() {
-    # HP, energia, nivel, ouro e prata sao TEXTO em todos os modos, cada um
-    # na sua cor (pedido do dono). Os icones abaixo sao so do estado da
-    # conta, das atividades e do rodape.
-    #
-    # S_W: largura em BYTES da coluna do simbolo de estado. Todos os simbolos
-    # de um modo tem os mesmos bytes e colunas, entao o nome cai sempre na
-    # mesma coluna, qualquer que seja o estado.
+    # HP, energia, nivel, ouro e prata sao TEXTO em todos os modos (pedido do
+    # dono). Os simbolos de estado de um modo tem os mesmos bytes e colunas,
+    # para o nome cair sempre na mesma coluna.
     if [ "$1" = "1" ]; then
-        # NENHUM ICONE AQUI USA SELETOR DE VARIACAO (U+FE0F).
-        #
-        # "❤️" e o coracao de TEXTO U+2764 mais um pedido de "desenhe
-        # como emoji"; o terminal que ignora o pedido desenha o glifo de
-        # texto, ou uma caixa. Todos os icones deste conjunto sao codepoint
-        # unico do bloco de pictogramas, onde nao existe forma de texto e
-        # portanto nao ha pedido a ignorar.
-        #
-        # Isso conserta o terminal que TEM fonte de emoji e nao entende o
-        # seletor. NAO conserta o terminal SEM fonte de emoji: la falta o
-        # glifo em si, e a saida e o modo 2.
-        #
-        # Estados: todos de 4 bytes e 2 colunas (o ⚫/⚪ de 3 bytes empurrava o
-        # nome da conta parada uma coluna para a direita).
-        S_W=4; S_COL=2
-        T_COLS=3
-        I_ACT="📋 "; I_EVT="⏰ "; I_ARROW="›"; I_LIVE="💥 "
-        # Tabela: linhas do bloco de desenho de caixa, que toda fonte
-        # monoespacada cobre (o mesmo caso do "▸").
+        # Nenhum icone usa seletor de variacao (U+FE0F): o terminal que ignora
+        # o seletor desenha o glifo de texto ou caixa. Todos sao codepoint
+        # unico do bloco de pictogramas. Estados: 4 bytes e 2 colunas cada.
+        S_COL=2
+        I_ARROW="›"; I_LIVE="💥 "
+        # Tabela: desenho de caixa, que toda fonte monoespacada cobre.
         T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
-        # COLUNAS (nao bytes) do prefixo do bloco "ao vivo". O "💥 " desenha 2
-        # colunas de glifo mais o espaco: 3. Ver LIVE_W no bloco de batalhas.
+        # COLUNAS (nao bytes) do prefixo "ao vivo": 2 do glifo + o espaco.
         LIVE_W=3
         S_ON="🟢"; S_WAIT="🟡"; S_ERR="🔴"; S_OFF="🌑"; S_UNK="🔘"; S_PAUSE="💤"
         A_CLANFIGHT="🏆  Torneio do Clã";   A_ALTARES="🔥  Altares dos Deuses"
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
-        A_CLANCOL="🏅  Coliseu do Clã";     A_MASMORRA="🔑  Masmorra do Clã"
-        A_CLANQUEST="📜  Missões do Clã";   A_BANDEIRAS="🚩  Batalha de Bandeiras"
-        A_COLISEU="🎪  Coliseu";            A_ARENA="💥  Arena"
-        A_CARREIRA="🎓  Carreira";          A_CAVERNA="💎  Caverna"
-        A_CAMPANHA="🌍  Campanha";          A_LIGA="🥇  Liga dos Favoritos"
-        A_TROCA="💱  Troca Prata/Ouro";     A_SABIO="🧙  Cabana do Sábio"
+        A_CLANCOL="🏅  Coliseu do Clã"
+        A_ARENA="💥  Arena"
         A_TORNEQ="⚔️  Torneio de Equipe"
-        A_EVENTO="🎉  Evento Especial";     A_DESCANSO="💤  Descansando"
-        A_NONE="—"
     else
         # Em texto puro byte e coluna sao a mesma coisa.
-        S_W=5; S_COL=5
-        T_COLS=0
-        I_ACT=""; I_EVT=""; I_ARROW=">"; I_LIVE=""
+        S_COL=5
+        I_ARROW=">"; I_LIVE=""
         T_V="|"; T_H="-"; T_X="+"; T_B="+"; T_D="-"; T_RET="~"
         LIVE_W=0
         S_ON="[on]"; S_WAIT="[..]"; S_ERR="[off]"; S_OFF="[--]"; S_UNK="[??]"; S_PAUSE="[||]"
         A_CLANFIGHT="Torneio do Clã";   A_ALTARES="Altares dos Deuses"
         A_VALE="Vale dos Imortais";     A_REI="Rei dos Imortais"
-        A_CLANCOL="Coliseu do Clã";     A_MASMORRA="Masmorra do Clã"
-        A_CLANQUEST="Missões do Clã";   A_BANDEIRAS="Batalha de Bandeiras"
-        A_COLISEU="Coliseu";            A_ARENA="Arena"
-        A_CARREIRA="Carreira";          A_CAVERNA="Caverna"
-        A_CAMPANHA="Campanha";          A_LIGA="Liga dos Favoritos"
-        A_TROCA="Troca Prata/Ouro";     A_SABIO="Cabana do Sábio"
+        A_CLANCOL="Coliseu do Clã"
+        A_ARENA="Arena"
         A_TORNEQ="Torneio de Equipe"
-        A_EVENTO="Evento Especial";     A_DESCANSO="Descansando"
-        A_NONE="-"
 
         # Modo 2: troca so os icones, mantendo os nomes de atividade em texto.
         if [ "$1" = "2" ]; then
-            # Estados de 3 bytes e 1 coluna cada ("×" tinha 2 e "?" 1, e o
-            # nome dessas contas saia fora da coluna).
-            S_W=3; S_COL=1
-            T_COLS=0
-            I_ACT=""; I_EVT=""; I_ARROW="›"; I_LIVE="» "
+            # Estados de 3 bytes e 1 coluna cada.
+            S_COL=1
+            I_ARROW="›"; I_LIVE="» "
             T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
             LIVE_W=2
             S_ON="●"; S_WAIT="◐"; S_ERR="✕"; S_OFF="○"; S_UNK="◇"; S_PAUSE="‖"
@@ -214,33 +124,12 @@ painel_icones_carregar() {
 
 painel_icones_carregar "$SLS_EMOJI"
 
-# Largura do terminal.
-#
-# CORRECAO: o painel era fixo em 68 colunas. A tela de um celular no Termux
-# tem por volta de 56, entao cada conta quebrava no meio ("Ouro 3" numa
-# linha e "16" na seguinte), o rodape partia "Proximo: Eve / nto especial" e
-# o painel virava um bloco ilegivel.
-#
-# Tres fontes, da mais confiavel para a menos: stty (sempre presente e le o
-# tamanho REAL da janela), tput (precisa do ncurses) e $COLUMNS (so existe
-# em shell interativo, e nao acompanha o giro da tela).
-# DENSIDADE DA TELA (DPI) DO APARELHO.
-#
-# So serve de PALPITE, e so quando nao da para medir a janela de verdade
-# (painel escrito em arquivo, pipe, tmux sem tty). A medida do stty sempre
-# ganha: quem decide quantas colunas cabem e o tamanho da fonte do Termux,
-# nao a densidade — dois aparelhos de 400 dpi dao numeros diferentes se a
-# fonte for diferente. O DPI so diz de que TAMANHO de aparelho estamos
-# falando, para o palpite nao cair nas 80 colunas de um monitor de PC.
-#
-# O getprop e leitura de propriedade do sistema: existe no Termux, nao pede
-# root e nao mexe em nada. Fora do Android ele simplesmente nao existe.
-#
+# Densidade da tela (DPI). So serve de PALPITE quando nao da para medir a
+# janela (arquivo, pipe, tmux sem tty); a medida do stty sempre ganha.
+# getprop le propriedade do sistema, sem root; fora do Android nao existe.
 #   persist.sys.lcd_density   densidade escolhida pelo usuario ("wm density")
 #   ro.sf.lcd_density         densidade de fabrica
-#
-# O resultado fica em cache: densidade nao muda com o painel aberto, e o
-# painel se redesenha a cada 5 segundos.
+# Em cache: densidade nao muda com o painel aberto.
 painel_dpi() {
     case "${_DPI_CACHE:-}" in
         ''|*[!0-9]*) ;;
@@ -260,16 +149,13 @@ painel_dpi() {
     return 1
 }
 
-# Colunas presumidas a partir da densidade, com a fonte padrao do Termux
-# numa tela de celular comum (1080 px de largura).
-#
+# Colunas presumidas pela densidade (fonte padrao do Termux, tela de 1080 px):
 #   >= 480 dpi   38   telas muito densas (1440p em 6")
 #   >= 400 dpi   42   a maioria dos 1080p atuais
-#   >= 340 dpi   48   MOTOROLA E SIMILARES (346-360 dpi) <- faixa pedida
+#   >= 340 dpi   48   Motorola e similares (346-360 dpi)
 #   >= 280 dpi   56   720p e telas com densidade reduzida na mao
 #    < 280 dpi   64   tablet ou densidade bem baixa
-#
-# Sem getprop (PC, WSL, iSH) devolve o padrao recebido.
+# Sem getprop (PC, WSL, iSH) devolve o padrao recebido em $1.
 painel_cols_dpi() {
     _cd=$(painel_dpi) || { printf '%s' "$1"; return 0; }
     if   [ "$_cd" -ge 480 ]; then printf '38'
@@ -281,12 +167,9 @@ painel_cols_dpi() {
     unset _cd
 }
 
-# Calcula a largura e grava em PAINEL_LARG / PAINEL_LARG_FONTE.
-#
-# Funcao SEM subshell de proposito: chamada como "$(painel_largura)" ela
-# roda num processo filho e tudo que ela descobre — a origem da largura, o
-# cache do DPI — morre com ele. O laco do painel chama esta aqui direto, o
-# que tambem economiza um fork a cada redesenho.
+# Calcula a largura em PAINEL_LARG e a origem em PAINEL_LARG_FONTE.
+# SEM subshell de proposito: em "$(...)" a origem e o cache do DPI morreriam
+# no processo filho, e custaria um fork por redesenho.
 painel_largura_calc() {
     # 1) Override do momento: SLS_COLS=50 ./status.sh
     PAINEL_LARG_FONTE=SLS_COLS
@@ -295,11 +178,8 @@ painel_largura_calc() {
         *) PAINEL_LARG="$SLS_COLS"; return 0 ;;
     esac
 
-    # 2) Largura fixada pelo usuario, que sobrevive a reinicio:
-    #        echo 46 > ~/.sls/cols
-    #    Serve para fonte grande no Termux, onde a deteccao acerta o numero
-    #    de colunas da janela mas o texto ainda estoura. Mesma ideia do
-    #    ~/.sls/emoji. Rode "./status.sh -cols" para achar o numero certo.
+    # 2) Largura fixada pelo usuario (echo 46 > ~/.sls/cols), para fonte
+    #    grande no Termux. "./status.sh -cols" acha o numero certo.
     PAINEL_LARG_FONTE=arquivo
     if [ -r "$HOME/.sls/cols" ]; then
         read -r _pw < "$HOME/.sls/cols" 2>/dev/null || _pw=""
@@ -309,12 +189,10 @@ painel_largura_calc() {
         esac
     fi
 
-    # 3) Medida de verdade, da mais confiavel para a menos: stty (sempre
-    #    presente e le o tamanho REAL da janela), tput (precisa do ncurses)
-    #    e $COLUMNS (so existe em shell interativo, e nao acompanha o giro
-    #    da tela).
+    # 3) Medida de verdade: stty (le a janela REAL), tput (precisa do ncurses)
+    #    e $COLUMNS (so em shell interativo, nao acompanha o giro da tela).
     PAINEL_LARG_FONTE=stty
-    # "linhas colunas": o corte e do shell (era um cut a cada redesenho).
+    # "linhas colunas": o corte e do shell, sem cut.
     _pw=$(stty size 2>/dev/null); _pw=${_pw##* }
     case "$_pw" in ''|*[!0-9]*) _pw="" ;; esac
     if [ -z "$_pw" ] && command -v tput > /dev/null 2>&1; then
@@ -328,12 +206,8 @@ painel_largura_calc() {
         case "$_pw" in ''|*[!0-9]*) _pw="" ;; esac
     fi
 
-    # 4) Nada foi medido: palpite pela densidade da tela.
-    #
-    #    CORRECAO: aqui o padrao era 80 — largura de monitor. Num celular
-    #    isso desenhava o painel largo demais e o terminal quebrava cada
-    #    linha ao meio, que e o "nao cabe na tela" tipico de quando o painel
-    #    roda sem tty (dentro do play.sh redirecionado, no tmux, num log).
+    # 4) Nada medido: palpite pela densidade (80, de monitor, quebraria cada
+    #    linha no celular).
     if [ -z "$_pw" ]; then
         PAINEL_LARG_FONTE=dpi
         _pw=$(painel_cols_dpi 80)
@@ -346,11 +220,8 @@ painel_largura_calc() {
     return 0
 }
 
-# ./status.sh -cols — regua de calibracao.
-#
-# Mostra a densidade, de onde veio a largura e desenha uma regua do tamanho
-# exato do painel. Se a regua couber na tela sem quebrar, o painel cabe. Se
-# quebrar, o numero certo e a coluna onde ela quebrou — e e so fixar.
+# ./status.sh -cols — regua de calibracao: se a regua couber sem quebrar, o
+# painel cabe; se quebrar, o numero certo e a coluna onde quebrou.
 painel_calibrar() {
     painel_largura_calc
     _cl_w="$PAINEL_LARG"
@@ -399,15 +270,8 @@ painel_icones_nome() {
     esac
 }
 
-# ./status.sh -icones — escolha do conjunto de icones OLHANDO.
-#
-# Nenhuma deteccao sabe quais glifos a fonte do aparelho tem. O padrao
-# automatico so sabe que e Android, e acerta o caso comum; quem instalou uma
-# fonte com emoji no Termux, ou prefere texto no PC, decide aqui.
-#
-# Desenha os tres conjuntos com numeros de verdade, do tamanho que aparecem
-# no painel. O certo e o que sair INTEIRO: sem caixa vazia, sem quadrado e
-# com as colunas do mesmo comprimento nas tres linhas.
+# ./status.sh -icones — desenha os tres conjuntos com numeros de verdade para
+# escolher OLHANDO: o certo e o que sair inteiro, sem caixa vazia.
 painel_icones() {
     _ic_atual="$SLS_EMOJI"
 
@@ -429,9 +293,7 @@ painel_icones() {
     printf '\nOs tres, desenhados agora nesta tela:\n\n'
     for _ic_m in 1 2 0; do
         painel_icones_carregar "$_ic_m"
-        # Os sinais de estado de conta mudam de conjunto, e no modo 1 sao
-        # emoji: se a fonte nao os tiver, a coluna de estado do painel vira
-        # uma fileira de caixas.
+        # No modo 1 os estados sao emoji: sem a fonte, viram caixas.
         printf '  %s  %-9s %s %s %s %s %s %s  %s\n' \
             "$_ic_m" "`painel_icones_nome "$_ic_m"`" \
             "$S_ON" "$S_WAIT" "$S_ERR" "$S_OFF" "$S_UNK" "$S_PAUSE" "$A_ARENA"
@@ -449,10 +311,8 @@ painel_icones() {
     unset _ic_atual _ic_m
 }
 
-# Desenha a linha separadora na largura da tela: cheia, ou tracejada com $2.
-#
-# Conta CARACTERES, e nao bytes: o "─" tem 3 bytes e 1 coluna, e o antigo
-# "%.*s" cortaria a linha a um terco da tela.
+# Linha separadora na largura da tela: cheia, ou tracejada com $2.
+# Conta CARACTERES, nao bytes: o "─" tem 3 bytes e 1 coluna.
 painel_regua() {
     _rn=$1
     _rc="$T_H"; [ -n "$2" ] && _rc="$T_D"
@@ -465,17 +325,14 @@ painel_regua() {
 # Separador dos campos que o painel_loop manda ao painel_render.
 _US=$(printf '\037')
 
-# Classes de bytes do UTF-8 para o painel_render contar colunas. Montadas uma
-# vez, ao carregar: eram quatro $(printf) a cada desenho, oito por redesenho.
+# Classes de bytes do UTF-8 para o painel_render contar colunas (uma vez so).
 _PR_CONT=$(printf '[\200-\277]');  _PR_LEAD2=$(printf '[\300-\337]')
 _PR_LEAD3=$(printf '[\340-\357]'); _PR_LEAD4=$(printf '[\360-\367]')
 
 # DESENHO DA TABELA E DO RODAPE — UM AWK SO.
 #
-# O printf do shell alinha por BYTES: "Clã", "·" e o emoji tem mais bytes que
-# colunas, e as barras da tabela sairiam tortas. Aqui a largura e contada em
-# colunas (bytes, menos os de continuacao do UTF-8, mais um por emoji) e as
-# colunas de numeros tem a largura do maior valor.
+# O printf do shell alinha por BYTES ("Clã", "·", emoji); aqui a largura e
+# contada em colunas e as colunas de numeros tem a largura do maior valor.
 #
 # Entrada, um registro por linha, campos separados por $_US:
 #   R estado simbolo nome aba hp hp_max energia nivel ouro prata aviso cor
@@ -483,12 +340,11 @@ _PR_LEAD3=$(printf '[\340-\357]'); _PR_LEAD4=$(printf '[\360-\367]')
 #   L solida|tracejada              linha separadora
 #   T cor texto                     texto cortado na largura da tela
 # As linhas R sao desenhadas juntas, como tabela, no fim da entrada.
-#
-# TRES FORMATOS, do mais largo ao mais estreito:
+# Formatos, do mais largo ao mais estreito (vale o primeiro em que o nome
+# ainda cabe com 10 colunas):
 #   barras   "● Nome │ 92% │ 1790/1810 │ 87 │ 4.793 │ 699,7M"
 #   espacos  "● Nome   92% 1790/1810 87 4.793 699,7M"
 #   empilha  "● Nome › aba" e os numeros na linha de baixo
-# Vale o primeiro em que o nome ainda cabe com 10 colunas.
 painel_render() {
     LC_ALL=C awk -v fs="$_US" -v larg="$LARG" -v scol="$S_COL" -v esc="$ESC" \
         -v son="$S_ON" -v sup="$S_WAIT" -v soff="$S_ERR" -v seta="$I_ARROW" \
@@ -678,11 +534,8 @@ EVENTOS="0030|Coliseu
 2155|Imortais
 2225|Rei dos Imortais"
 
-# A conta esta AGORA numa pagina de evento?
-#
-# Devolve o nome do evento, ou vazio. E a unica fonte de verdade sobre o
-# evento estar em andamento: o caminho vem do $TMP/pagina, gravado a cada
-# requisicao pelo proprio worker.
+# A conta esta AGORA num evento? $1 e o caminho de $TMP/pagina; devolve o
+# nome do evento em _EVP, ou vazio.
 evento_da_pagina_v() {
     case "$1" in
         /altars*)       _EVP="$A_ALTARES" ;;
@@ -694,28 +547,13 @@ evento_da_pagina_v() {
         *)              _EVP='' ;;
     esac
 }
-evento_da_pagina() { evento_da_pagina_v "$1"; printf '%s' "$_EVP"; }
 
 # O codigo em disco e mais novo que ESTE processo de painel?
-#
-# POR QUE ISTO EXISTE
-#
-# O painel le o panel.sh uma unica vez, quando sobe. Depois de um git pull os
-# arquivos no disco sao novos, mas um painel que ja estava aberto continua
-# desenhando com o codigo anterior — e nao ha nada na tela que diga isso.
-#
-# Aparece mais no WSL do que no Termux por causa do jeito de usar: o README
-# recomenda tmux, e o ./status.sh fica num painel do tmux que sobrevive a
-# tudo — inclusive ao ./stop.sh, que so encerra os workers e o play.sh. No
-# Termux o painel costuma morrer junto com a janela, entao o problema nao
-# aparece.
-#
-# A data de /proc/$$ e a hora em que este processo comecou. O teste "-nt" e
-# interno ao shell: 47 comparacoes por desenho, nenhum processo criado.
+# O painel le o panel.sh so ao subir; depois de um git pull um painel aberto
+# (no tmux, que sobrevive ao ./stop.sh) seguiria com o codigo velho sem aviso.
+# A data de /proc/$$ e a hora em que o processo comecou; "-nt" e do shell.
 painel_desatualizado() {
-    # Varre a raiz (comandos) e o lib/ (motor): depois da reorganizacao os
-    # modulos mudaram de lugar, e olhar so a raiz deixaria de perceber um
-    # "git pull" que so tocou no motor.
+    # Raiz (comandos) e lib/ (motor): um pull pode tocar so no motor.
     for _pd_f in "$SLSDIR"/*.sh "$LIBDIR"/*.sh; do
         [ -f "$_pd_f" ] || continue
         if [ "$_pd_f" -nt "/proc/$$" ]; then unset _pd_f; return 0; fi
@@ -725,9 +563,7 @@ painel_desatualizado() {
 }
 
 # "HHMM" -> minutos desde a meia-noite, em $_HM. Sem criar processo.
-#
-# O zero a esquerda e removido na mao: "$((10#$_h))" e bashism (o dash e o
-# toybox recusam) e sem isso varias implementacoes leem "08" como octal.
+# Zero a esquerda tirado na mao: "$((10#x))" e bashism e "08" viraria octal.
 _hhmm_min() {
     _hm_t="$1"
     case "$_hm_t" in ????) ;; *) _HM=-1; return 1 ;; esac
@@ -743,25 +579,19 @@ _hhmm_min() {
     return 0
 }
 
-# Percorre UMA lista de eventos e devolve, em variaveis:
+# Percorre UMA lista de eventos ($1 lista, $2 agora em minutos, $3 duracao
+# da janela do evento) e devolve, em variaveis:
 #   _SC_NOW  nome do evento acontecendo agora (vazio se nenhum)
 #   _SC_NOW_T  minuto em que ele comecou
 #   _SC_T    minuto do proximo evento
 #   _SC_N    nome do proximo
 #   _SC_HM   horario "HHMM" do proximo
-#
-# CORRECAO: a versao anterior parava no PRIMEIRO horario maior que agora,
-# confiando que a lista estivesse ordenada. Aqui procura o MENOR, entao uma
-# agenda fora de ordem — a pagina /fights/ nao vem em ordem cronologica —
-# deixa de apontar um evento qualquer.
-#
-# $1 lista, $2 agora em minutos, $3 duracao da janela do evento
+# Procura o MENOR horario futuro: a agenda de /fights/ nao vem em ordem.
 _scan_eventos() {
     _SC_NOW=""; _SC_NOW_T=0; _SC_T=""; _SC_N=""; _SC_HM=""
     _sc_1t=""; _sc_1n=""; _sc_1hm=""
     _sc_oifs=$IFS
-    # IFS so de nova linha: sem isto o "for" divide tambem nos espacos e
-    # nomes como "Coliseu do Cla" viram tres iteracoes.
+    # IFS so de nova linha: "Coliseu do Cla" nao pode virar tres iteracoes.
     IFS='
 '
     for _sc_e in $1; do
@@ -794,29 +624,15 @@ _scan_eventos() {
 # A linha de evento do rodape: "Proximo: Nome  HH:MM BRT  (em Xh Ym)" ou,
 # enquanto um evento corre, "AGORA: Nome".
 #
-# DUAS FONTES, E A MAIS PROXIMA VENCE.
-#
-# CORRECAO (painel apontando um evento fora de hora): a agenda do jogo
-# (~/.sls/agenda, lida de /fights/) substituia por completo a lista fixa. Se
-# ela viesse sem um dos eventos — nome grafado de outro jeito, horario que a
-# pagina nao mostrou como "HH:MM BRT", agenda escrita antes do evento entrar
-# na pagina — aquele evento simplesmente sumia do painel, e o rodape pulava
-# direto para o seguinte. Visto em producao: faltando 22 minutos para o Vale
-# das 16:00, o painel ja anunciava o Torneio das 19:00.
-#
-# Agora as duas listas sao consultadas e vale a mais proxima. A lista fixa
-# sai do proprio case de horarios do run.sh, ou seja e o que o bot REALMENTE
-# vai fazer — com ela no jogo o painel nunca pode anunciar um evento mais
-# tarde do que a proxima acao das contas.
-#
-# Quando as duas apontam o mesmo evento (a fixa marca a inscricao, 5 min
-# antes; a agenda marca a hora oficial), prevalece a agenda: e o nome e o
-# horario que o jogador ve no jogo.
+# Duas fontes, e a mais proxima vence: a agenda do jogo (~/.sls/agenda, lida
+# de /fights/) pode vir sem um evento, e a lista fixa (o case do run.sh) e o
+# que o bot realmente vai fazer. Quando as duas apontam o mesmo evento,
+# prevalece a agenda: nome e horario que o jogador ve no jogo.
 proximo_evento() {
     _pe_agenda=""
     _pe_ag="$HOME/.sls/agenda"
-    # No painel_loop, a agenda e a hora de Brasilia ja vem do redesenho
-    # (painel_relogio): sem stat, cat e date aqui. Fora dele, como antes.
+    # No painel_loop a agenda e a hora de Brasilia ja vem do painel_relogio
+    # (sem stat, cat e date aqui); fora dele, le direto.
     if [ -n "$_PE_OK" ]; then
         if [ -n "$_PE_AG_MT" ]; then
             _pe_idade=$(( _agora_ep - _PE_AG_MT ))
@@ -833,12 +649,8 @@ proximo_evento() {
     fi
     [ "$_pe_ai" -lt 0 ] && _pe_ai=0
 
-    # DUAS JANELAS, PORQUE AS DUAS LISTAS MARCAM COISAS DIFERENTES.
-    #
-    # A lista fixa guarda o minuto da INSCRICAO, 5 minutos antes; a agenda do
-    # jogo guarda a hora OFICIAL do evento. Usar a mesma janela nas duas faria
-    # o "ate" mudar sozinho quando a agenda assumisse — como se o evento
-    # tivesse ganhado 5 minutos no meio do caminho.
+    # Duas janelas: a lista fixa marca a INSCRICAO (5 min antes), a agenda a
+    # hora OFICIAL. A mesma janela faria o "ate" mudar quando a agenda assumisse.
     _pe_dur=${FUNC_evento_min:-10}
     case "$_pe_dur" in ''|*[!0-9]*) _pe_dur=10 ;; esac
     _pe_jan=$(( _pe_dur + 5 ))
@@ -854,18 +666,8 @@ proximo_evento() {
         _pe_at=$_SC_T; _pe_an=$_SC_N; _pe_ahm=$_SC_HM
     fi
 
-    # EVENTO VISTO NAS CONTAS TEM PRIORIDADE SOBRE O RELOGIO.
-    #
-    # CORRECAO (o painel voltando a apontar o proximo com o atual em curso):
-    # a janela do "AGORA" era calculada por FUNC_evento_min, que vale 10 por
-    # PALPITE — nao ha como o bot descobrir a duracao sozinho. Passados os 15
-    # minutos (5 de inscricao + 10), o rodape avancava mesmo com as contas
-    # ainda lutando. E o painel nem chega a ler o config.cfg das contas,
-    # entao ajustar a chave la nao mudava nada aqui.
-    #
-    # Agora, quando alguma conta esta numa pagina de evento, e isso que vale.
-    # Nao e estimativa: e a pagina que o worker acabou de pedir. Some sozinho
-    # quando a ultima conta sai do evento, sem depender de duracao nenhuma.
+    # Conta vista numa pagina de evento tem prioridade sobre o relogio: a
+    # duracao (FUNC_evento_min) e so palpite, e o painel nao le o config.cfg.
     if [ -n "$PANEL_EVENTO_ATIVO" ]; then
         printf "AGORA: %s" "$PANEL_EVENTO_ATIVO"
         unset _pe_agenda _pe_ag _pe_idade _pe_ai _pe_jan _pe_dur \
@@ -875,9 +677,7 @@ proximo_evento() {
 
     # ACONTECENDO AGORA — o painel so avanca depois que o evento termina.
     if [ -n "$_pe_anow" ] || [ -n "$_pe_fnow" ]; then
-        # Ate quando: o inicio da janela mais a duracao. Sem isso o rodape
-        # diz que ha evento mas nao quanto falta para o painel voltar a
-        # apontar o proximo.
+        # Ate quando: o inicio da janela mais a duracao.
         if [ -n "$_pe_anow" ]; then _pe_fim=$(( _pe_anow_t + _pe_dur ))
         else                         _pe_fim=$(( _pe_fnow_t + _pe_jan ))
         fi
@@ -921,26 +721,8 @@ proximo_evento() {
           _pe_t _pe_n _pe_hm
 }
 
-
-# Le a primeira linha de um arquivo para $_LIDO, SEM criar processo.
-#
-# CORRECAO (SIGKILL / "signal 9"): cada `cat arquivo` numa substituicao de
-# comando e um fork+exec. O painel fazia ~12 por conta a cada desenho
-# (estado, simbolo, aba, combate, status, pid) — com 6 contas, uma rajada
-# de ~72 processos a cada 20 segundos, no mesmo instante em que os workers
-# estavam requisitando. Isso sozinho ja passava do limite de 32 processos
-# filhos do Android 12+.
-#
-# O "read" e builtin do shell: zero processos. O "|| :" existe porque o
-# arquivo e gravado com printf sem quebra de linha, e nesse caso o read
-# preenche a variavel mas devolve 1.
-# Limpa um campo do accounts.conf para $_CF, SEM criar processo.
-#
-# CORRECAO: o clean_field faz `printf | tr -d | tr -d` — um subshell e dois
-# tr por chamada. O painel o chamava duas vezes por conta (servidor e
-# usuario): 36 processos por desenho, so para tirar um \r que quase nunca
-# existe. Aqui a limpeza e feita com substituicao de parametro, que e
-# interna ao shell.
+# Limpa os \r do fim de um campo do accounts.conf para $_CF, SEM criar
+# processo (o clean_field usa subshell e dois tr, por conta, a cada desenho).
 _CR=$(printf '\r')
 limpa_campo() {
     _CF="$1"
@@ -952,6 +734,10 @@ limpa_campo() {
     done
 }
 
+# Le a primeira linha de um arquivo para $_LIDO, SEM criar processo: um `cat`
+# por arquivo, por conta, a cada desenho passava do limite de ~32 processos do
+# Android. O "|| :" e porque o arquivo e gravado sem quebra de linha final, e
+# o read devolve 1 mesmo preenchendo a variavel.
 ler_arq() {
     _LIDO=""
     [ -r "$1" ] || return 0
@@ -959,13 +745,22 @@ ler_arq() {
     return 0
 }
 
-# Nome da aba em que a conta esta agora.
-#
-# O fetch_page grava o caminho acessado em $TMP/pagina, entao aqui e so
-# traduzir. Descanso deixa de ser um rotulo generico: quando a conta volta
-# para "/", o painel mostra "Pagina Principal", que e onde ela de fato esta.
-# Mesmo resultado em _ABA, sem copiar o shell: o painel chama isto para cada
-# conta a cada redesenho, e o $(aba_de) custava um processo por conta.
+# Espera antes de relancar um worker morto.   relanca_espera N DESDE
+#   N = relancamentos seguidos (.relancado_n), DESDE = segundos desde o ultimo.
+# Em _RL_N a contagem (zera apos 15 min sem relancar) e em _RL_E a espera:
+# 1 min nos dois primeiros, depois 2, 5 e 10 min — um worker que cai ao
+# subir nao fica gastando login e processos todo minuto. Sem processo: o
+# painel chama isto a cada desenho para cada conta parada.
+relanca_espera() {
+    _RL_N=$1
+    case "$_RL_N" in ''|*[!0-9]*) _RL_N=0 ;; esac
+    case "$2" in ''|*[!0-9-]*) ;; *) [ "$2" -ge 900 ] && _RL_N=0 ;; esac
+    case "$_RL_N" in 0|1) _RL_E=60 ;; 2) _RL_E=120 ;; 3) _RL_E=300 ;; *) _RL_E=600 ;; esac
+}
+
+# Nome da aba em que a conta esta agora, em _ABA, traduzido de $1/pagina
+# (gravado pelo fetch_page); "/" vira "Pagina Principal". Sem $(...): o
+# painel chama isto para cada conta a cada redesenho.
 aba_de_v() {
     ler_arq "$1/pagina"; _abp="$_LIDO"
     case "$_abp" in
@@ -981,8 +776,7 @@ aba_de_v() {
         /clancommand*)   _ABA="Torneio de Equipe" ;;
         /clanfight*)      _ABA="Torneio dos Clãs" ;;
         /clandungeon*)    _ABA="Masmorra do Clã" ;;
-        # /clandmgfight e o duelo do cla (evento de 09:25 e 21:25), outra
-        # atividade — vinha rotulado como Masmorra e confundia o painel.
+        # /clandmgfight e o duelo do cla (09:25 e 21:25), nao a masmorra.
         /clandmgfight*)   _ABA="Duelo do Clã" ;;
         /clan/*quest*)    _ABA="Missões do Clã" ;;
         /clan/*built*)    _ABA="Estátua do Clã" ;;
@@ -994,8 +788,7 @@ aba_de_v() {
         /league*)         _ABA="Liga dos Favoritos" ;;
         /trade*)          _ABA="Troca" ;;
         /effshop*|/lab*)  _ABA="Aprimoramento" ;;
-        # /questrnd antes de /quest*: o padrao das missoes tambem casa
-        # "/questrnd", e a Missao Aleatoria nunca aparecia.
+        # /questrnd antes de /quest*, que tambem o casaria.
         /questrnd*)       _ABA="Missão Aleatória" ;;
         /quest*)          _ABA="Missões" ;;
         /collector*)      _ABA="Coleções" ;;
@@ -1014,26 +807,17 @@ aba_de_v() {
     esac
     unset _abp
 }
-aba_de() { aba_de_v "$1"; echo "$_ABA"; }
 
-# Relatorio de combate: HP ao vivo e dano recebido.
-#
-# Os modulos de combate mantem os arquivos HP e old_HP no diretorio da
-# conta durante a luta. Comparando os dois sai o dano levado desde a
-# ultima acao, sem precisar alterar os sete modulos de batalha.
-#
-# Devolve uma das formas:
+# Relatorio de combate em _CBT: compara HP (ou USH) com old_HP, que os
+# modulos de combate mantem no diretorio da conta durante a luta.
 #   "VOCE ESTA MORTO"            HP zerado
 #   "-142 de dano recebido"      perdeu vida desde a ultima leitura
 #   "+380 recuperado"            curou
 #   ""                           fora de combate
 combate_de_v() {
     _cbd="$1"
-    # Antes: `cat X | tr -cd 0-9` — dois processos por arquivo, quatro por
-    # conta. O read e builtin e o case valida sem chamar o tr.
-    # O Coliseu do Cla e as Bandeiras gravam o HP da conta em USH, nao em HP
-    # (o old_HP e o mesmo nos dois casos): sem isto o ao vivo dessas duas
-    # batalhas nao mostrava HP nenhum. Vale o mais recente dos dois.
+    # Coliseu do Cla e Bandeiras gravam o HP em USH, nao em HP (o old_HP e o
+    # mesmo): vale o mais recente dos dois.
     if [ -f "$_cbd/USH" ] && { [ ! -f "$_cbd/HP" ] || [ "$_cbd/USH" -nt "$_cbd/HP" ]; }; then
         ler_arq "$_cbd/USH"
     else
@@ -1053,9 +837,7 @@ combate_de_v() {
 
     if [ -n "$_cbo" ] && [ "$_cbo" -gt 0 ] 2>/dev/null; then
         _cbf=$((_cbh - _cbo))
-        # Na tela do celular a frase por extenso empurra o numero para fora
-        # do campo de visao. Com o registro da luta logo abaixo dizendo quem
-        # bateu e com quanto, a forma curta nao perde nada.
+        # No celular, forma curta: o registro da luta logo abaixo da o detalhe.
         if [ "${ESTREITO:-0}" = 1 ]; then
             case "$_cbf" in
                 -*) _CBT="HP $_cbh ($_cbf)" ;;
@@ -1074,28 +856,15 @@ combate_de_v() {
     fi
     unset _cbd _cbh _cbo _cbf
 }
-combate_de() { combate_de_v "$1"; printf '%s' "$_CBT"; }
 
 # ============================================================
 #  REGISTRO DA BATALHA AO VIVO
-#
-#  O painel mostrava so o HP e o dano do ultimo golpe. Isso diz QUANTO a
-#  conta levou, nunca DE QUEM nem COM O QUE — e e justamente isso que se
-#  quer ver enquanto o evento corre: quem esta batendo, se o golpe foi
-#  critico, que habilidade, erva ou pedra a conta usou.
-#
-#  A pagina da luta ja esta no disco: cada modulo de batalha grava o HTML
-#  que acabou de baixar no diretorio da conta. O painel le esse arquivo — o
-#  mesmo que o modulo esta usando — e nao custa nenhuma requisicao nova,
-#  nem exige alterar os sete modulos de combate.
+#  Quem bate na conta, critico, habilidade, erva ou pedra. Le o HTML que o
+#  modulo de batalha ja gravou no diretorio da conta: nenhuma requisicao nova.
 # ============================================================
 
-# Arquivo da pagina de luta mais recente desta conta.
-#
-# Cada modulo usa um nome proprio (SRC no torneio/rei/masmorra, src.html
-# nos altares, ccol_src no coliseu do cla, e assim por diante). Em vez de
-# adivinhar qual evento esta rodando, vale o mais novo: e sempre o da luta
-# em andamento.
+# Arquivo da pagina de luta mais recente desta conta: cada modulo usa um nome
+# (SRC, src.html, ccol_src...), e o mais novo e o da luta em andamento.
 pagina_batalha() {
     _pb_f=""
     for _pb_c in "$1/SRC" "$1/src.html" "$1/ccol_src" "$1/col_src" \
@@ -1107,26 +876,15 @@ pagina_batalha() {
     unset _pb_c _pb_f
 }
 
-# As ultimas linhas do combate que dizem respeito A ESTA CONTA.
-#
-# Entram tres coisas, e so elas:
-#
+# As ultimas linhas do combate que dizem respeito A ESTA CONTA:
 #   quem acertou a conta   "Bahamut acertar Voce por 2864 critico"
 #   o que a conta usou     "Voce usou Posicao defensiva"
 #   a habilidade de quem   "Bahamut usou Contra ataque"
 #   esta batendo nela
-#
-# Golpe de terceiro em terceiro — "Stallone Blood acertar Bahamut" — fica
-# de fora de proposito: numa batalha de cla o log inteiro nao caberia na
-# tela do celular, e nao e o que se quer acompanhar. Por isso o "usou" so
-# passa quando o nome ja apareceu acertando a conta: e a habilidade de quem
-# esta batendo nela, nao a de um duelo alheio ao lado.
-#
-# O log do jogo vem do mais novo para o mais antigo, entao as primeiras
-# linhas que casam ja sao as ultimas acoes.
-#
-# Um unico processo (awk) por conta em luta, e so enquanto ha luta: o bloco
-# ao vivo so e montado para quem esta com HP/old_HP no disco.
+# Golpe entre terceiros fica de fora (numa batalha de cla nao caberia na
+# tela); por isso o "usou" so passa de quem ja apareceu acertando a conta.
+# O log do jogo vem do mais novo para o mais antigo.
+# $1 pasta da conta, $2 linhas (padrao 2), $3 largura (padrao 60, minimo 24).
 combate_log() {
     _cl_f=`pagina_batalha "$1"`
     [ -n "$_cl_f" ] || return 0
@@ -1134,8 +892,7 @@ combate_log() {
     _cl_w="${3:-60}"
     [ "$_cl_w" -lt 24 ] && _cl_w=24
 
-    # Cores montadas com o ESC de verdade: quem imprime aqui e o awk, que
-    # nao expande "\033" como o printf %b faz no resto do painel.
+    # ESC de verdade: quem imprime aqui e o awk, que nao expande "\033".
     awk -v lim="$_cl_n" -v larg="$_cl_w" -v pre="      " \
         -v cLevou="${ESC}[1;31m" -v cUsou="${ESC}[1;32m" \
         -v cDeles="${ESC}[0;37m" -v cFim="${ESC}[0m" '
@@ -1205,14 +962,10 @@ combate_log() {
 PANEL_LOG_LINHAS="${PANEL_LOG_LINHAS:-2}"
 case "$PANEL_LOG_LINHAS" in ''|*[!0-9]*) PANEL_LOG_LINHAS=2 ;; esac
 
-# RELOGIO E AGENDA DO RODAPE, PREPARADOS NO REDESENHO.
-#
-# O proximo_evento roda a cada redesenho e pedia ao sistema, toda vez, a
-# hora de Brasilia (date), a idade da agenda (stat) e a agenda (cat). Aqui:
-#   - a diferenca de Brasilia para o epoch e lida uma vez por hora (um date);
-#     a hora sai do mesmo date do redesenho;
-#   - a agenda e relida quando o arquivo fica mais novo que a ultima leitura
-#     e, por garantia, a cada 30 redesenhos.
+# Relogio e agenda do rodape, preparados no redesenho (sem date/stat/cat no
+# proximo_evento): a diferenca Brasilia-epoch e lida uma vez por hora; a
+# agenda e relida quando o arquivo fica mais novo que a ultima leitura e, por
+# garantia, a cada 30 redesenhos.
 painel_relogio() {
     if [ -z "$_PE_BAHIA" ] || [ $(( _agora_ep - ${_PE_BAHIA_EM:-0} )) -ge 3600 ]; then
         set -- `TZ=America/Bahia date '+%s %H %M %S'`
@@ -1233,13 +986,9 @@ painel_relogio() {
     unset _pr_ag _pr_mk
 }
 
-# CONTA VIVA, SEM UM "tr" POR CONTA A CADA REDESENHO.
-#
-# O worker_vivo le o /proc/PID/cmdline com um tr para confirmar que o PID e
-# o worker DESTA conta. O cmdline de um processo vivo nao muda, entao basta
-# confirmar uma vez: depois o kill -0 (do proprio shell) diz se ele segue
-# vivo. A checagem completa volta quando o PID muda e a cada 12 redesenhos,
-# por garantia contra PID reaproveitado.
+# Conta viva sem um "tr" por conta a cada redesenho: o worker_vivo confere o
+# /proc/PID/cmdline uma vez; depois basta o kill -0. A checagem completa volta
+# quando o PID muda e a cada 12 redesenhos (PID reaproveitado).
 worker_vivo_painel() { # pid pasta (usa $idx, a posicao da conta)
     eval "_wvp=\${_WVP_$idx:-}"
     _wvp_n=99
@@ -1256,28 +1005,22 @@ worker_vivo_painel() { # pid pasta (usa $idx, a posicao da conta)
 
 painel_loop() {
 while true; do
-    # O mesmo que o "clear" escreve num terminal xterm (Termux e WSL), sem
-    # o processo.
+    # O que o "clear" escreve num xterm (Termux e WSL), sem o processo.
     [ -t 1 ] && [ "${PANEL_ONCE:-0}" != "1" ] && printf '\033[H\033[2J\033[3J'
     # Um "date" por redesenho: hora da tela e epoch na mesma leitura.
     _pd=$(date '+%H:%M:%S %s'); agora=${_pd% *}; _agora_ep=${_pd#* }; unset _pd
     painel_relogio
-    # Epoch uma vez por desenho, nao por conta: serve para medir ha
-    # quanto tempo os numeros de cada conta nao sao atualizados.
 
     # Remede a cada volta: o celular pode ser girado com o painel aberto.
     painel_largura_calc; LARG="$PAINEL_LARG"
-    # 86 e a largura que o layout de coluna unica realmente ocupa:
-    # indice + simbolo + nome(18) + os cinco pares rotulo/valor. Medido, nao
-    # estimado — com 72 ele ainda estourava em telas de 72 e 80 colunas.
+    # 86: largura que o layout de coluna unica ocupa (medido).
     if [ "$LARG" -lt 86 ]; then ESTREITO=1; else ESTREITO=0; fi
 
     n_on=0; n_up=0; n_off=0; n_fight=0; idx=0
     PANEL_EVENTO_ATIVO=''
     LISTA=""; BATALHAS=""
 
-    # Le tambem a ultima linha quando o arquivo nao termina em quebra de
-    # linha; sem isto a ultima conta nunca aparecia no painel (ver play.sh).
+    # Le tambem a ultima linha sem quebra de linha final (ver play.sh).
     while IFS='|' read -r srv user _enc <&3 || [ -n "$srv" ]; do
         limpa_campo "$srv";  srv="$_CF"
         limpa_campo "$user"; user="$_CF"
@@ -1292,50 +1035,43 @@ while true; do
         ler_arq "$status_file"; status="${_LIDO:-?}"
         ler_arq "$pid_file";    pid="$_LIDO"
 
-        # O PID esta gravado mas o processo sumiu.
-        #
-        # Supervisionando (play.sh), relanca. Somente leitura (status.sh),
-        # apenas mostra "off" — abrir o painel NUNCA pode mexer nos workers,
-        # e esse era justamente o defeito: a unica forma de rever o painel
-        # era rodar o play.sh, que derrubava as 6 contas que estavam boas.
-        #
-        # worker_vivo (contas.sh) confere que o PID ainda e desta conta: o kernel
-        # recicla PIDs. Relanca no maximo uma vez por minuto por conta, para
-        # um worker que morre ao subir nao virar laco.
+        # PID gravado mas processo sumiu: supervisionando (play.sh) relanca;
+        # somente leitura (status.sh) so mostra "off" — abrir o painel NUNCA
+        # mexe nos workers. worker_vivo confere que o PID e desta conta (o
+        # kernel recicla PIDs). No maximo um relancamento por minuto por conta.
         _sobe=0
         if [ -n "$pid" ] && ! worker_vivo_painel "$pid" "$acc_dir"; then
             status="dead"
             _sobe=1
         elif [ -z "$pid" ] && [ "$status" != "stopped" ]; then
-            # CONTA NOVA, CADASTRADA COM O BOT NO AR.
-            #
-            # Sem .pid nenhum, o ramo acima nunca pegava: a conta ficava
-            # parada no painel para sempre e nada dizia que faltava o
-            # ./play.sh. "stopped" fica de fora — ai foi o stop.sh.
+            # Conta nova, cadastrada com o bot no ar (sem .pid). "stopped" fica
+            # de fora: ai foi o stop.sh.
             _sobe=1
         fi
         if [ "$_sobe" = 1 ] && [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
-            # O diretorio antes do marcador: sem ele o carimbo nao grava e a
-            # conta nova seria relancada a cada desenho.
+            # O diretorio antes do marcador: sem ele a conta nova seria
+            # relancada a cada desenho.
             mkdir -p "$acc_dir" 2>/dev/null
+            # Espera crescente para quem morre seguido (relanca_espera).
+            ler_arq "$acc_dir/.relancado_n"
+            _rl_n=$_LIDO
             ler_arq "$acc_dir/.relancado"
             case "$_LIDO" in ''|*[!0-9]*) _LIDO=0 ;; esac
             _LIDO=$(( _agora_ep - _LIDO ))
-            if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge 60 ]; then
+            relanca_espera "$_rl_n" "$_LIDO"
+            if [ "$_LIDO" -lt 0 ] || [ "$_LIDO" -ge "$_RL_E" ]; then
                 echo "$_agora_ep" > "$acc_dir/.relancado" 2>/dev/null
+                echo $(( _RL_N + 1 )) > "$acc_dir/.relancado_n" 2>/dev/null
                 [ "$status" = "dead" ] && echo "dead" > "$status_file"
                 printf "[monitor] subindo worker\n" >> "$acc_dir/sls.log" 2>/dev/null
-                # A credencial do accounts.conf: a conta nova ainda nao tem
-                # cript_file, e o launch_worker sem ela desiste.
+                # A credencial do accounts.conf: conta nova nao tem cript_file.
                 limpa_campo "$_enc"
                 launch_worker "$srv" "$user" "$_CF" > /dev/null 2>&1
             fi
+            unset _rl_n
         fi
 
-        # CORRECAO: tudo que nao fosse "running" entrava em "parada(s)" —
-        # inclusive "loading" e "login_retry", que sao contas SUBINDO. Seis
-        # contas autenticando viravam "6 parada(s)", uma leitura que nao
-        # corresponde ao que esta acontecendo.
+        # loading/login_retry sao contas SUBINDO, nao paradas.
         case "$status" in
             running)                                 n_on=$((n_on + 1)) ;;
             starting|loading|login_retry|restarting) n_up=$((n_up + 1)) ;;
@@ -1349,18 +1085,8 @@ while true; do
             IFS='|' read -r nome hp mp ene lvl ouro prata _ts _hpmax < "$acc_dir/stats"
             [ -z "$nome" ] && nome="$user"
 
-            # NUMEROS PARADOS: avisa em vez de mentir.
-            #
-            # O painel mostrava o que estivesse no arquivo, sem dizer de
-            # quando era. Se a atualizacao parasse — sessao caida, worker
-            # presa numa batalha longa, erro de leitura —, ele seguia
-            # exibindo HP, energia, ouro e prata antigos como se fossem de
-            # agora, e nao havia como perceber. O carimbo de tempo ja estava
-            # gravado no proprio arquivo; faltava usa-lo.
-            #
-            # O limite e 10 min: a atualizacao normal e a cada 3 min, entao
-            # passar de 10 significa que algo esta errado, nao que a conta
-            # esta so ocupada.
+            # Numeros parados: avisa em vez de mostrar valores velhos como
+            # atuais. A atualizacao normal e a cada 3 min; passar de 10 e erro.
             case "$_ts" in
                 ''|*[!0-9]*) ;;
                 *) _idade=$(( (_agora_ep - _ts) / 60 ))
@@ -1368,33 +1094,16 @@ while true; do
             esac
         fi
 
-        # SESSAO NO JOGO, separada do estado do worker.
-        #
-        # "[on]" diz que o PROCESSO da conta esta vivo — nao que ela esteja
-        # online no jogo. Sao coisas diferentes: com o cookie morto o worker
-        # segue pedindo paginas normalmente, e o servidor o ve como visitante
-        # anonimo. Era exatamente o caso de contas que apareciam online no
-        # painel mas nao no jogo.
-        #
-        # O worker carimba $TMP/last_ok toda vez que confirma, na propria
-        # pagina do descanso, que a sessao esta viva. Passando de 4 minutos
-        # sem confirmacao — o descanso roda a cada ~1 min —, a conta ganha o
-        # aviso "sessao caida".
+        # Sessao no jogo, separada do estado do worker: com o cookie morto o
+        # worker segue vivo e o servidor o ve como visitante. O worker carimba
+        # $TMP/last_ok ao confirmar a sessao no descanso (~1 min); passando de
+        # 4 min sem confirmacao, aviso "sessao caida".
         _sessao=""
         _cor_s="$C_RED"
 
-        # DENTRO DE UM EVENTO O SILENCIO E ESPERADO.
-        #
-        # O modulo entra em :55, espera ate a hora cheia num laco de sleep e
-        # so entao luta. Nessa espera a conta nao pede pagina nenhuma — nao
-        # ha o que confirmar —, e cobrar confirmacao a cada 4 minutos fazia
-        # o painel anunciar "sessao caida" em praticamente todo evento, com
-        # a conta perfeitamente logada.
-        #
-        # O em_evento guarda o INSTANTE em que o evento comeca, gravado na
-        # inscricao. Vale como janela: dez minutos antes (a inscricao) ate
-        # quinze depois (a luta). Fora disso o aviso volta a valer — inclusive
-        # se o worker morrer no meio e deixar o arquivo para tras.
+        # Dentro de um evento o silencio e esperado: o modulo espera a hora
+        # cheia sem pedir pagina. em_evento guarda o instante do inicio
+        # (gravado na inscricao); a janela vai de 10 min antes a 15 depois.
         _em_ev=0
         ler_arq "$acc_dir/em_evento"; _eve="$_LIDO"
         case "$_eve" in
@@ -1408,10 +1117,9 @@ while true; do
             case "$_ok" in
                 ''|*[!0-9]*) [ "$status" = "running" ] && _sessao="sessao ?" ;;
                 *) if [ $(( (_agora_ep - _ok) / 60 )) -gt 4 ]; then
-                       # SERVIDOR MUDO NAO E SESSAO CAIDA: se a ultima falha foi
-                       # de rede (last_rede) depois da ultima confirmacao, a
-                       # sessao nao caiu — o servidor e que nao respondeu.
-                       # Mesma largura de "sessao caida" (12 colunas).
+                       # Servidor mudo nao e sessao caida: falha de rede
+                       # (last_rede) depois da ultima confirmacao. Mesma
+                       # largura de "sessao caida" (12 colunas).
                        ler_arq "$acc_dir/last_rede"; _rd="$_LIDO"
                        case "$_rd" in
                            ''|*[!0-9]*) _sessao="sessao caida" ;;
@@ -1433,8 +1141,7 @@ while true; do
             esac
         fi
 
-        # Atribuicao direta no lugar de "cor=$(estado_cor ...)": a
-        # substituicao de comando forka mesmo para uma funcao de uma linha.
+        # Atribuicao direta: "cor=$(estado_cor ...)" forkaria.
         case "$status" in
             running)     _st=on;    sim="$S_ON" ;;
             paused)      _st=pause; sim="$S_PAUSE" ;;
@@ -1453,9 +1160,7 @@ while true; do
             ler_arq "$acc_dir/pagina"
             evento_da_pagina_v "$_LIDO"; PANEL_EVENTO_ATIVO="$_EVP"
         fi
-        # Os arquivos HP/old_HP ficam no disco depois que o worker morre.
-        # Mostrar "-1110 de dano recebido" numa conta fora do ar e uma
-        # leitura falsa de combate — o combate acabou junto com o processo.
+        # HP/old_HP ficam no disco depois que o worker morre: so com a conta no ar.
         if [ "$status" = "running" ] || [ "$status" = "paused" ]; then
             combate_de_v "$acc_dir"; _cbt="$_CBT"
         else
@@ -1467,53 +1172,21 @@ while true; do
             *)       _cor_c="$C_GREEN" ;;
         esac
 
-        # AO VIVO DAS BATALHAS — sobrepoe o painel.
-        #
-        # Uma conta so entra aqui quando ha combate DE VERDADE em andamento:
-        # o combate_de so devolve texto enquanto os modulos de batalha
-        # atualizam HP/old_HP, e o descansar()/func_cat apagam esses arquivos
-        # ao fim da luta. E separado do indicador de atividade: aquele diz o
-        # que a conta faz; este mostra a luta em detalhe (HP, dano, morte).
+        # Ao vivo das batalhas: so com combate de verdade (o combate_de_v so
+        # devolve texto enquanto os modulos atualizam HP/old_HP).
         if [ -n "$_cbt" ]; then
             n_fight=$((n_fight + 1))
 
-            # LARGURA DA COLUNA DE ATIVIDADE: FIXA, NAO ELASTICA.
-            #
-            # CORRECAO: era "LARG - 30", ou seja a atividade era esticada ate
-            # quase o fim da tela e empurrava o HP para a margem direita. Num
-            # terminal largo isso abria um vao de dezenas de espacos entre o
-            # nome e o dano — e no celular o HP saia do campo de visao, que e
-            # exatamente a informacao que o bloco existe para mostrar.
-            #
-            # Agora a coluna tem o tamanho do maior rotulo de atividade e nada
-            # mais, entao nome, atividade e HP ficam encostados.
-            # Larguras derivadas da tela, e nao fixas: o que sobra depois
-            # do HP e repartido entre nome e atividade. Assim a linha cabe
-            # tanto num terminal de 40 colunas quanto num de 120, sem
-            # estourar nem sobrar vao.
-            #
-            # CORRECAO (linha estourando no celular): a reserva era a
-            # constante 22, que so vale no modo texto. A linha e
-            #
+            # Larguras derivadas da tela no celular: o que sobra depois do HP
+            # e repartido entre nome e atividade. A linha e
             #   2 espacos + I_LIVE + espaco + nome + espaco + aba + espaco + HP
-            #
-            # e o I_LIVE ocupa 3 colunas em emoji ("💥 ") e 2 em simbolos
-            # ("» ") — nao 1. O HP tambem nao e sempre "HP 41834 (-2864)":
-            # numa conta de HP alto ele passa de 16 colunas. Com os dois
-            # subestimados, a linha do bloco ao vivo saia 1 a 2 colunas
-            # alem da tela e o terminal a quebrava — medido em 36, 40, 44,
-            # 48, 52 e 56 colunas, nos modos emoji e simbolo.
-            #
-            # Agora a reserva e medida: 5 colunas de espacos/recuo, mais o
-            # prefixo do modo (LIVE_W), mais o tamanho real do texto de HP.
-            # O ${#} conta bytes, entao "VOCÊ ESTÁ MORTO" e superestimado em
-            # 2 — erra para o lado seguro, que e sobrar tela.
+            # e a reserva e medida: 5 colunas, mais LIVE_W, mais o texto de HP
+            # (${#} conta bytes e superestima acentos: erra para o lado seguro).
             if [ "$ESTREITO" = 1 ]; then
                 _lw=${LIVE_W:-0}
                 _pre="$I_LIVE"
                 _sobra=$((LARG - 5 - _lw - ${#_cbt}))
-                # Tela apertada demais: o icone da linha vale menos que o
-                # nome da conta. Sai o icone, entram 2 ou 3 colunas de texto.
+                # Tela apertada demais: sai o icone, entram 2 ou 3 colunas de nome.
                 if [ "$_sobra" -lt 12 ] && [ "$_lw" -gt 0 ]; then
                     _pre=""; _lw=0
                     _sobra=$((LARG - 5 - ${#_cbt}))
@@ -1531,16 +1204,11 @@ while true; do
                 "$_cor_c" "$_pre" "$C_LARANJA" "$_nw" "$_nw" "$nome" \
                 "$C_CYAN" "$_bw" "$_bw" "$_aba" "$_cor_c" "$_cbt" "$C_RESET")
 "
-            # REGISTRO DA LUTA, LOGO ABAIXO DO NOME.
-            #
-            # Quem acertou a conta, com quanto e se foi critico; e o que a
-            # conta usou. Comeca na margem esquerda, entao continua legivel
-            # na tela do celular.
+            # Registro da luta, logo abaixo do nome, a partir da margem esquerda.
             if [ "$PANEL_LOG_LINHAS" -gt 0 ]; then
                 # 6 colunas de recuo + o texto tem de caber na tela.
                 _log=$(combate_log "$acc_dir" "$PANEL_LOG_LINHAS" $((LARG - 7)))
-                # %s, e nao %b: o texto vem da pagina do jogo e nao deve ter
-                # barra invertida interpretada como escape.
+                # %s, e nao %b: o texto vem da pagina do jogo.
                 [ -n "$_log" ] && BATALHAS="${BATALHAS}$(printf '%s' "$_log")
 "
             fi
@@ -1560,11 +1228,8 @@ while true; do
     done 3< "$ACCOUNTS_FILE"
 
     if [ "${PANEL_DRAW:-$HAS_TTY}" = 1 ]; then
-        # TITULO CENTRALIZADO, NUMA LINHA SO: "Painel SLS · BR · 19:37:40".
-        #
-        # Largura em COLUNAS, nao em bytes: o "·" ocupa 2 bytes e 1 coluna,
-        # entao nada de ${#}. Parte fixa "Painel SLS · BR · " = 18 colunas,
-        # mais o relogio (ASCII).
+        # Titulo centralizado. Largura em COLUNAS ("·" tem 2 bytes): parte fixa
+        # "Painel SLS · BR · " = 18 colunas, mais o relogio.
         _pad=$(( (LARG - 18 - ${#agora}) / 2 ))
         [ "$_pad" -lt 0 ] && _pad=0
         printf "%*s%bPainel SLS%b %b·%b %bBR%b %b· %s%b\n" "$_pad" '' \
@@ -1574,11 +1239,7 @@ while true; do
         printf '%s' "$LISTA" | painel_render
         painel_regua "$LARG" tracejada
 
-        # AO VIVO DAS BATALHAS — sobrepoe o painel.
-        #
-        # Aparece logo abaixo das contas, em destaque, sempre que ha luta de
-        # verdade em andamento (n_fight > 0). Some sozinho quando ninguem esta
-        # lutando, sem ocupar espaco.
+        # Ao vivo das batalhas, logo abaixo das contas; some sem luta.
         if [ "$n_fight" -gt 0 ]; then
             printf "  %b%sAO VIVO — BATALHAS (%s)%b\n" \
                 "$C_RED$C_BOLD" "$I_LIVE" "$n_fight" "$C_RESET"
@@ -1605,12 +1266,7 @@ while true; do
                 printf 'T%scinza%s%s\n' "$_US" "$_US" "$_msg"
             fi
 
-            # PAINEL RODANDO CODIGO ANTIGO.
-            #
-            # Sem este aviso a atualizacao parece nao ter funcionado: os
-            # arquivos sao novos, o bot ja subiu com eles, mas a tela continua
-            # igual — porque quem desenha e um processo que subiu antes do
-            # git pull.
+            # Painel rodando codigo antigo (subiu antes do git pull).
             if painel_desatualizado; then
                 if [ "${PANEL_SUPERVISE:-0}" = "1" ]; then
                     _msg="codigo atualizado — reinicie: ./stop.sh && ./play.sh"
@@ -1634,16 +1290,11 @@ while true; do
         } | painel_render
     fi
 
-    # CORRECAO: eram 20 chamadas de "sleep 1" a cada volta do painel, ou
-    # seja 60 forks por minuto so para nao fazer nada. Um unico sleep tem
-    # o mesmo efeito e conta um processo em vez de vinte — o que importa
-    # no Android, onde o total de processos filhos e limitado.
     # Uma volta so (status.sh -1): desenha e sai, sem dormir.
     [ "${PANEL_ONCE:-0}" = "1" ] && break
 
-    # A CADA 10 S NO CELULAR (TERMUX), 5 S NO PC. No Termux o painel fica
-    # aberto o tempo todo (o play.sh termina nele) e, com CPU fraca, cada
-    # redesenho pesa; "status.sh -n SEGUNDOS" escolhe outro intervalo.
+    # 10 s no Termux (painel sempre aberto, CPU fraca), 5 s no PC;
+    # "status.sh -n SEGUNDOS" escolhe outro intervalo.
     if [ -n "$PANEL_INTERVAL" ]; then
         sleep "$PANEL_INTERVAL"
     elif [ -d /data/data/com.termux ]; then

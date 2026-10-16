@@ -2,9 +2,7 @@
 
 # PAGINA DA LIGA EM $TMP/LEAGUE_SRC, LIDA SO QUANDO PRECISA.
 #
-# A contagem de lutas, a recompensa e a escolha do adversario pediam /league/
-# cada uma: sem luta, tres leituras seguidas; em cada luta ou pulo, duas. A
-# leitura guardada vale enquanto nada sair depois dela — o nonce (?r=) dos
+# A leitura guardada vale enquanto nada sair depois dela: o nonce (?r=) dos
 # links morre com a requisicao seguinte (ver cq_ultima_foi_ela). Toda leitura
 # da Liga passa por aqui, entao o arquivo e sempre a mais nova.
 liga_ler() {
@@ -61,21 +59,12 @@ get_enemy_stat() {
 }
 
 # ---------------------------------------------------------------------------
-#  RECOMPENSA DA LIGA DOS FAVORITOS — ESTADO SEPARADO DAS LUTAS
+#  RECOMPENSA DA LIGA — ESTADO SEPARADO DAS LUTAS ($TMP/league_reward_pending)
 #
-#  Concluir as cinco lutas NAO significa recompensa coletada. A recompensa
-#  as vezes demora a aparecer, e liberar cinco lutas novas nao pode apagar o
-#  estado pendente. Por isso "pendente" e um marcador em disco, por conta,
-#  que sobrevive a reinicios do worker:
-#
-#     $TMP/league_reward_pending
-#
-#  A coleta so e dada como concluida quando o SERVIDOR confirma: o botao
-#  takeReward some da pagina apos o clique. Enquanto nao confirma, o estado
-#  fica pendente e a proxima passagem tenta de novo (recompensa atrasada).
-#  A Liga nao fica travada esperando — o worker segue as outras atividades e
-#  volta no proximo intervalo (portao de 30 min), que serve de nova tentativa
-#  sem loop infinito.
+#  Concluir as cinco lutas NAO significa recompensa coletada: ela as vezes
+#  demora a aparecer. O marcador em disco sobrevive a reinicios e so sai
+#  quando o SERVIDOR confirma (o botao takeReward some apos o clique). A Liga
+#  nao trava esperando: a proxima passagem tenta de novo.
 # ---------------------------------------------------------------------------
 league_reward_marcar()   { : > "$TMP/league_reward_pending" 2>/dev/null; }
 league_reward_limpar()   { rm -f "$TMP/league_reward_pending" 2>/dev/null; }
@@ -84,22 +73,15 @@ league_reward_pendente() { [ -f "$TMP/league_reward_pending" ]; }
 # ---------------------------------------------------------------------------
 #  A LIGA DO DIA — UMA VISITA, AS 00:30
 #
-#  O jogo da cinco lutas por dia, restauradas a meia-noite junto com a
-#  recompensa do dia anterior. Zeradas, a pagina mostra quanto falta:
+#  Cinco lutas por dia, restauradas a meia-noite junto com a recompensa.
+#  Zeradas, a pagina mostra quanto falta:
 #
 #     Lutas disponiveis: <b>0</b><br/>Tempo restante para restauro: 05:29:02
 #
-#  (lido as 18:30:58 = meia-noite). Medido nos logs das 17 contas: a
-#  recompensa foi coletada 193 vezes com as cinco lutas ja restauradas e so 2
-#  com o contador em zero, contra 12.917 leituras "ainda indisponivel" com o
-#  contador zerado. A Liga era aberta a cada 30 minutos o dia inteiro a toa.
-#
-#  Agora ha uma visita por dia: coleta a recompensa e faz as cinco lutas.
-#  Com o contador em zero o bot anota a reabertura — restauro + 30 min, as
-#  00:30, horario sem evento em que a varredura das 00:30 ja roda — e so
-#  volta a Liga depois dela. O relogio vem da pagina, entao vale mesmo com o
-#  fuso do aparelho diferente do servidor. Bot desligado as 00:30: a visita
-#  e feita na entrada, logo depois do login (liga_do_dia, no sls.sh).
+#  Com o contador em zero o bot anota a reabertura (restauro + 30 min, as
+#  00:30) e so volta a Liga depois dela. O relogio vem da pagina, entao vale
+#  mesmo com o fuso do aparelho diferente. Bot desligado as 00:30: a visita e
+#  feita na entrada (liga_do_dia, no sls.sh).
 #
 #     $TMP/league_restauro   (epoch da reabertura: restauro + 30 min)
 # ---------------------------------------------------------------------------
@@ -180,9 +162,7 @@ league_collect_reward() {
     fetch_page "$_lr_click"
 
     # CONFIRMACAO REAL: recarrega a pagina; se o botao sumiu, o servidor
-    # aceitou a coleta. So entao a recompensa e dada como recebida.
-    # Releitura sem resposta nao confirma nada: a pagina vazia tambem "nao
-    # tem o botao".
+    # aceitou. Releitura sem resposta nao confirma nada.
     if ! fetch_page "/league/" "$TMP/LEAGUE_SRC" || [ ! -s "$TMP/LEAGUE_SRC" ]; then
         printf "[LIGA] Sem resposta ao conferir a coleta. Fica pendente.\n"
         unset _lr_click
@@ -208,24 +188,21 @@ league_play() {
     printf "League\n"
     load_config
 
-    # LUTAS PRIMEIRO. Sem luta no dia, as missoes 1 e 2 do cla ocupariam vaga
-    # a toa e o /train seria lido para nada (o mesmo cuidado do career.sh). O
-    # cq_antes recolhe as concluidas e toma as duas.
+    # LUTAS PRIMEIRO: sem luta no dia, as missoes 1 e 2 do cla ocupariam vaga
+    # a toa. O cq_antes recolhe as concluidas e toma as duas.
     fetch_available_fights
     if [ "${AVAILABLE_FIGHTS:-0}" -gt 0 ]; then
         cq_antes liga 2>/dev/null
         PLAYER_STRENGTH=`player_stats`
     fi
 
-    # Sem lutas na entrada = ciclo de cinco ja concluido numa passagem
-    # anterior: ha (ou havera) recompensa. Marca como pendente para a coleta
-    # nao depender do laco de lutas, que nem chega a rodar quando fights=0.
+    # Sem lutas na entrada = ciclo de cinco ja concluido: marca a recompensa
+    # como pendente (o laco de lutas nem roda com fights=0).
     if [ "${AVAILABLE_FIGHTS:-0}" -eq 0 ]; then
         league_reward_marcar
     fi
 
-    # RECOMPENSA PENDENTE PRIMEIRO: coleta agora (inclui a recompensa que
-    # apareceu atrasada apos uma passagem anterior) antes de qualquer luta.
+    # RECOMPENSA PENDENTE PRIMEIRO, inclusive a que apareceu atrasada.
     if league_reward_pendente; then
         printf "[LIGA] Verificando recompensa pendente.\n"
         if league_collect_reward; then
@@ -240,13 +217,8 @@ league_play() {
     j=1
     enemy_index=1
 
-    # O LACO DAS LUTAS TEM TETO.
-    #
-    # Ele so terminava com o contador de lutas em zero ou sem botao de luta.
-    # Uma luta que o servidor nao registra — resposta de erro, sem energia —
-    # nao desce o contador: o bot voltava ao mesmo adversario para sempre,
-    # tres requisicoes por volta, e a conta ficava presa na Liga, perdendo
-    # o cronograma. Cinco lutas cabem com folga em 40 voltas e 5 minutos.
+    # O LACO DAS LUTAS TEM TETO (40 voltas, 5 min): uma luta que o servidor
+    # nao registra nao desce o contador e prenderia a conta na Liga.
     _lg_fim=$(( `date +%s` + 300 ))
     _lg_voltas=0
     _lg_falhas=0
@@ -301,16 +273,9 @@ league_play() {
                     ENEMY_NUMBER=`echo "$last_click" | grep -o -E '[0-9]+' | head -n 1`
                     fetch_available_fights
                     action="check_fights"
-                    # LUTA QUE NAO CONTOU.
-                    #
-                    # Medido nos logs: uma conta clicou 17 vezes no mesmo adversario
-                    # com o contador parado em 3, outra 9 vezes — e
-                    # horas depois as mesmas lutas contaram. Insistir no mesmo
-                    # adversario so gastava o teto de 5 minutos. Agora a
-                    # primeira luta que nao desce o contador passa para o
-                    # proximo adversario; a segunda seguida encerra a Liga
-                    # nesta passagem (as lutas continuam la ate a meia-noite).
-                    # A resposta do jogo fica guardada para ver o motivo.
+                    # LUTA QUE NAO CONTOU: a primeira passa para o proximo
+                    # adversario; a segunda seguida encerra a Liga nesta
+                    # passagem. A resposta do jogo fica guardada.
                     if [ "$AVAILABLE_FIGHTS" -lt "$_lg_antes" ]; then
                         _lg_falhas=0
                     else
@@ -344,9 +309,8 @@ league_play() {
                         fetch_available_fights
                         sleep 1s
                         potion_click=`grep -o -E "/league/potion/\?r=[0-9]+" "$TMP/SRC" | sed -n 1p`
-                        # Sem pocao o POTION nao pode nascer: com ele a
-                        # volta seguinte ataca o 1o adversario sem olhar a
-                        # forca e perde uma luta.
+                        # Sem pocao o POTION nao pode nascer: a volta seguinte
+                        # atacaria sem olhar a forca e perderia uma luta.
                         if [ -z "$potion_click" ]; then
                             printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta na proxima passagem.\n"
                             action="exit_loops"
@@ -379,9 +343,8 @@ league_play() {
                 ;;
             *)
                 if [ "$AVAILABLE_FIGHTS" -eq 0 ]; then
-                    # Cinco lutas concluidas: ha recompensa a coletar. Apenas
-                    # MARCA como pendente; a coleta (com confirmacao real) e
-                    # feita fora do laco. Nunca deduzir "coletada" das lutas.
+                    # Cinco lutas concluidas: apenas MARCA a recompensa como
+                    # pendente; nunca deduzir "coletada" das lutas.
                     printf "[LIGA] Lutas concluidas. Recompensa pendente=sim.\n"
                     league_reward_marcar
                 fi
@@ -392,13 +355,8 @@ league_play() {
         printf "[LIGA] Teto do laco atingido (%s voltas) - segue para as demais atividades.\n" "$_lg_voltas"
     unset _lg_fim _lg_voltas _lg_falhas _lg_antes
 
-    # COLETA DA RECOMPENSA — fora do laco de lutas.
-    #
-    # Chega aqui quem terminou as cinco lutas nesta passagem. Se ha recompensa
-    # pendente, tenta coletar e confirma pelo servidor; so limpa o estado com a
-    # confirmacao. Se a recompensa ainda nao apareceu, o marcador fica para a
-    # proxima passagem — a Liga nao trava esperando e o worker segue as demais
-    # atividades. Liberar cinco lutas novas NAO apaga este estado.
+    # COLETA DA RECOMPENSA, fora do laco de lutas: so limpa o estado com a
+    # confirmacao do servidor. Liberar cinco lutas novas NAO apaga o estado.
     if league_reward_pendente; then
         if league_collect_reward; then
             league_reward_limpar
@@ -407,8 +365,7 @@ league_play() {
         fi
     fi
 
-    # Contador em zero: a Liga do dia esta feita e so reabre as 00:30 (ver acima). A
-    # ultima leitura do contador esta no LEAGUE_SRC.
+    # Contador em zero (ultima leitura no LEAGUE_SRC): reabre as 00:30.
     if [ "${AVAILABLE_FIGHTS:-0}" -eq 0 ] && league_restauro_marcar "$TMP/LEAGUE_SRC"; then
         league_restauro_pendente && \
             printf "[LIGA] Lutas zeradas - a Liga reabre as 00:30 (em %s min).\n" "$LEAGUE_RESTAURO_MIN"

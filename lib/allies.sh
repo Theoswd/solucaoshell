@@ -2,19 +2,9 @@
 # ============================================================
 #  ALIADOS: SO QUEM ESTA NA LISTA DE AMIGOS E QUEM E DO MESMO CLA
 #
-#  Regra do dono do bot. Antes a lista era montada de tres jeitos que nao
-#  batiam com isso:
-#    - conta COM amigos ficava so com os amigos, SEM os membros do cla (o
-#      clan era lido apenas quando a lista de amigos vinha vazia). Em 12/09
-#      uma conta matou outra no Rei — as duas do mesmo cla, e nenhuma na
-#      lista da outra: uma tinha 4 amigos, a outra 3, e o cla ficou de fora;
-#    - clas INTEIROS eram poupados nas batalhas de cla quando o LIDER era
-#      amigo (uma requisicao por amigo para descobrir);
-#    - a lista de amigos so crescia (tmp.txt nunca era zerado): quem saia
-#      dos amigos continuava aliado para sempre.
-#
-#  Agora a lista e uma so — amigos + membros do cla, refeita do zero — e o
-#  modo escolhido no menu so decide EM QUAIS batalhas ela vale:
+#  Regra do dono do bot: a lista e uma so — amigos + membros do cla,
+#  refeita do zero — e o modo escolhido no menu so decide EM QUAIS
+#  batalhas ela vale:
 #    1  todas as batalhas            allies.txt e callies.txt
 #    2  Rei dos Imortais (herois)    allies.txt
 #    3  batalhas de cla              callies.txt
@@ -26,15 +16,12 @@
 _aliado_norm() { sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/[[:space:]][[:space:]]*/_/g'; }
 
 # Le a pagina do jogo para um arquivo.   _aliado_pagina CAMINHO ARQUIVO
-#
-# NUNCA UM LINK DE EXCLUSAO. A lista de amigos traz, em cada amigo, o link
-# "Exclui" (/mail/friends/delete/ID?r=N): pedir essa pagina desfaz a amizade.
-# Nenhum caminho com "delete" sai daqui, venha de onde vier.
+# NUNCA UM LINK DE EXCLUSAO: o "Exclui" da lista de amigos
+# (/mail/friends/delete/ID?r=N) desfaz a amizade. Nenhum "delete" sai daqui.
 _aliado_pagina() {
     case "$1" in *delete*) : > "$2"; return 1 ;; esac
     # Pagina que nao veio fica anotada: o aliados_montar nao troca a lista.
-    # Pelo fetch_page, que devolve QUALQUER erro do curl: o time_exit so
-    # acusava o 28, e uma pagina cortada (18, 56) passava por boa.
+    # Pelo fetch_page, que devolve QUALQUER erro do curl.
     if ! fetch_page "$1" "$2" || [ ! -s "$2" ]; then
         : > "$TMP/aliados.falha"
         return 1
@@ -43,17 +30,13 @@ _aliado_pagina() {
 
 # AMIGOS: nomes da lista de amigos (/mail/friends e paginas seguintes).
 #
-# Marcacao real ("Lista de amigos", 13/09):
+# Marcacao real ("Lista de amigos"):
 #   <img .../race/1-off.png' alt=''/> <a href='/user/ID/'>Fulano</a>,
 #     <img .../level.png' alt=''/> 61 nível <span class='medium'>(
 #     <a href='/mail/ID/'>Escrever</a> / <a href='/mail/friends/delete/ID?r=N'>Exclui</a>
-# O link de mensagem (/mail/) na mesma linha separa o amigo de qualquer outro
-# link de perfil. A pagina abre sem o ?r= do link do jogo.
-#
-# PAGINAS: 10 amigos por pagina. Paginacao real (conta com 12 amigos):
-#   &#60;&#60; &#60; 1 <a href='/mail/friends/2'>2</a> <a href='/mail/friends/2'>&#62;</a>
-# O maior N dos links da pagina 1 diz quantas ha (ate 20). Conferido: 10 + 2
-# amigos, os mesmos 12 da lista antiga, com dois pedidos.
+# O link /mail/ na mesma linha separa o amigo de outro link de perfil.
+# 10 amigos por pagina; o maior N dos links /mail/friends/N da pagina 1 diz
+# quantas ha (ate 20).
 aliados_amigos() {
     _aa_d="$TMP/aliados_pag"; mkdir -p "$_aa_d" 2>/dev/null
     rm -f "$_aa_d"/amigos_* 2>/dev/null
@@ -84,13 +67,12 @@ aliados_amigos() {
 
 # MEMBROS DO CLA: nomes das paginas de membros (/clan/ID e /clan/ID//N).
 #
-# Marcacao real (pagina de membros do cla, 12/09):
+# Marcacao real (pagina de membros do cla):
 #   <a href='/user/ID/'><img src='/images/icon/race/1.png' alt=''/>Fulano,
 #       <span class='white'><span class='green'>Clã líder</span></span>
 #   <a href='/user/ID/'><img src='/images/icon/race/1-off.png' alt=''/>Beltrano,
 #       <span class='white'>General</span>
-# A leitura antiga exigia nome com maiuscula e so letras (nome todo em minusculas,
-# nomes com numero ficavam de fora). Ate 10 paginas, pelos links do proprio jogo.
+# Qualquer nome (minusculas, numeros). Ate 10 paginas, pelos links do jogo.
 aliados_cla() {
     [ -n "$CLD" ] || clan_id 2>/dev/null
     if [ -z "$CLD" ]; then
@@ -132,11 +114,9 @@ aliados_cla() {
 
 # Monta as listas conforme o modo (1 a 4) — sem perguntar nada.
 #
-# SERVIDOR MUDO NAO APAGA A LISTA: se QUALQUER pagina de amigos ou do cla nao
-# vier, as listas anteriores ficam como estao. So com os amigos, a lista nova
-# perderia o cla — o caso de 12/09 — e ficaria valendo por 12h. Sem lista
-# anterior, a parcial vale (melhor que nenhuma) e a funcao devolve 1 para o
-# worker tentar de novo mais cedo.
+# Servidor mudo nao apaga a lista: se QUALQUER pagina nao vier, as listas
+# anteriores ficam (so com os amigos, a nova perderia o cla). Sem lista
+# anterior, a parcial vale e a funcao devolve 1 para tentar de novo mais cedo.
 aliados_montar() {
     _am_modo="$1"
     case "$_am_modo" in 1|2|3) ;; 4) unset _am_modo; return 0 ;; *) _am_modo=1 ;; esac
@@ -170,14 +150,8 @@ aliados_montar() {
 # ============================================================
 #  ATUALIZACAO AUTOMATICA DAS LISTAS DE ALIADOS
 #
-#  Os workers sobem com stdin em /dev/null (play.sh, nohup+setsid): nada
-#  pode perguntar o modo pelo teclado. Sem esta funcao as listas ficavam
-#  vazias para sempre e a protecao de aliados, lida a cada golpe, nunca
-#  poupava ninguem.
-#
-#  O modo vem do config e o tarefas_livres chama esta funcao a cada 12h (ver
-#  crono.sh). Custo: as paginas de amigos e as de membros do cla — ja nao
-#  ha uma requisicao por amigo.
+#  Os workers sobem com stdin em /dev/null: nada pode perguntar o modo pelo
+#  teclado. O modo vem do config; o tarefas_livres chama a cada 12h.
 # ============================================================
 allies_refresh() {
     [ "${FUNC_allies:-y}" = "y" ] || return 1
@@ -187,8 +161,7 @@ allies_refresh() {
         1|2|3) ;;
         # 4 = "nao mexer", escolha explicita do usuario no menu.
         4) unset _ar; return 0 ;;
-        # Sem escolha registrada: protege em todas as batalhas. E o padrao
-        # seguro — errar para o lado de NAO bater em aliado.
+        # Sem escolha registrada: protege em todas as batalhas (padrao seguro).
         *) _ar=1 ;;
     esac
 
@@ -203,10 +176,9 @@ allies_refresh() {
 #   $1 = arquivo com o nome do alvo   (USER, escrito pelo alvo_nome)
 #   $2 = "cla" nas batalhas de cla    (usa callies.txt; senao allies.txt)
 #
-# LISTA VAZIA NAO PODE SIGNIFICAR "TODO MUNDO E ALIADO": nome vazio devolve 1
-# antes do grep, e a comparacao e literal e de linha inteira ("Ana" nao casa
-# com "Anaxx"). Sem diferenca de maiusculas: o jogo escreve "Fulano Silva"
-# na luta e "Fulano silva" pode estar noutro lugar.
+# Lista vazia nao pode significar "todo mundo e aliado": nome vazio devolve 1
+# antes do grep; comparacao literal, de linha inteira, sem diferenca de
+# maiusculas ("Ana" nao casa com "Anaxx").
 alvo_aliado() {
     # O alvo_nome ja grava normalizado: um "read" embutido, nenhum processo.
     _aa_n=""
@@ -222,26 +194,16 @@ alvo_aliado() {
 # ============================================================
 #  TROCA DE ALVO POR ALIADO, SEM VIRAR LACO — E O FOGO AMIGO
 #
-#  A troca de alvo existe para nao bater em aliado. Mas quando so ha aliados
-#  na frente, cada troca cai em outro aliado e o laco nao termina: nos
-#  modulos de cla a troca nem espera a recarga do ataque, entao eram
-#  requisicoes seguidas, uma por segundo, ate o fim da batalha.
-#
-#  Regra do dono do bot: trocas que so resultam em aliado querem dizer que
-#  nao ha inimigo a vista, e ai vale o fogo amigo. Depois de
-#  ALIADO_TROCAS_MAX trocas seguidas caindo em aliado, a conta ataca o alvo
-#  por ALIADO_FOGO_SEG segundos; passado esse tempo volta a tentar trocar,
-#  para pegar um inimigo que tenha entrado. No pior caso sao 3 trocas a mais
-#  a cada 30 s, nunca um laco.
-#
-#  Sem processo novo por volta: o estado fica em variaveis, e a lista de
-#  aliados so e consultada quando o NOME do alvo muda.
+#  Quando so ha aliados na frente, cada troca cai em outro aliado e o laco
+#  nao termina. Regra do dono: depois de ALIADO_TROCAS_MAX trocas seguidas
+#  caindo em aliado, fogo amigo por ALIADO_FOGO_SEG segundos; depois volta a
+#  tentar trocar. Estado em variaveis; a lista so e consultada quando o NOME
+#  do alvo muda.
 # ============================================================
 ALIADO_TROCAS_MAX=3
 ALIADO_FOGO_SEG=30
 
-# Zera o estado. No inicio de cada luta (luta_inicio): a lista pode ter mudado
-# entre uma batalha e outra.
+# Zera o estado no inicio de cada luta (luta_inicio): a lista pode ter mudado.
 aliado_zerar() { _al_nome="-"; _aliado=0; _al_seguidas=0; _al_trocou=0; _al_fogo_ate=0; }
 
 # Na leitura de cada pagina da luta, depois do alvo_nome.   aliado_ler [cla]
@@ -279,8 +241,7 @@ troca_aliado() {
         return 1
     fi
     _al_trocou=1
-    # No log de todos os eventos (era so o Rei que escrevia): o resumo do
-    # status.sh -batalhas conta as trocas por esta linha.
+    # No log de todos os eventos: o status.sh -batalhas conta as trocas por esta linha.
     printf "Alvo aliado — trocando de alvo\n"
     return 0
 }

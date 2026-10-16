@@ -2,22 +2,11 @@
 # status.sh - Painel do solucaoshell, SOMENTE LEITURA
 #
 # Mostra as contas sem tocar em nenhum processo: nao sobe, nao mata e nao
-# relanca worker. Pode ser aberto e fechado a vontade, e sair com ctrl+c nao
-# para conta nenhuma.
-#
-# POR QUE ESTE ARQUIVO EXISTE
-#
-# O painel morava dentro do play.sh, no mesmo processo que lanca e supervisiona
-# os workers. Os workers sobem com nohup+setsid, entao eles SOBREVIVEM quando o
-# Termux e fechado ou morto pelo Android (SIGKILL / "signal 9") — mas o painel
-# morre junto com o play.sh. As contas continuavam jogando e ficavam invisiveis.
-#
-# E para rever o painel a unica saida era rodar ./play.sh de novo, que derrubava
-# as contas boas e disparava 6 logins simultaneos do mesmo IP — recusados pelo
-# servidor, jogando todas no backoff. O ato de olhar quebrava o que funcionava.
+# relanca worker; sair com ctrl+c nao para conta nenhuma. Serve para rever
+# os workers que sobreviveram ao fechamento do Termux sem rodar o play.sh.
 #
 # Uso:
-#   ./status.sh            painel continuo, atualiza a cada 20s
+#   ./status.sh            painel continuo
 #   ./status.sh -1         imprime uma vez e sai (bom para script)
 #   ./status.sh -n 5       atualiza a cada 5 segundos
 #   ./status.sh -cols      regua de calibracao da largura (tela do celular)
@@ -39,8 +28,7 @@ done
 _dir=$(dirname "$_self")
 SLSDIR=$(cd "$_dir" && pwd -P)
 
-# O motor mora em lib/. Os comandos do usuario ficam na raiz; tudo que e
-# biblioteca (worker, painel, modulos de batalha) e carregado daqui.
+# Comandos do usuario na raiz; o motor (worker, painel, batalhas) em lib/.
 LIBDIR="$SLSDIR/lib"
 export LIBDIR
 
@@ -73,17 +61,14 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
-# Padrao 5s (era 20s): o painel so LE arquivos (pagina/stats/combate ja sao
-# gravados a cada requisicao pelos workers), entao atualizar mais rapido
-# deixa o "log de atividade" praticamente em tempo real, seguindo o bot entre
-# as paginas, sem custo para as contas. Ajustavel com -n.
+# Padrao 5s: o painel so LE arquivos que os workers gravam a cada requisicao,
+# entao atualizar rapido nao custa nada as contas. Ajustavel com -n.
 case "${PANEL_INTERVAL:-5}" in ''|*[!0-9]*) PANEL_INTERVAL=5 ;; esac
 export PANEL_INTERVAL
 
 . "$LIBDIR/contas.sh"
 
-# Calibracao da largura: nao depende de conta nem de worker no ar, entao
-# roda antes das checagens (e util justamente em aparelho recem-instalado).
+# Calibracao nao depende de conta nem de worker no ar: roda antes das checagens.
 if [ "$PANEL_COLS_INFO" = 1 ] || [ "$PANEL_ICONS_INFO" = 1 ]; then
     PANEL_SUPERVISE=0
     . "$LIBDIR/panel.sh"
@@ -111,9 +96,7 @@ fi
 PANEL_SUPERVISE=0
 . "$LIBDIR/panel.sh"
 
-# Sem terminal (redirecionado para arquivo, pipe, etc.) o painel nao imprime
-# nada — imprimir a cada 20s num arquivo so geraria lixo. Nesse caso o modo
-# de uma volta e o unico que faz sentido.
+# Sem terminal (arquivo, pipe) o painel continuo nao imprime: so uma volta.
 if [ "$HAS_TTY" = 0 ]; then
     PANEL_ONCE=1
     PANEL_DRAW=1

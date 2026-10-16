@@ -29,32 +29,20 @@ EOF
 
 # Carrega a configuracao da conta.
 #
-# CORRECAO 1 (multi-contas): a versao anterior so gravava os defaults quando
-# o arquivo NAO existia. Como o info.sh criava config.cfg com apenas
-# "LANGUAGE=en" no momento do source, o ramo dos defaults nunca rodava e
-# TODAS as FUNC_* ficavam vazias. Efeito pratico: use_elixir e check_rewards
-# comparavam com "n", vazio != "n", e executavam mesmo desligados; e
-# league.sh fazia [ "$N" -gt "" ] -> erro de operando a cada ciclo.
-# Agora as chaves ausentes sao completadas SEMPRE, o que tambem repara
-# configs ja gravados de forma incompleta.
-#
-# CORRECAO 2 (seguranca): antes era ". $CONFIG_FILE", ou seja, o arquivo de
-# configuracao era EXECUTADO como shell script. Agora e lido como dado, com
-# allowlist de chaves e validacao de valor. Configuracao e dado, nunca codigo.
+# As chaves ausentes sao completadas SEMPRE (vazio != "n" ligaria o que esta
+# desligado). Seguranca: o arquivo e lido como DADO, com allowlist de chaves
+# e validacao de valor; configuracao nunca e executada.
 load_config() {
     CONFIG_FILE="${TMP:-.}/config.cfg"
     [ -f "$CONFIG_FILE" ] || : > "$CONFIG_FILE"
 
-    # Chaves que faltam, na ordem dos padroes: um awk le o arquivo uma vez
-    # (era um grep por chave, 22 a cada chamada, e o get_config chama aqui).
+    # Chaves que faltam, na ordem dos padroes: um awk le o arquivo uma vez.
     config_defaults | awk -v f="$CONFIG_FILE" '
         BEGIN { while ((getline l < f) > 0) if (index(l, "=")) tem[substr(l, 1, index(l, "=") - 1)] = 1 }
         { k = $0; sub(/=.*/, "", k); if (k != "" && !(k in tem)) print }' >> "$CONFIG_FILE"
 
-    # NUMEROS DO PAINEL: 3 -> 5 MIN, UMA VEZ. O padrao ficava gravado no
-    # config.cfg de cada conta, entao mudar so o padrao nao valia para quem
-    # ja existia. Quem estava no 3 (o padrao antigo) passa para 5 uma unica
-    # vez; um valor escolhido depois disso fica como esta.
+    # Painel: quem estava no 3 (padrao antigo gravado no config.cfg) passa
+    # para 5 uma unica vez; valor escolhido depois fica como esta.
     if [ ! -f "${TMP:-.}/.cfg_stats5" ]; then
         if grep -q '^FUNC_stats_min=3$' "$CONFIG_FILE" 2>/dev/null; then
             while IFS= read -r _cl; do

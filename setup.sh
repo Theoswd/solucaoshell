@@ -1,15 +1,11 @@
 #!/bin/sh
 # setup.sh - Gerenciamento de contas do solucaoshell
 
-# CORRECAO (seguranca): sem umask o accounts.conf nascia 644 (legivel por
-# qualquer processo do mesmo UID no Termux).
+# Seguranca: sem umask o accounts.conf nasceria 644.
 umask 077
 
-# Resolve o caminho real do script, seguindo links simbolicos.
-#
-# CORRECAO: era so "dirname $0". Chamado por um link simbolico (ou por um
-# atalho em $PREFIX/bin), o SLSDIR apontava para a pasta do LINK e nao para
-# a do repositorio — e o accounts.conf gravado era outro.
+# Resolve o caminho real do script, seguindo links simbolicos: chamado por
+# um atalho em $PREFIX/bin, o SLSDIR tem de ser a pasta do repositorio.
 _self="$0"
 _hops=0
 while [ -L "$_self" ] && [ "$_hops" -lt 20 ]; do
@@ -23,8 +19,7 @@ done
 _dir=$(dirname "$_self")
 SLSDIR=$(cd "$_dir" && pwd -P)
 
-# O motor mora em lib/. Os comandos do usuario ficam na raiz; tudo que e
-# biblioteca (worker, painel, modulos de batalha) e carregado daqui.
+# Comandos do usuario na raiz; o motor (worker, painel, batalhas) em lib/.
 LIBDIR="$SLSDIR/lib"
 export LIBDIR
 
@@ -34,13 +29,10 @@ unset _dir _self _link _hops
 
 ACCOUNTS_FILE=$(resolve_accounts_file)
 
-# Carrega funcoes de verificacao de sessao
 . "$LIBDIR/session_check.sh"
 
-# Paleta sorteada a cada abertura do menu.
-# A semente vem do PID e dos segundos do relogio, entao o conjunto de
-# cores muda a cada execucao sem depender de $RANDOM (que nao existe
-# em sh/dash/toybox).
+# Paleta sorteada a cada abertura do menu, com semente do PID e do relogio
+# ($RANDOM nao existe em sh/dash/toybox).
 _seed=$(( ($$ + $(date +%s)) % 6 ))
 case "$_seed" in
     0) A1='[1;36m'; A2='[1;34m' ;;
@@ -62,13 +54,8 @@ RESET='[0m'
 show_menu() {
     clear
 
-    # LARGURA ADAPTATIVA A TELA DO CELULAR.
-    #
-    # A linha divisoria era fixa em 68 caracteres: em telas estreitas ela
-    # estourava e quebrava em duas, e o caminho do arquivo (longo) piorava.
-    # Aqui a largura vem do proprio terminal (stty size -> tput cols -> 40 de
-    # reserva), entao a moldura cabe em qualquer aparelho. O teto de 60 evita
-    # esticar demais num terminal largo de PC.
+    # Largura do terminal (stty size -> tput cols -> 40 de reserva), entre
+    # 16 e 60 colunas, para a moldura caber na tela do celular.
     _cols=$(stty size 2>/dev/null | awk '{print $2}')
     case "$_cols" in ''|*[!0-9]*) _cols=$(tput cols 2>/dev/null) ;; esac
     case "$_cols" in ''|*[!0-9]*) _cols=40 ;; esac
@@ -76,8 +63,7 @@ show_menu() {
     [ "$_cols" -gt 60 ] && _cols=60
     _L=$(printf '%*s' "$_cols" '' | tr ' ' '-')
 
-    # Reavalia a cada abertura: o arquivo pode ter sido criado por "Adicionar"
-    # ou esvaziado por "Remover".
+    # Reavalia a cada abertura ("Adicionar"/"Remover" mudam o arquivo).
     ACCOUNTS_FILE=$(resolve_accounts_file)
 
     # Titulo centralizado numa linha so (32 colunas, ASCII).
@@ -93,9 +79,7 @@ show_menu() {
     printf "   %b4%b - Testar login\n\n"  "$A1" "$RESET"
     printf "   %b0%b - Sair\n\n"          "$DIM" "$RESET"
 
-    # Aviso discreto SO quando o arquivo de contas nao esta no lugar padrao
-    # (o velho diagnostico do "estou lendo o arquivo errado"). No uso normal
-    # nada aparece, e o menu fica limpo.
+    # Aviso so quando o arquivo de contas nao esta no lugar padrao.
     if [ "$ACCOUNTS_FILE" != "$SLSDIR/accounts.conf" ]; then
         printf "  %b(!) contas lidas de outro local%b\n\n" "$GOLD" "$RESET"
     fi
@@ -125,12 +109,10 @@ list_accounts() {
 }
 
 # Conta cadastrada nao joga sozinha: ou o bot ja esta no ar (o painel a sobe
-# na volta seguinte), ou falta o ./play.sh. Sem este aviso ela so aparecia
-# parada no painel.
+# na volta seguinte), ou falta o ./play.sh.
 aviso_subir() {
     _as=$(cat "$HOME/.sls/status/orchestrator.pid" 2>/dev/null)
-    # O .pid fica para tras quando o play.sh morre (Ctrl+C, SIGKILL): so
-    # vale se o PID ainda for um play.sh.
+    # .pid velho (play.sh morto): so vale se o PID ainda for um play.sh.
     case "$_as" in
         ''|*[!0-9]*) _as="" ;;
         *) grep -q 'play\.sh' "/proc/$_as/cmdline" 2>/dev/null || _as="" ;;
@@ -163,8 +145,7 @@ add_account() {
     read -r user
     user=$(printf %s "$user" | tr -d '[:cntrl:]')
 
-    # CORRECAO: nao havia validacao. Um "|" no nome corrompe o formato
-    # do accounts.conf e uma "/" quebra o caminho do diretorio da conta.
+    # Um "|" no nome corrompe o accounts.conf; uma "/" quebra o caminho da conta.
     case "$user" in
         *"|"*) printf "${RED}Nome nao pode conter | ${RESET}\n"; sleep 2; return ;;
         */*)   printf "${RED}Nome nao pode conter / ${RESET}\n"; sleep 2; return ;;
@@ -217,9 +198,8 @@ add_account() {
     sleep 2
 }
 
-# Lista as contas numeradas, le o numero e deixa srv, user e encoded da
-# escolhida. Lista e escolha saem da mesma contas_validas (contas.sh), entao
-# o numero da tela e sempre a conta certa. Volta 1 se cancelou ou invalido.
+# Lista as contas numeradas e deixa srv, user e encoded da escolhida (lista e
+# escolha saem da mesma contas_validas). Volta 1 se cancelou ou invalido.
 escolher_conta() {
     if [ -z "$(contas_validas)" ]; then
         printf "${RED}Nenhuma conta.${RESET}\n"; sleep 2; return 1
@@ -255,16 +235,14 @@ remove_account() {
     read -r confirm
     case "$confirm" in
         y|Y)
-            # CORRECAO: "grep -v" trata o nome como REGEX. Um nome com
-            # metacaractere (., *, [) removeria a conta errada. O awk abaixo
-            # compara os campos 1 e 2 como texto literal.
+            # awk compara os campos 1 e 2 como texto literal ("grep -v" veria
+            # o nome como regex e removeria a conta errada).
             awk -F'|' -v s="$srv" -v u="$user" '!($1==s && $2==u)' \
                 "$ACCOUNTS_FILE" > "$ACCOUNTS_FILE.tmp" && \
                 mv "$ACCOUNTS_FILE.tmp" "$ACCOUNTS_FILE"
             acc_dir="$HOME/.sls/${tag}_${user}"
-            # Derruba o worker: sem isto a conta sumia do painel e seguia
-            # jogando ate o stop.sh. Depois do awk, para o painel (que le o
-            # accounts.conf a cada volta) nao relancar.
+            # Derruba o worker (senao seguiria jogando ate o stop.sh). Depois
+            # do awk, para o painel (que le o accounts.conf) nao relancar.
             _pf="$HOME/.sls/status/${tag}_${user}"
             _pid=$(cat "$_pf.pid" 2>/dev/null)
             # .pid antes do kill: painel sem PID gravado nao relanca.

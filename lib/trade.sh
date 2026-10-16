@@ -1,34 +1,16 @@
 # TROCA PRATA -> OURO, UMA VEZ POR DIA.
 #
-# E o unico ponto do bot que mexe com ouro — e no sentido de GANHAR: paga
-# em prata, que e recurso renovavel. Gasto de ouro nao existe em lugar
-# nenhum.
-#
-# A pagina oferece tres lotes:
+# Unico ponto do bot que mexe com ouro, no sentido de GANHAR (paga em prata).
 #   /trade/exchange/gold/1?r=N       1800 prata ->   1 ouro
 #   /trade/exchange/gold/10?r=N     18000 prata ->  10 ouro
 #   /trade/exchange/gold/100?r=N   180000 prata -> 100 ouro
 #
-# (A implementacao original procurava /trade/exchange/silver/N, que e o
-# sentido contrario — comprar prata com ouro.)
+# So usa um lote se o saldo aguentar essa mesma troca, uma por dia, durante
+# FUNC_trade_dias (padrao 365): lote 100 pede 65.700.000 de prata, lote 10
+# 6.570.000, lote 1 657.000; abaixo disso nao troca.
 #
-# O lote e escolhido pela reserva de prata: so usa um lote se o saldo
-# aguentar essa mesma troca, uma por dia, durante um ano inteiro. Isso
-# mantem a economia estavel — quem tem pouca prata cai para o lote menor
-# em vez de drenar o caixa.
-#
-#   lote 100 -> reserva de 65.700.000 de prata (365 x 180.000)
-#   lote  10 -> reserva de  6.570.000
-#   lote   1 -> reserva de    657.000
-#   abaixo disso nao troca
-#
-# O horizonte da reserva vem de FUNC_trade_dias (padrao 365).
-#
-# UMA OLHADA POR DIA: o marcador em $TMP/last_trade guarda a data. Ele e
-# gravado a cada pagina lida — trocando ou nao. Antes so a troca feita
-# marcava o dia: com prata abaixo da reserva, a pagina era reaberta a cada
-# varredura (:00, :30 e na ociosa) o dia inteiro. Sem saldo legivel
-# (pagina que nao veio), o dia fica em aberto e a proxima varredura tenta.
+# UMA OLHADA POR DIA: $TMP/last_trade guarda a data, gravada a cada pagina
+# lida, trocando ou nao. Sem saldo legivel, o dia fica em aberto.
 func_trade() {
     [ "${FUNC_trade:-y}" = "y" ] || return 1
 
@@ -83,7 +65,5 @@ func_trade() {
     unset _hoje _ult _dias _pr _prata _lote _cl
 }
 
-# A BENCAO FOI REMOVIDA.
-#
-# Ela custa 100 de ouro em /effshop/ e o bot nao gasta ouro. O blessing.sh
-# continua como tranca do lado do HTTP: bloqueia a URL antes do curl sair.
+# A BENCAO FOI REMOVIDA: custa ouro. O blessing.sh continua como tranca do
+# lado do HTTP: bloqueia a URL antes do curl sair.
