@@ -118,6 +118,9 @@ pkill -f "$LIBDIR/worker.sh" 2>/dev/null
 # com o PID reciclado ela so cairia no teto de 180s. Tudo ja foi encerrado,
 # entao remove-la aqui e seguro.
 rm -rf "$HOME/.sls/.login.lock" 2>/dev/null
+# Disjuntor (info.sh): sonda presa e estado da sessao que acabou; a proxima
+# subida volta a medir do zero.
+rm -rf "$HOME/.sls/net" 2>/dev/null
 
 printf "\n${GREEN}%s worker(s) encerrado(s).${RESET}\n" "$stopped"
 # "|| :" : fora do Termux o comando nao existe, e o 127 pararia o

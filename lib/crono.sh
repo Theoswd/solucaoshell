@@ -440,6 +440,11 @@ tarefas_livres() {
     # Batalha pendente (sessao caiu no meio da luta): quem chegou aqui acabou
     # de tentar a retomada; nao tenta de novo nem roda a rotina.
     batalha_pendente && return 0
+    # Disjuntor aberto (servidor fora do ar para varias contas): nada aqui.
+    if disjuntor_segura; then
+        printf "Servidor fora do ar (disjuntor) - atividades seguradas\n"
+        return 0
+    fi
     [ -n "$CLD" ] || clan_id 2>/dev/null
 
     # --- Numeros do painel, a cada 5 min
@@ -826,6 +831,15 @@ start() {
         espera_interrompivel $(( 60 - _st_s ))
         unset _st_s
         return 0
+    fi
+    # Disjuntor aberto: sem varredura nem login. A marca do minuto fica para
+    # depois, para a varredura sair neste minuto se ele fechar.
+    if disjuntor_segura; then
+        unset _st_min
+        printf "Servidor fora do ar (disjuntor) - varredura segurada\n"
+        func_crono
+        func_sleep
+        return 1
     fi
     printf '%s' "$_st_min" > "$TMP/last_start" 2>/dev/null
     unset _st_min
