@@ -4621,6 +4621,42 @@ _tlv57() { ( _v57=$1; curl() { printf 'curl %s (x) libcurl\n' "$_v57"; }; SLS_TA
 check "sls.sh: curl 7.58 desliga, 7.63 e 8.x ligam" "0 1 1" "`_tlv57 7.58.0` `_tlv57 7.63.0` `_tlv57 8.21.0`"
 rm -rf "$_td57"; unset _td57 _r _ag; unset -f _tl57 _tlv57
 
+printf "\n=== 58. acao cuja conexao nem abriu sai de novo ===\n"
+_td58=`mktemp -d`
+# tele_registrar le o %{time_connect}: zero = a conexao nunca abriu.
+_r=`( TMP="$_td58"; export TMP; . "$LIB/info.sh" > /dev/null 2>&1; _o=""
+      for _k in 0.000000 0,000000 0 0.138869 0.000120 1.5; do
+          TE_CONECTOU=x; printf 'M 000 15.002 %s\n' "$_k" > "$TMP/.req_meta"; tele_registrar 28; _o="$_o$TE_CONECTOU"; done
+      printf '%s' "$_o" )`
+check "telemetria: conexao que nao abriu (time_connect zero) da TE_CONECTOU=0" "000111" "$_r"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; _o=""
+      for _p in 28:0 28:1 28:0 28:0 28:0 7:1 0:1; do TE_RC=${_p%:*}; TE_CONECTOU=${_p#*:}
+          if pedido_nao_saiu; then _o="$_o n"; else _o="$_o s"; fi; done; printf '%s' "$_o" )`
+check "pedido_nao_saiu: 28 sem conexao nao saiu; 28 conectado saiu; tres seguidas contam como feita" " n s n n s n s" "$_r"
+# Batalha (Torneio): a cura cuja conexao pendura (28, connect 0) sai de novo,
+# como a recusada (7); a que estourou o tempo DEPOIS de conectar vale.
+_cura58() {
+    ( TMP="$_td58/$1"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/clanfight.sh" > /dev/null 2>&1
+      _cab="<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 1000 <a href='/logout'>sair</a>"
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" > "$TMP/pag"
+      cp "$TMP/pag" "$TMP/SRC"; echo 10000 > "$TMP/FULL"; echo 100000 > "$TMP/relogio"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { echo "$1" >> "$TMP/req"
+          # (o curl so escreve a linha com a telemetria ligada)
+          case "$1" in */heal/*) [ "${SLS_TELEMETRIA:-1}" = 0 ] || printf 'M 000 15.002 %s\n' "$_K58" > "$TMP/.req_meta"; return 28 ;; esac
+          cat "$TMP/pag"; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 20 )); }; func_unset() { :; }
+      cd "$TMP" && clanfight_fight > /dev/null 2>&1
+      printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" )
+}
+check "batalha: cura com a conexao pendurada sai de novo (3 tentativas, como a recusada)" "3 4" "`_K58=0.000000 _cura58 a`"
+check "batalha: cura que estourou o tempo depois de conectar conta como feita (como antes)" "1 4" "`_K58=0.120000 _cura58 b`"
+_r=`( SLS_TELEMETRIA=0 _K58=0.000000 _cura58 c )`
+check "batalha: sem telemetria, curl 28 conta como feita (comportamento de antes)" "1 4" "$_r"
+rm -rf "$_td58"; unset _td58 _r _k _p; unset -f _cura58
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
