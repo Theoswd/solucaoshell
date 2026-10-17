@@ -79,6 +79,20 @@ random_ua 2>/dev/null
 [ -z "$vUserAgent" ] && vUserAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36"
 export vUserAgent
 
+# Telemetria (info.sh/tele_registrar) precisa do %{stderr} do curl 7.63+:
+# num curl mais velho ele sairia no meio da pagina. Conferido uma vez.
+if [ "${SLS_TELEMETRIA:-1}" = 1 ]; then
+    _cv=`curl -V 2>/dev/null`; _cv=${_cv#curl }; _cv=${_cv%% *}
+    _cv_ma=${_cv%%.*}; _cv_mi=${_cv#*.}; _cv_mi=${_cv_mi%%.*}
+    case "$_cv_ma$_cv_mi" in ''|*[!0-9]*) SLS_TELEMETRIA=0 ;; esac
+    if [ "$SLS_TELEMETRIA" != 0 ] && { [ "$_cv_ma" -lt 7 ] || { [ "$_cv_ma" -eq 7 ] && [ "$_cv_mi" -lt 63 ]; }; }; then
+        SLS_TELEMETRIA=0
+    fi
+    [ "$SLS_TELEMETRIA" = 0 ] && printf "[%s] %s — curl %s sem %%{stderr}: telemetria desligada\n" "$SLS_TAG" "$SLS_USER" "$_cv"
+    export SLS_TELEMETRIA
+    unset _cv _cv_ma _cv_mi
+fi
+
 [ ! -f "$TMP/allies.txt" ]  && : > "$TMP/allies.txt"
 [ ! -f "$TMP/callies.txt" ] && : > "$TMP/callies.txt"
 

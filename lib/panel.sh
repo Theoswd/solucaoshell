@@ -1247,6 +1247,13 @@ while true; do
             painel_regua "$LARG" tracejada
         fi
 
+        # Telemetria (lib/rede.sh): recalculada a cada 6 desenhos (30-60 s),
+        # uma linha por servidor.
+        _tl_v=$(( ${_tl_v:-0} + 1 ))
+        if [ "$_tl_v" -eq 1 ] || [ $(( _tl_v % 6 )) -eq 0 ]; then
+            REDE_TXT=$(sh "$LIBDIR/rede.sh" -linha "$LARG" 2>/dev/null)
+        fi
+
         # RODAPE: contadores, proximo evento e avisos, cortados na largura
         # pelo painel_render (o texto tem acento e "·").
         {
@@ -1276,6 +1283,14 @@ while true; do
                     _msg="codigo atualizado — feche e abra o painel: ctrl+c e ./status.sh"
                 fi
                 printf 'T%samarelo%s%s\n' "$_US" "$_US" "$_msg"
+            fi
+
+            # Telemetria: uma linha por servidor, sem processo novo aqui.
+            if [ -n "$REDE_TXT" ]; then
+                _tl_ifs=$IFS; IFS='
+'
+                for _tl_l in $REDE_TXT; do printf 'T%scinza%s%s\n' "$_US" "$_US" "$_tl_l"; done
+                IFS=$_tl_ifs; unset _tl_ifs _tl_l
             fi
 
             # Disjuntor global aberto (info.sh): servidor fora do ar.

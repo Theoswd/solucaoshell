@@ -1064,8 +1064,8 @@ _lista=$(sed -n '/^for _lib in/,/^do$/p' "$LIB/sls.sh" | tr ' ' '\n' | grep '\.s
 for _f in "$LIB"/*.sh; do
     _b=$(basename "$_f")
     # Estes sao carregados por caminho proprio, nao pelo laco (o batalhas.sh
-    # e executado pelo status.sh -batalhas).
-    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh|batalhas.sh) continue ;; esac
+    # e executado pelo status.sh -batalhas; o rede.sh pelo -rede e pelo painel).
+    case "$_b" in worker.sh|sls.sh|panel.sh|info.sh|session_check.sh|contas.sh|batalhas.sh|rede.sh) continue ;; esac
     echo "$_lista" | grep -qx "$_b" || { _orfao=$((_orfao + 1)); bad "modulo em lib/ que ninguem carrega: $_b"; }
 done
 [ "$_orfao" -eq 0 ] && ok "nenhum modulo orfao em lib/"
@@ -4570,6 +4570,56 @@ check "disjuntor: tarefas_livres e start nao pedem nada com o disjuntor aberto" 
 grep -q 'rm -rf "\$HOME/.sls/net"' "$ROOT/stop.sh" && ok "stop.sh limpa o estado do disjuntor" || bad "stop.sh sem limpar ~/.sls/net"
 grep -q 'if disjuntor_segura; then' "$LIB/sls.sh" && ok "login de entrada espera o disjuntor" || bad "login de entrada ignora o disjuntor"
 rm -rf "$_td56"; unset _td56 _r _pg56 _p; unset -f _dj56 _nova56
+
+printf "\n=== 57. telemetria das requisicoes ===\n"
+_td57=`mktemp -d`
+# curl falso: grava os argumentos e, com --stderr, a linha do -w como o real.
+_tl57() {
+    ( TMP="$_td57/tmp"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PACING; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      curl() { printf '%s\n' "$*" > "$_td57/args"; _o=""
+               while [ "$#" -gt 0 ]; do [ "$1" = --stderr ] && _o="$2"; shift; done
+               [ -n "$_o" ] && printf 'M %s %s\n' "${_C57:-200}" "${_T57:-0.532113}" > "$_o"
+               printf 'pagina'; return "${_R57:-0}"; }
+      eval "$1" )
+}
+_r=`_tl57 'run_curl "$URL/user/" > /dev/null; grep -c -- "--stderr" "$_td57/args"; cat "$TMP/req.stat"'`
+check "telemetria: run_curl grava codigo, ms e rc" "1 200 532 0" "`printf '%s' "$_r" | tr '\n' ' ' | sed 's/^\([0-9]*\) [0-9]* /\1 /; s/ $//'`"
+rm -rf "$_td57/tmp"
+_r=`_tl57 'SLS_TELEMETRIA=0; run_curl "$URL/user/" > /dev/null; grep -c -- "--stderr" "$_td57/args"; [ -f "$TMP/req.stat" ] && printf sim || printf nao'`
+check "telemetria: SLS_TELEMETRIA=0 nao muda o curl nem grava" "0 nao" "`printf '%s' "$_r" | tr '\n' ' '`"
+rm -rf "$_td57/tmp"
+_r=`_tl57 'for t in 0,08 12.5 0.089 3; do _T57=$t; run_curl "$URL/x" > /dev/null; done; awk "{ printf \"%s \", \\$3 }" "$TMP/req.stat"'`
+check "telemetria: tempo com virgula, segundos, zero a esquerda (nao octal) e inteiro" "80 12500 89 3000 " "$_r"
+rm -rf "$_td57/tmp"
+# (o exec do run_curl_exec rodaria o curl de verdade: aqui ele e o falso)
+_r=`_tl57 'run_curl_exec() { printf "M 000 17.000001\n" > "$TMP/.req_meta"; return 28; }
+           ( run_curl_exec "$URL/king/" > "$TMP/SRC" ) </dev/null >/dev/null 2>&1 & time_exit 17
+           sleep 0 & time_exit 17; awk "{ print \\$2, \\$3, \\$4 }" "$TMP/req.stat"; [ -s "$TMP/.req_meta" ] && printf resto'`
+check "telemetria: time_exit registra timeout (000, 17000 ms, rc 28) e ignora job sem curl" "000 17000 28" "$_r"
+rm -rf "$_td57/tmp"
+_r=`_tl57 '_TL_N=299; i=0; while [ $i -lt 350 ]; do echo "1 200 1 0" >> "$TMP/req.stat"; i=$((i+1)); done
+           printf "M 200 0.1\n" > "$TMP/.req_meta"; tele_registrar 0; grep -c . "$TMP/req.stat"'`
+check "telemetria: o req.stat e cortado para 200 linhas a cada 300 registros" 200 "$_r"
+# rede.sh: duas contas, uma linha fora da janela, P95 por histograma, 5xx e sem resposta.
+mkdir -p "$_td57/h/BR_Ana" "$_td57/h/BR_Bia"
+_ag=`date +%s`
+{ i=0; while [ $i -lt 19 ]; do echo "$_ag 200 300 0"; i=$((i+1)); done; echo "$_ag 200 2950 0"; echo "$(( _ag - 3600 )) 200 9000 0"; } > "$_td57/h/BR_Ana/req.stat"
+{ echo "$_ag 502 100 0"; echo "$_ag 000 17000 28"; } > "$_td57/h/BR_Bia/req.stat"
+_r=`SLS_HOME="$_td57/h" sh "$LIB/rede.sh" | awk '$1 == "BR_Ana" || $1 == "BR_Bia" || $1 == "TOTAL" { $1 = $1; print }' | tr '\n' '|'`
+check "rede.sh: tabela por conta e total (janela, media, P95, sem resposta, 5xx)" \
+      "BR_Ana 2,0 0,4s 0,4s 0 0|BR_Bia 0,2 0,1s 0,2s 1 1|TOTAL BR 2,2 0,4s 0,4s 1 1|" "$_r"
+_r=`SLS_HOME="$_td57/h" sh "$LIB/rede.sh" -linha 80`
+check "rede.sh -linha: uma linha por servidor para o painel" \
+      "rede BR (10 min): 2,2 req/min · media 0,4 s · P95 0,4 s · 1 sem resposta · 1 HTTP 5xx" "$_r"
+_r=`SLS_HOME="$_td57/vazio" sh "$LIB/rede.sh" -linha 80; printf '[%s]' "$?"`
+check "rede.sh -linha sem dados: nada no rodape" "[0]" "$_r"
+grep -q -- '-rede|--rede) shift; exec sh "$LIBDIR/rede.sh"' "$ROOT/status.sh" && ok "status.sh -rede chama o rede.sh" || bad "status.sh sem -rede"
+# Curl sem %{stderr} (antes da 7.63) desliga a telemetria na subida.
+_tlv57() { ( _v57=$1; curl() { printf 'curl %s (x) libcurl\n' "$_v57"; }; SLS_TAG=BR; SLS_USER=t; SLS_TELEMETRIA=1
+             eval "$(sed -n '/^# Telemetria (info.sh\/tele_registrar)/,/^fi$/p' "$LIB/sls.sh")"; printf '%s' "$SLS_TELEMETRIA" ) 2>/dev/null | tail -c 1; }
+check "sls.sh: curl 7.58 desliga, 7.63 e 8.x ligam" "0 1 1" "`_tlv57 7.58.0` `_tlv57 7.63.0` `_tlv57 8.21.0`"
+rm -rf "$_td57"; unset _td57 _r _ag; unset -f _tl57 _tlv57
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

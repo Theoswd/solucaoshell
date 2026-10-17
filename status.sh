@@ -48,14 +48,18 @@ while [ "$#" -gt 0 ]; do
         -icones|--icones|-emoji|--emoji) PANEL_ICONS_INFO=1 ;;
         # Resumo das ultimas batalhas (lib/batalhas.sh): so le os logs.
         -batalhas|--batalhas) shift; exec sh "$LIBDIR/batalhas.sh" "$@" ;;
+        # Telemetria das requisicoes (lib/rede.sh): so le os req.stat.
+        -rede|--rede) shift; exec sh "$LIBDIR/rede.sh" "$@" ;;
         -h|--help)
-            printf "uso: ./status.sh [-1] [-n SEGUNDOS] [-cols] [-icones] [-batalhas [EVENTO] [CONTA]]\n"
+            printf "uso: ./status.sh [-1] [-n SEGUNDOS] [-cols] [-icones] [-batalhas [EVENTO] [CONTA]] [-rede [MIN]]\n"
             printf "  -1        imprime uma vez e sai\n"
             printf "  -n SEG    intervalo de atualizacao (padrao 5; 10 no Termux)\n"
             printf "  -cols     regua de calibracao da largura da tela\n"
             printf "  -icones   desenha os tres conjuntos de icones, para escolher\n"
             printf "  -batalhas ultima batalha de cada evento por conta (EVENTO: Rei, Vale,\n"
             printf "            Altares, Torneio, Duelo, ColiseuCla, Bandeiras, Equipe, Coliseu)\n"
+            printf "  -rede     requisicoes por conta nos ultimos MIN minutos (padrao 10):\n"
+            printf "            req/min, tempo medio, P95, sem resposta e HTTP 5xx\n"
             exit 0
             ;;
     esac

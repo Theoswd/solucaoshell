@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.93"
+versionNum="3.9.94"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -23,6 +23,7 @@ time_exit() {
     _te_rc=$?
     # Codigo do curl: distingue pagina cortada (18, 56) de resposta completa.
     TE_RC=$_te_rc
+    [ -s "${TMP:-.}/.req_meta" ] && tele_registrar "$_te_rc"
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
     if [ "$_te_rc" = "28" ]; then
@@ -119,6 +120,17 @@ _rc_run() {
 
     _rc_track "$@"
 
+    # TELEMETRIA (lib/rede.sh): o curl escreve "M codigo tempo" em
+    # $TMP/.req_meta; quem espera a requisicao (time_exit, fetch_page ou o
+    # proprio run_curl) registra a linha em $TMP/req.stat (tele_registrar).
+    # SLS_TELEMETRIA=0 desliga (o sls.sh desliga com curl antes da 7.63, que
+    # nao tem o %{stderr} e o escreveria na pagina).
+    _rc_tl=0
+    if [ "${SLS_TELEMETRIA:-1}" = 1 ] && [ -n "$TMP" ] && [ -d "$TMP" ]; then
+        set -- --stderr "$TMP/.req_meta" -w '%{stderr}M %{http_code} %{time_total}\n' "$@"
+        _rc_tl=1
+    fi
+
     # shellcheck disable=SC2086
     if [ "$_rc_mode" = "exec" ]; then
         if [ -n "$TMP_COOKIE" ]; then
@@ -144,6 +156,38 @@ _rc_run() {
              --connect-timeout 15 --max-time "$_rc_mt" \
              $_rc_p -A "$vUserAgent" "$@"
     fi
+    _rc_rc=$?
+    [ "$_rc_tl" = 1 ] && tele_registrar "$_rc_rc"
+    return "$_rc_rc"
+}
+
+# Uma linha por requisicao em $TMP/req.stat: "epoch codigo_http ms rc_curl"
+# (lida pelo lib/rede.sh). So read, aritmetica e >>: nenhum processo, salvo o
+# corte do arquivo a cada 300 linhas (fica com as 200 ultimas).
+tele_registrar() {   # RC_DO_CURL
+    [ -s "$TMP/.req_meta" ] || return 0
+    _tl_c=""; _tl_t=""
+    while read -r _tl_m _tl_a _tl_b _tl_x; do
+        [ "$_tl_m" = M ] && { _tl_c=$_tl_a; _tl_t=$_tl_b; }
+    done < "$TMP/.req_meta"
+    : > "$TMP/.req_meta"
+    case "$_tl_c" in [0-9][0-9][0-9]) ;; *) unset _tl_c _tl_t _tl_m _tl_a _tl_b _tl_x; return 0 ;; esac
+    # "0.532113" (ou com virgula) em ms; zeros a esquerda fora (seriam octal).
+    _tl_i=${_tl_t%%[.,]*}; _tl_d=${_tl_t#*[.,]}
+    [ "$_tl_d" = "$_tl_t" ] && _tl_d=0
+    _tl_d="${_tl_d}000"; _tl_d=${_tl_d%"${_tl_d#???}"}
+    _tl_d=${_tl_d#0}; _tl_d=${_tl_d#0}
+    case "$_tl_i" in ''|*[!0-9]*) _tl_i=0 ;; esac
+    case "$_tl_d" in ''|*[!0-9]*) _tl_d=0 ;; esac
+    if type agora_s > /dev/null 2>&1; then agora_s; else _AGORA=`date +%s`; fi
+    printf '%s %s %s %s\n' "$_AGORA" "$_tl_c" $(( _tl_i * 1000 + _tl_d )) "${1:-0}" >> "$TMP/req.stat" 2>/dev/null
+    _TL_N=$(( ${_TL_N:-0} + 1 ))
+    if [ "$_TL_N" -ge 300 ]; then
+        _TL_N=0
+        tail -n 200 "$TMP/req.stat" > "$TMP/req.stat.t" 2>/dev/null && mv -f "$TMP/req.stat.t" "$TMP/req.stat"
+    fi
+    unset _tl_c _tl_t _tl_m _tl_a _tl_b _tl_x _tl_i _tl_d
+    return 0
 }
 
 # Uso normal: roda o curl como filho e devolve a saida.
@@ -187,6 +231,7 @@ fetch_page() {
     wait "$_fp_pid" 2>/dev/null
     _fp_rc=$?
     unset _fp_pid _fp_pace
+    [ -s "${TMP:-.}/.req_meta" ] && tele_registrar "$_fp_rc"
 
     if [ "$_fp_rc" != "0" ]; then
         printf "curl %s: %s\n" "$_fp_rc" "$relative_url" >> "${TMP:-.}/ERROR_DEBUG"
