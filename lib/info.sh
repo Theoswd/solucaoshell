@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.94"
+versionNum="3.9.95"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -23,6 +23,8 @@ time_exit() {
     _te_rc=$?
     # Codigo do curl: distingue pagina cortada (18, 56) de resposta completa.
     TE_RC=$_te_rc
+    # Conectou? Sem telemetria nao se sabe: vale "conectou" (o de antes).
+    TE_CONECTOU=1
     [ -s "${TMP:-.}/.req_meta" ] && tele_registrar "$_te_rc"
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
@@ -35,17 +37,23 @@ time_exit() {
     return 0
 }
 
-# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35, depois de um
+# O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35, ou 28 sem a
+# conexao ter aberto — TE_CONECTOU=0 da telemetria —, depois de um
 # time_exit.) So entao uma acao com recarga (cura, escudo, esquiva) pode sair
-# de novo: com tempo esgotado ou pagina cortada o elixir pode ja ter sido
-# usado. Tres seguidas contam como feita, senao a cura sairia a cada volta.
+# de novo: com tempo esgotado depois de conectar ou pagina cortada o elixir
+# pode ja ter sido usado. Tres seguidas contam como feita, senao a cura
+# sairia a cada volta.
 pedido_nao_saiu() {
     case "${TE_RC:-0}" in
-        6|7|35)
-            _pns_n=$(( ${_pns_n:-0} + 1 ))
-            if [ "$_pns_n" -ge 3 ]; then _pns_n=0; return 1; fi
-            return 0 ;;
+        6|7|35) _pns_x=1 ;;
+        28)     [ "${TE_CONECTOU:-1}" = 0 ] && _pns_x=1 ;;
     esac
+    if [ "${_pns_x:-0}" = 1 ]; then
+        unset _pns_x
+        _pns_n=$(( ${_pns_n:-0} + 1 ))
+        if [ "$_pns_n" -ge 3 ]; then _pns_n=0; return 1; fi
+        return 0
+    fi
     _pns_n=0
     return 1
 }
@@ -127,7 +135,7 @@ _rc_run() {
     # nao tem o %{stderr} e o escreveria na pagina).
     _rc_tl=0
     if [ "${SLS_TELEMETRIA:-1}" = 1 ] && [ -n "$TMP" ] && [ -d "$TMP" ]; then
-        set -- --stderr "$TMP/.req_meta" -w '%{stderr}M %{http_code} %{time_total}\n' "$@"
+        set -- --stderr "$TMP/.req_meta" -w '%{stderr}M %{http_code} %{time_total} %{time_connect}\n' "$@"
         _rc_tl=1
     fi
 
@@ -163,14 +171,22 @@ _rc_run() {
 
 # Uma linha por requisicao em $TMP/req.stat: "epoch codigo_http ms rc_curl"
 # (lida pelo lib/rede.sh). So read, aritmetica e >>: nenhum processo, salvo o
-# corte do arquivo a cada 300 linhas (fica com as 200 ultimas).
+# corte do arquivo a cada 300 linhas (fica com as 200 ultimas). Tambem diz
+# se a conexao chegou a abrir: TE_CONECTOU=0 com %{time_connect} zero (o
+# pedido nao saiu do aparelho; ver pedido_nao_saiu).
 tele_registrar() {   # RC_DO_CURL
     [ -s "$TMP/.req_meta" ] || return 0
-    _tl_c=""; _tl_t=""
-    while read -r _tl_m _tl_a _tl_b _tl_x; do
-        [ "$_tl_m" = M ] && { _tl_c=$_tl_a; _tl_t=$_tl_b; }
+    _tl_c=""; _tl_t=""; _tl_k=""
+    while read -r _tl_m _tl_a _tl_b _tl_e _tl_x; do
+        [ "$_tl_m" = M ] && { _tl_c=$_tl_a; _tl_t=$_tl_b; _tl_k=$_tl_e; }
     done < "$TMP/.req_meta"
     : > "$TMP/.req_meta"
+    case "$_tl_k" in
+        0|0[.,]|0[.,]0*) case "${_tl_k#0}" in *[1-9]*) TE_CONECTOU=1 ;; *) TE_CONECTOU=0 ;; esac ;;
+        '') ;;
+        *) TE_CONECTOU=1 ;;
+    esac
+    unset _tl_k _tl_e
     case "$_tl_c" in [0-9][0-9][0-9]) ;; *) unset _tl_c _tl_t _tl_m _tl_a _tl_b _tl_x; return 0 ;; esac
     # "0.532113" (ou com virgula) em ms; zeros a esquerda fora (seriam octal).
     _tl_i=${_tl_t%%[.,]*}; _tl_d=${_tl_t#*[.,]}
