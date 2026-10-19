@@ -98,6 +98,8 @@ masmorra_golpe() {
     # link tendo o certo a mao.
     _mg=`grep -o -E "/clandungeon/at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+" "$1" 2>/dev/null | sed -n 1p`
     [ -n "$_mg" ] || _mg=`grep -o -E "/[a-z]{4,20}/at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+" "$1" 2>/dev/null | sed -n 1p`
+    # Golpe que cobra ouro (acabaram os gratuitos): nao e golpe para o bot.
+    botao_pago "$1" "$_mg" && _mg=""
     printf '%s' "$_mg"
     unset _mg
 }
@@ -295,24 +297,3 @@ clan_statue() {
     return 0
 }
 
-clanQuests() {
-    if [ -z "$CLD" ]; then
-        return
-    fi
-
-    # Mesma pagina compartilhada das cq_*; o cq_invalidar garante a releitura
-    # depois de cada clique.
-    cq_pagina || return
-
-    QUEST=`grep -o -E '/clan/[0-9]+/quest/(take|end)/[0-9]+/[?]r=[0-9]+' "$TMP/CQUEST" | head -n1`
-
-    # Teto de tempo: uma missao que nao pode ser concluida reapareceria sempre.
-    CQ_BREAK=$(($(date +%s) + 90))
-    while [ -n "$QUEST" ] && [ "$(date +%s)" -lt "$CQ_BREAK" ]; do
-        fetch_page "$QUEST"
-        cq_invalidar
-        printf "Clan quest processed\n"
-        cq_pagina || break
-        QUEST=`grep -o -E '/clan/[0-9]+/quest/(take|end)/[0-9]+/[?]r=[0-9]+' "$TMP/CQUEST" | head -n1`
-    done
-}

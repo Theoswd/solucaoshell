@@ -77,7 +77,7 @@ aliados_cla() {
     [ -n "$CLD" ] || clan_id 2>/dev/null
     if [ -z "$CLD" ]; then
         # /clan sem resposta nao e o mesmo que estar sem cla.
-        [ -s "$TMP/CLD" ] || : > "$TMP/aliados.falha"
+        [ -f "$TMP/CLD" ] || : > "$TMP/aliados.falha"
         return 0
     fi
     _ac_d="$TMP/aliados_pag"; mkdir -p "$_ac_d" 2>/dev/null

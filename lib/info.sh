@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.95"
+versionNum="3.9.96"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -412,6 +412,18 @@ erva_gratis() { # SECAO ARQUIVO
 
 # Erva e pedra de graca, num awk so: grava GRASS e STONE no diretorio
 # corrente (vazio se nao ha ou se cobra ouro). Usado no Vale.
+# O BOTAO COBRA OURO?   botao_pago ARQUIVO LINK
+# Regra do dono: o bot nunca gasta ouro. Le o rotulo do botao, do link ate o
+# </a> (o mesmo criterio do itens_gratis): com "gold" ou "ouro" ali, e pago.
+# 0 = pago (nao clicar). Link ausente da pagina ou vazio: 1.
+botao_pago() {
+    [ -n "$2" ] || return 1
+    awk -v l="$2" '{ t = t $0 " " } END {
+        i = index(t, l); if (!i) exit 1
+        r = substr(t, i + length(l), 300); c = index(r, "</a>")
+        exit !(c && tolower(substr(r, 1, c)) ~ /gold|ouro/) }' "$1" 2>/dev/null
+}
+
 itens_gratis() { # SECAO ARQUIVO
     awk -v sec="$1" '
         function item(nome, arq,    l, r, c) {

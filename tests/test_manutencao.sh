@@ -606,11 +606,15 @@ for _row in \
 done
 # Arena/carreira/campanha/caverna/sabio tambem rodam no ocioso (tarefas_livres),
 # nao so nos :00/:30. Caverna e campanha pelo relogio do jogo (secao 40).
-for _a in carreira caverna sabio; do
+# Carreira pelo relogio de 8h do jogo (carreira_liberada, 3.9.96).
+for _a in caverna sabio; do
     grep -q "ativ_liberada $_a" "$C" \
         && ok "tarefas_livres: $_a roda tambem no ocioso (nao so :00/:30)" \
         || bad "tarefas_livres: $_a nao roda no ocioso"
 done
+sed -n '/^tarefas_livres() {/,/^}/p' "$C" | grep -A1 'if carreira_liberada; then' | grep -q 'career_func' \
+    && ok "tarefas_livres: carreira roda no ocioso, a cada 8h (relogio do jogo)" \
+    || bad "tarefas_livres: carreira nao roda no ocioso"
 sed -n '/^tarefas_livres() {/,/^}/p' "$C" | grep -A1 'if campanha_liberada; then' | grep -q 'campaign_func' \
     && ok "tarefas_livres: campanha roda tambem no ocioso, pelo relogio do jogo" \
     || bad "tarefas_livres: campanha nao roda no ocioso"
@@ -2435,9 +2439,9 @@ _r=`( TMP="$_td9/d"; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
       echo $(( \`date +%s\` + 600 )) > "$TMP/league_restauro"; liga_do_dia; printf '|rc=%s|' "$?"
       rm -f "$TMP/league_restauro"; liga_do_dia )`
 check "liga_do_dia: fechada nao faz nada; aberta faz a visita inteira" "|rc=1|liga,marca:liga" "$_r"
-_r=`( . "$LIB/league.sh" > /dev/null 2>&1; for _m in 05 12 27 40 57; do
+_r=`( . "$LIB/league.sh" > /dev/null 2>&1; for _m in 12:05 10:12 12:27 12:40 21:57; do
       date() { echo "$_m"; }; liga_fora_da_inscricao && printf '%s=livre ' "$_m" || printf '%s=evento ' "$_m"; done )`
-check "entrada: minutos de inscricao de evento deixam a Liga para depois" "05=livre 12=evento 27=evento 40=livre 57=evento " "$_r"
+check "entrada: minutos de inscricao de evento deixam a Liga para depois" "12:05=livre 10:12=evento 12:27=evento 12:40=livre 21:57=evento " "$_r"
 
 # Cronograma e entrada do bot passam pela liga_do_dia; nada chama a Liga solta.
 _r=`grep -c 'liga_do_dia$' "$LIB/crono.sh"`
@@ -2645,7 +2649,7 @@ _r=`( TMP=\`mktemp -d\`; CLD=1; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono
       echo 190001010000 > "$TMP/last_start"; start; printf '| '
       echo 190001010000 > "$TMP/last_start"; start; rm -rf "$TMP" ) | sed 's/Checklist do cla//' | tr -d '\n'`
 check "start() duas vezes seguidas: a segunda so passa pela liga (portao do jogo)" \
-    "atualiza_agenda use_elixir cq_concluir career_func check_missions liga_do_dia func_trade clanQuests specialEvent allies_refresh | liga_do_dia " "$_r"
+    "atualiza_agenda use_elixir cq_concluir career_func check_missions liga_do_dia func_trade specialEvent allies_refresh | liga_do_dia " "$_r"
 unset _r
 
 
@@ -3418,11 +3422,11 @@ _r=$( TMP="$_td19/cfg"; mkdir -p "$TMP"; . "$LIB/function.sh" > /dev/null 2>&1
       printf '%s %s %s' "$(( FUNC_masmorra_min * 60 ))" "$FUNC_cq_min" "$FUNC_arena_min" )
 check "config: 08/00/010 viram 8/0/10 e chave com ';' nao executa" "480 0 10" "$_r"
 
-# Minuto de inscricao: a varredura para antes dos blocos pesados (a parte
-# em execucao esta na secao 48). Seis desde a inscricao antecipada do
-# Torneio de Equipe (3.9.71), que entrou com a sua.
+# Minuto de inscricao: a varredura para antes de cada atividade (a parte em
+# execucao esta na secao 48). Onze desde a 3.9.96 (carreira, sabio, troca,
+# evento e aliados tambem: as atividades cabem no intervalo entre eventos).
 _r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'liga_fora_da_inscricao || return 0'`
-check "varredura: relogio conferido entre os blocos pesados" 6 "$_r"
+check "varredura: relogio conferido antes de cada atividade" 11 "$_r"
 
 # Erva paga em ouro fica de fora no Torneio e no Duelo.
 printf '%s' "<a href='/clanfight/grass/?r=3'><span>Erva</span></a>" > "$_td19/erva"
@@ -4476,6 +4480,113 @@ _r=$( ( TMP="$_td20/rec88"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PA
       printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" ) )
 check "cura sempre sem conexao: 3 tentativas e a recarga de 90s vale, o ataque segue" "3 4" "$_r"
 unset -f _cp88 _cs88
+
+# ---- 3.9.96: regras do dono nas missoes do cla, ouro e Liga ----
+# Missao da atividade: ajudar o companheiro que ja a tomou vem antes de tomar.
+#   _cq96 ajuda|livre -> pedidos
+_cq96() {
+    ( TMP="$_td20/cq96_$1"; CLD=777; export TMP CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      case "$1" in
+          ajuda) echo "<a href='/clan/777/quest/help/3/?r=1'>Ajudar</a> <a href='/clan/777/quest/take/4/?r=2'>Tomar</a>" > "$TMP/pg" ;;
+          livre) echo "<a href='/clan/777/quest/take/3/?r=2'>Tomar</a>" > "$TMP/pg" ;;
+      esac
+      cq_pagina() { cp "$TMP/pg" "$TMP/CQUEST"; }
+      fetch_page() { echo "${1%%\?*}" >> "$TMP/req"; sed -i "s#<a href='${1%%\?*}?[^']*'>[^<]*</a>##" "$TMP/pg"; }
+      cq_antes arena > /dev/null 2>&1; printf 'rc=%s ' $?; tr '\n' ' ' < "$TMP/req" )
+}
+check "missao do cla: com companheiro na missao da atividade, ajuda (nao toma)" \
+    "rc=0 /clan/777/quest/help/3/ " "`_cq96 ajuda`"
+check "missao do cla: sem ninguem nela, toma a da atividade" "rc=0 /clan/777/quest/take/3/ " "`_cq96 livre`"
+check "missao do cla: a varredura nao toma mais QUALQUER missao (clanQuests saiu)" 0 \
+    "`grep -c 'clanQuests' "$LIB/crono.sh" "$LIB/clanid.sh" | awk -F: '{ s += $2 } END { print s }'`"
+# Nunca gastar ouro: o rotulo do botao decide.
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; _f="$_td20/bp96"
+      echo "<a href='/lab/alchemy/2/makePotion?r=5'>Fazer por <img src='/images/icon/gold.png'/> 5</a> <a href='/x/?r=1'>Gratis</a>" > "$_f"
+      botao_pago "$_f" "/lab/alchemy/2/makePotion?r=5" && printf 'pago ' || printf 'gratis '
+      botao_pago "$_f" "/x/?r=1" && printf 'pago ' || printf 'gratis '
+      botao_pago "$_f" "" && printf 'pago' || printf 'vazio' )`
+check "botao_pago: ouro no rotulo e pago; sem ouro e gratis; link vazio nao e pago" "pago gratis vazio" "$_r"
+_r=$( TMP="$_td20/el96"; CLD=777; export TMP CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      cq_assumir() { return 0; }; cq_falta() { echo 2; }; cq_concluir() { :; }; cq_sorteia() { echo 2; }
+      fetch_page() { echo "$1" >> "$TMP/req"; echo "<a href='/lab/alchemy/2/makePotion?r=5'>Fazer <img src='/images/icon/gold.png'/> 3</a>" > "$TMP/SRC"; }
+      cq_elixir > /dev/null 2>&1; grep -c makePotion "$TMP/req" )
+check "elixir que cobra ouro nao e produzido" 0 "$_r"
+_r=$( TMP="$_td20/mg96"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      echo "<a href='/clandungeon/attack/?r=1'>Golpe <img src='/images/icon/gold.png'/> 2</a>" > "$TMP/D1"
+      echo "<a href='/clandungeon/attack/?r=1'>Golpe</a>" > "$TMP/D2"
+      printf '[%s][%s]' "`masmorra_golpe "$TMP/D1"`" "`masmorra_golpe "$TMP/D2"`" )
+check "masmorra: golpe que cobra ouro nao e golpe" "[][/clandungeon/attack/?r=1]" "$_r"
+# Liga: uma visita por dia. Travada (mais fortes, sem pocao), volta as 00:30.
+_r=$( TMP="$_td20/lg96"; export TMP; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
+      date() { case "$1" in +%H:%M:%S) echo 13:00:00 ;; +%s) echo 100000 ;; *) command date "$@" ;; esac; }
+      league_volta_0030; cat "$TMP/league_restauro" )
+check "Liga travada as 13:00: volta as 00:30 (11h30 depois)" "$(( 100000 + 41400 ))" "$_r"
+_r=$( TMP="$_td20/lg96b"; export TMP; mkdir -p "$TMP"; . "$LIB/league.sh" > /dev/null 2>&1
+      date() { case "$1" in +%H:%M:%S) echo 00:10:00 ;; +%s) echo 100000 ;; *) command date "$@" ;; esac; }
+      league_volta_0030; cat "$TMP/league_restauro" )
+check "Liga travada as 00:10: volta as 00:30 do mesmo dia" "$(( 100000 + 1200 ))" "$_r"
+check "Liga: sem pocao e mais fortes, anota a volta (uma visita por dia)" 1 \
+    "`sed -n '/^league_play() {/,/^}/p' "$LIB/league.sh" | grep -c '\[ "\$_lg_travada" = 1 \] && league_volta_0030'`"
+# Aliados em conta sem cla: CLD vazio e "sem cla", nao falha (lista atualiza).
+_r=$( TMP="$_td20/al96"; export TMP; mkdir -p "$TMP"; : > "$TMP/CLD"; CLD=""
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; clan_id() { :; }
+      aliados_cla > /dev/null 2>&1; [ -f "$TMP/aliados.falha" ] && printf falha || printf ok )
+check "aliados: conta sem cla nao marca falha" ok "$_r"
+# Arena: missao do cla so com ataque na tela (regra do dono).
+#   _ar96 com|sem -> pedidos
+_ar96() {
+    ( TMP="$_td20/ar96_$1"; CLD=777; export TMP CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/arena.sh" > /dev/null 2>&1
+      A=$1; sleep() { :; }
+      cq_antes() { echo "missao:$1" >> "$TMP/req"; }; checkQuest() { echo "checkQuest:$1:$2" >> "$TMP/req"; }
+      fetch_page() { echo "$1" >> "$TMP/req"
+          case "$1" in
+              /arena/) if [ "$A" = com ] && [ ! -f "$TMP/lutou" ]; then echo "<a href='/arena/attack/1/?r=7'>Atacar</a>" > "$TMP/SRC"; else echo "Arena" > "$TMP/SRC"; fi ;;
+              /arena/attack/*) : > "$TMP/lutou"; echo "fim" > "$TMP/SRC" ;;
+              *) : > "$TMP/SRC" ;;
+          esac; }
+      arena_duel > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+}
+check "arena sem ataque: so a arena, sem pagina de missao" "/arena/ " "`_ar96 sem`"
+check "arena com ataque: missao (ajuda ou toma), arena relida e luta" \
+    "/arena/ missao:arena /arena/ /arena/attack/1/?r=7 /inv/bag/ checkQuest:3:end checkQuest:4:end " "`_ar96 com`"
+check "elixir usado (bau) nao pega a missao de fazer elixir" 0 \
+    "`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c 'cq_antes elixir'`"
+# Atividades so no intervalo entre os eventos (regra do dono): todo minuto de
+# janela do cronograma (ramos de evento do sls_play) fica de fora, e os 5 min
+# antes de cada uma tambem; fora disso a rotina roda (antes: :10-:14, :25-:29
+# e :55-:59 de TODA hora, com ou sem evento).
+_r=`( . "$LIB/league.sh" > /dev/null 2>&1
+      _pats=\`grep -E '^        \\([0-9]{2}:[0-9]' "$LIB/run.sh" | grep -v '00:\\[345\\]5\\|00:00|00:30' | sed 's/^ *(//; s/)$//' | tr '\\n' '|' | sed 's/|$//'\`
+      _falha=0; _livres=0
+      for _h in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23; do
+        for _m in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59; do
+          date() { echo "$_h:$_m"; }
+          eval "case $_h:$_m in $_pats) _ev=1 ;; *) _ev=0 ;; esac"
+          if liga_fora_da_inscricao; then _livre=1; else _livre=0; fi
+          [ "$_ev" = 1 ] && [ "$_livre" = 1 ] && _falha=$((_falha + 1))
+          [ "$_livre" = 1 ] && _livres=$((_livres + 1))
+        done
+      done
+      printf '%s %s' "$_falha" "$_livres" )`
+check "rotina: nenhum minuto de evento do cronograma livre; minutos livres por dia" "0 1260" "$_r"
+_r=`( . "$LIB/league.sh" > /dev/null 2>&1
+      for _t in 12:19 12:20 12:29 12:30 03:25 03:55 10:12 23:58; do date() { echo "$_t"; }
+          liga_fora_da_inscricao && printf '%s=livre ' "$_t" || printf '%s=evento ' "$_t"; done )`
+check "rotina: para 5 min antes do Rei (12:25) e roda as 03:25" \
+    "12:19=livre 12:20=evento 12:29=evento 12:30=livre 03:25=livre 03:55=livre 10:12=evento 23:58=livre " "$_r"
+# Carreira a cada 8h (regra do jogo): lutou, 8h; sem ataque, de hora em hora.
+_r=$( TMP="$_td20/cr96"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      agora_s() { _AGORA=100000; }
+      CARREIRA_LUTOU=1; carreira_marcar; printf '%s ' $(( $(cat "$TMP/next_carreira") - 100000 ))
+      CARREIRA_LUTOU=0; carreira_marcar; printf '%s ' $(( $(cat "$TMP/next_carreira") - 100000 ))
+      carreira_liberada && printf 'liberada' || printf 'espera' )
+check "carreira: lutou volta em 8h, sem ataque em 1h" "28800 3600 espera" "$_r"
+check "missoes: o checklist nao ajuda mais em qualquer missao (so antes da atividade)" 0 \
+    "`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'cq_ajudar'`"
+unset -f _cq96 _ar96
 
 rm -rf "$_td20"; unset _td20 _r VIVA53 LOGIN53
 unset -f _cld53 _cqpg53 _liga53 _cc69 _cc70 _giro71 _tr77 _vl80 _col81 _rl83

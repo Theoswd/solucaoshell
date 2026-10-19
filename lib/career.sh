@@ -1,11 +1,12 @@
 career_func() {
     printf "Career\n"
+    CARREIRA_LUTOU=0
     fetch_page "/career/"
 
-    # Exige link de ATAQUE para entrar: sem ele o checkQuest 6 tomaria a
+    # Exige link de ATAQUE para entrar: sem ele o cq_antes tomaria a
     # missao do cla sem poder cumpri-la, ocupando um slot a toa.
     if grep -q -o -E '/career/attack/[?]r[=][0-9]+' "$TMP/SRC"; then
-        checkQuest 6 apply
+        cq_antes carreira 2>/dev/null
 
         fetch_page "/career/"
 
@@ -17,6 +18,7 @@ career_func() {
                 case $CAREER in
                     *attack*|*take*)
                         fetch_page "$CAREER"
+                        CARREIRA_LUTOU=1
                         RESULT=`echo "$CAREER" | cut -d'/' -f3`
                         printf "Career -> %s\n" "$RESULT"
                         sleep 0.5s

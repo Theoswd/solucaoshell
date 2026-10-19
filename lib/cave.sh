@@ -130,6 +130,10 @@ cave_routine() {
             printf "Cave limit reached\n"
             break
         fi
+        if botao_pago "$TMP/SRC" "$CAVE"; then
+            printf "Caverna: %s cobra ouro - para aqui\n" "$RESULT"
+            break
+        fi
 
         case $RESULT in
             gather|down|runaway|speedUp)
