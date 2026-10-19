@@ -2,10 +2,14 @@
 arena_duel() {
     printf "Arena\n"
 
-    checkQuest 3 apply
-    checkQuest 4 apply
-
+    # Regra do dono: missao do cla so para a atividade que vai acontecer.
+    # Com ataque na tela, ajuda ou toma (cq_antes) e rele a arena: o nonce
+    # da primeira leitura nao vale depois das paginas de missao.
     fetch_page "/arena/"
+    if grep -q -E '/arena/attack/[0-9]+/[?]r[=][0-9]+' "$TMP/SRC" && [ -n "$CLD" ]; then
+        cq_antes arena 2>/dev/null
+        fetch_page "/arena/"
+    fi
 
     BREAK=$(($(date +%s) + 60))
     count=0
@@ -28,10 +32,8 @@ arena_duel() {
         sleep 0.6s
     done
 
-    # Sem ataque nao ha item novo na mochila: 48 aberturas por dia a toa.
+    # Sem ataque: nem mochila nem missao (nada mudou nelas).
     if [ "$count" -eq 0 ]; then
-        checkQuest 3 end
-        checkQuest 4 end
         printf "Arena ok\n"
         return 0
     fi

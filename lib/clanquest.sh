@@ -12,8 +12,9 @@
 #   7 Alquimista                   Faça 2 Elixires               -> elixir
 #   8 Velho Lojista                Obtenha 3 pedras ou ervas     -> loja
 #
-# Sempre TOMAR a missao antes de executar a atividade, para o progresso
-# contar.
+# Regra do dono: antes da atividade, a missao DELA. Se alguem do cla ja a
+# tomou e nao concluiu, AJUDA (prioridade); senao, toma. Nunca toma missao de
+# atividade que nao vai fazer, e nunca gasta ouro (ver botao_pago).
 
 # IDs de missao por tipo de atividade
 cq_ids() {
@@ -102,6 +103,34 @@ cq_tomar() {
     return $_tomou
 }
 
+# cq_assumir <tipo>
+# A missao da atividade, com a regra do dono: o botao de ajuda (missao de um
+# companheiro, ainda aberta) vem antes do de tomar. Confirma relendo: o
+# botao clicado tem de sumir. 0 = ajudou ou tomou alguma.
+cq_assumir() {
+    _ca_tipo="$1"
+    _ca_ok=1
+    if [ "${FUNC_clan_help:-y}" = "y" ]; then
+        for _ca_id in `cq_ids "$_ca_tipo"`; do
+            cq_pagina || break
+            _ca_cl=`grep -o -E "/clan/${CLD}/quest/help/${_ca_id}/?[?]r=[0-9]+" "$TMP/CQUEST" | sed -n 1p`
+            [ -n "$_ca_cl" ] || continue
+            fetch_page "$_ca_cl"
+            cq_invalidar
+            if cq_pagina && ! grep -q -E "/clan/${CLD}/quest/help/${_ca_id}/?[?]" "$TMP/CQUEST"; then
+                printf "Ajudando missao do cla de um companheiro (%s #%s)\n" "$_ca_tipo" "$_ca_id"
+                _ca_ok=0
+            else
+                printf "Ajuda em missao do cla nao confirmada (%s #%s)\n" "$_ca_tipo" "$_ca_id"
+            fi
+        done
+    fi
+    # Sem ajuda possivel para nenhuma missao do tipo: toma a que estiver livre.
+    if [ "$_ca_ok" = 1 ] && cq_tomar "$_ca_tipo"; then _ca_ok=0; fi
+    unset _ca_tipo _ca_id _ca_cl
+    return $_ca_ok
+}
+
 # cq_falta <id>: quanto falta na missao que esta com ESTA conta (tomada agora
 # ou antes, ja sem link de tomar).
 #
@@ -174,12 +203,12 @@ cq_ajudar() {
 # Concluir missao pagando ouro foi removido: as missoes so avancam pelo jogo.
 
 # cq_antes <tipo>
-# Chamada antes de cada atividade: recolhe concluidas, toma a do tipo,
-# e devolve 0 se a atividade esta combinada com alguma missao.
+# Chamada antes de cada atividade: recolhe concluidas, ajuda ou toma a do
+# tipo (cq_assumir), e devolve 0 se a atividade esta combinada com alguma.
 cq_antes() {
     [ -n "$CLD" ] || return 1
     cq_concluir > /dev/null 2>&1
-    cq_tomar "$1"
+    cq_assumir "$1"
 }
 
 # Sorteio portatil de 1..N: sem shuf (ausente em toybox enxuto) nem $RANDOM
@@ -201,7 +230,7 @@ cq_elixir() {
     [ -n "$CLD" ] || return 1
     # Tomada agora ou numa volta anterior (cq_falta). Ja ativa, no maximo uma
     # leva por hora: producao que nao contou nao vira gasto a cada checklist.
-    cq_tomar elixir || ativ_liberada cq_elixir 60 || return 1
+    cq_assumir elixir || ativ_liberada cq_elixir 60 || return 1
     _max=`cq_falta 7` || { unset _max; return 1; }
     [ "$_max" -le 3 ] 2>/dev/null || _max=3
     ativ_marcar cq_elixir
@@ -212,6 +241,10 @@ cq_elixir() {
 
     _cl=`grep -o -E "/lab/alchemy/${_i}/makePotion[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     [ -n "$_cl" ] || { unset _i _cl; return 1; }
+    if botao_pago "$TMP/SRC" "$_cl"; then
+        printf "Elixir cobra ouro - nao produz (missao do cla)\n"
+        unset _i _cl _max; return 1
+    fi
 
     case "$_i" in
         1) printf "Elixir de forca\n" ;;
@@ -230,6 +263,7 @@ cq_elixir() {
         _n=$((_n + 1))
         [ "$_n" -le "$_max" ] || break
         _cl=`grep -o -E "/lab/alchemy/${_i}/makePotion[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
+        botao_pago "$TMP/SRC" "$_cl" && break
     done
     unset _n _max
 
@@ -243,7 +277,7 @@ cq_elixir() {
 cq_mercador() {
     [ -n "$CLD" ] || return 1
     # Mesma regra do cq_elixir: tomada agora, ou ja ativa (uma leva por hora).
-    cq_tomar mercador || ativ_liberada cq_mercador 60 || return 1
+    cq_assumir mercador || ativ_liberada cq_mercador 60 || return 1
     _max=`cq_falta 8` || { unset _max; return 1; }
     [ "$_max" -le 3 ] 2>/dev/null || _max=3
     ativ_marcar cq_mercador
@@ -252,6 +286,10 @@ cq_mercador() {
     _i=`cq_sorteia 2`
     _cl=`grep -o -E "/coliseum/merchant/${_i}/startMaking[?]r=[0-9]+&ref=lab" "$TMP/SRC" | sed -n 1p`
     [ -n "$_cl" ] || { unset _i _cl; return 1; }
+    if botao_pago "$TMP/SRC" "$_cl"; then
+        printf "Mercador cobra ouro - nao produz (missao do cla)\n"
+        unset _i _cl _max; return 1
+    fi
 
     case "$_i" in
         1) printf "Produzindo pedras\n" ;;
@@ -268,6 +306,7 @@ cq_mercador() {
         _n=$((_n + 1))
         [ "$_n" -le "$_max" ] || break
         _cl=`grep -o -E "/coliseum/merchant/${_i}/startMaking[?]r=[0-9]+&ref=lab" "$TMP/SRC" | sed -n 1p`
+        botao_pago "$TMP/SRC" "$_cl" && break
     done
     unset _max
     unset _n

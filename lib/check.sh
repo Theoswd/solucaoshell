@@ -37,6 +37,9 @@ check_missions() {
     _ck_lista "/quest/openChest/[0-9]+/"
     for _ck_i in 1 2; do
         if _ck_link "/quest/openChest/$_ck_i/?"; then
+            if botao_pago "$TMP/SRC" "$click"; then
+                printf "Chest %s cobra ouro - nao abre\n" "$_ck_i"; continue
+            fi
             fetch_page "$click"
             printf "Chest %s opened\n" "$_ck_i"
             fetch_page "/quest/"

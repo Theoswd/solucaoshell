@@ -95,6 +95,16 @@ league_restauro_segundos() {
         awk -F: '{ print $1 * 3600 + $2 * 60 + $3 }'
 }
 
+# Anota a volta para as proximas 00:30 do relogio do aparelho (ate 24h).
+league_volta_0030() {
+    _lv=`date +%H:%M:%S`
+    _lv_h=${_lv%%:*}; _lv=${_lv#*:}; _lv_m=${_lv%%:*}; _lv_s=${_lv#*:}
+    _lv=$(( ${_lv_h#0} * 3600 + ${_lv_m#0} * 60 + ${_lv_s#0} ))
+    if [ "$_lv" -lt 1800 ]; then _lv=$(( 1800 - _lv )); else _lv=$(( 86400 - _lv + 1800 )); fi
+    echo $(( `date +%s` + _lv )) > "$TMP/league_restauro" 2>/dev/null
+    unset _lv _lv_h _lv_m _lv_s
+}
+
 # Anota a reabertura (restauro + 30 min). Sem relogio legivel na pagina, nao
 # anota: a Liga segue no intervalo de sempre.
 league_restauro_marcar() {
@@ -130,19 +140,34 @@ liga_do_dia() {
     ativ_marcar liga
 }
 
-# Na entrada do bot a Liga espera se for hora de inscricao de evento (:10-:14
-# Bandeiras, :25-:29 e :55-:59 os demais): o evento vem primeiro e a
-# varredura seguinte faz a Liga.
+# AS ATIVIDADES CABEM NO INTERVALO ENTRE OS EVENTOS (regra do dono).
+#
+# Inicio (HHMM) das janelas de inscricao do cronograma, as mesmas dos ramos do
+# sls_play (run.sh; um teste confere). Cada uma dura 5 min. Fora delas e sem
+# uma comecando nos proximos EVENTO_MARGEM minutos, a rotina pode rodar: a
+# atividade mais longa (caverna, ate 4 min) nao invade a inscricao. Durante o
+# evento em si quem segura a conta e o evento_espera.
+EVENTO_JANELAS="0925 0955 1010 1025 1055 1125 1225 1355 1455 1555 1610 1625 1755 1855 2055 2125 2155 2225"
+EVENTO_MARGEM=5
+
+# 0 = pode rodar atividade agora; 1 = janela de evento ou perto dela.
 liga_fora_da_inscricao() {
-    # Minuto do relogio da volta (crono.sh); carregado sozinho, o date.
-    if type minuto_atual > /dev/null 2>&1; then
-        minuto_atual; _lfi_m="$_MIN"
+    # Hora do relogio da volta (crono.sh); carregado sozinho, o date.
+    if type minuto_atual > /dev/null 2>&1 && type hora_atual > /dev/null 2>&1; then
+        hora_atual; minuto_atual; _lfi_m=$(( _HOR * 60 + _MIN ))
     else
-        _lfi_m=`date +%M`
+        _lfi_m=`date +%H:%M`; _lfi_h=${_lfi_m%:*}; _lfi_m=${_lfi_m#*:}
+        _lfi_m=$(( ${_lfi_h#0} * 60 + ${_lfi_m#0} ))
     fi
-    case "$_lfi_m" in
-        1[0-4]|2[5-9]|5[5-9]) return 1 ;;
-    esac
+    for _lfi_j in $EVENTO_JANELAS; do
+        _lfi_h=${_lfi_j%??}; _lfi_h=${_lfi_h#0}; _lfi_w=${_lfi_j#??}; _lfi_w=${_lfi_w#0}
+        _lfi_w=$(( _lfi_h * 60 + _lfi_w ))
+        if [ "$_lfi_m" -ge $(( _lfi_w - EVENTO_MARGEM )) ] && [ "$_lfi_m" -lt $(( _lfi_w + 5 )) ]; then
+            unset _lfi_m _lfi_h _lfi_w _lfi_j
+            return 1
+        fi
+    done
+    unset _lfi_m _lfi_h _lfi_w _lfi_j
     return 0
 }
 
@@ -220,6 +245,7 @@ league_play() {
     # O LACO DAS LUTAS TEM TETO (40 voltas, 5 min): uma luta que o servidor
     # nao registra nao desce o contador e prenderia a conta na Liga.
     _lg_fim=$(( `date +%s` + 300 ))
+    _lg_travada=0
     _lg_voltas=0
     _lg_falhas=0
     # Forca nao lida (/train sem resposta): comparado com vazio, todo
@@ -308,11 +334,24 @@ league_play() {
                         fights_done=$((fights_done + 1))
                         fetch_available_fights
                         sleep 1s
-                        potion_click=`grep -o -E "/league/potion/\?r=[0-9]+" "$TMP/SRC" | sed -n 1p`
+                        # Primeiro da pagina RELIDA (LEAGUE_SRC), onde o nonce
+                        # vale; sem a pocao nela, da resposta da luta, como
+                        # sempre foi (a pagina real nao foi conferida).
+                        _lg_pg="$TMP/LEAGUE_SRC"
+                        potion_click=`grep -o -E "/league/potion/\?r=[0-9]+" "$_lg_pg" | sed -n 1p`
+                        if [ -z "$potion_click" ]; then
+                            _lg_pg="$TMP/SRC"
+                            potion_click=`grep -o -E "/league/potion/\?r=[0-9]+" "$_lg_pg" | sed -n 1p`
+                        fi
+                        if botao_pago "$_lg_pg" "$potion_click"; then
+                            printf "[LIGA] A pocao cobra ouro - nao usa.\n"
+                            potion_click=""
+                        fi
                         # Sem pocao o POTION nao pode nascer: a volta seguinte
                         # atacaria sem olhar a forca e perderia uma luta.
                         if [ -z "$potion_click" ]; then
-                            printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta na proxima passagem.\n"
+                            printf "[LIGA] Sem pocao e os adversarios sao mais fortes - volta as 00:30.\n"
+                            _lg_travada=1
                             action="exit_loops"
                         elif fetch_page "$potion_click"; then
                             printf "Used a potion\n"
@@ -353,7 +392,12 @@ league_play() {
     done
     [ "$_lg_voltas" -ge 40 ] || [ "`date +%s`" -ge "$_lg_fim" ] && \
         printf "[LIGA] Teto do laco atingido (%s voltas) - segue para as demais atividades.\n" "$_lg_voltas"
-    unset _lg_fim _lg_voltas _lg_falhas _lg_antes
+    unset _lg_fim _lg_voltas _lg_falhas _lg_antes _lg_pg
+    # Regra do dono: uma visita por dia. Sobrou luta que nao da para fazer
+    # (mais fortes e sem pocao): sem o relogio da pagina (so vem com o
+    # contador em zero), a volta e as 00:30 do relogio do aparelho.
+    [ "$_lg_travada" = 1 ] && league_volta_0030
+    unset _lg_travada
 
     # COLETA DA RECOMPENSA, fora do laco de lutas: so limpa o estado com a
     # confirmacao do servidor. Liberar cinco lutas novas NAO apaga o estado.

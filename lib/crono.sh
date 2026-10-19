@@ -425,6 +425,22 @@ campanha_relogio() {
         }'
 }
 
+# CARREIRA: os torneios voltam a cada 8h (regra do jogo, confirmada pelo
+# dono). Lutou: a proxima visita e 8h depois. Sem ataque na pagina (ela nao
+# mostra quando repoe): tenta de hora em hora ate achar.
+carreira_liberada() {
+    relogio_liberado carreira
+    [ $? -ne 1 ]
+}
+carreira_marcar() {
+    agora_s
+    if [ "${CARREIRA_LUTOU:-0}" = 1 ]; then
+        echo $(( _AGORA + 28800 )) > "$TMP/next_carreira" 2>/dev/null
+    else
+        echo $(( _AGORA + 3600 )) > "$TMP/next_carreira" 2>/dev/null
+    fi
+}
+
 campanha_liberada() {
     relogio_liberado campanha
     [ $? -ne 1 ]
@@ -464,7 +480,6 @@ tarefas_livres() {
     if [ -n "$CLD" ] && cq_liberado; then
         printf "Checklist do cla\n"
         cq_concluir    2>/dev/null
-        cq_ajudar      2>/dev/null
         # Missoes 7 e 8 tem atividade propria: alquimia e mercador do
         # Coliseu. Sem missao ativa, cq_tomar falha e nada e produzido.
         cq_elixir      2>/dev/null
@@ -494,17 +509,16 @@ tarefas_livres() {
     # --- Arena, sempre tomando antes a missao do cla que ela completa
     liga_fora_da_inscricao || return 0
     if arena_liberada; then
-        cq_antes arena 2>/dev/null
         arena_duel
         arena_marcar
     fi
 
     # --- Carreira, campanha, caverna e cabana do sabio, cada uma no seu
     # intervalo (marcador em disco).
-    if ativ_liberada carreira 15; then
-        cq_antes carreira 2>/dev/null
+    liga_fora_da_inscricao || return 0
+    if carreira_liberada; then
         career_func
-        ativ_marcar carreira
+        carreira_marcar
     fi
 
     liga_fora_da_inscricao || return 0
@@ -519,6 +533,7 @@ tarefas_livres() {
         caverna_marcar
     fi
 
+    liga_fora_da_inscricao || return 0
     if ativ_liberada sabio 20; then
         check_missions
         check_rewards
@@ -536,16 +551,13 @@ tarefas_livres() {
 
     # O func_trade tem portao proprio de uma vez ao dia; o intervalo aqui e
     # so para nao reabrir a pagina da troca a cada minuto.
+    liga_fora_da_inscricao || return 0
     if ativ_liberada troca 60; then
         func_trade 2>/dev/null
         ativ_marcar troca
     fi
 
-    if [ -n "$CLD" ] && [ "${FUNC_clan_missions:-y}" = "y" ] && ativ_liberada clanquest 20; then
-        clanQuests 2>/dev/null
-        ativ_marcar clanquest
-    fi
-
+    liga_fora_da_inscricao || return 0
     if [ "${FUNC_auto_events:-y}" = "y" ] && ativ_liberada evento 30; then
         specialEvent 2>/dev/null
         ativ_marcar evento
@@ -554,6 +566,7 @@ tarefas_livres() {
     # --- Lista de aliados (amigos + cla, ver allies.sh), a cada 12h. Sem
     # isto as listas das batalhas de cla ficariam vazias: o worker nao tem
     # teclado. A chave "aliados2" faz quem atualizar refazer a lista ja.
+    liga_fora_da_inscricao || return 0
     if ativ_liberada aliados2 720; then
         if allies_refresh 2>/dev/null; then
             ativ_marcar aliados2
@@ -874,7 +887,6 @@ start() {
         ativ_marcar agenda
     fi
     if ativ_liberada elixir 25; then
-        cq_antes elixir 2>/dev/null
         use_elixir
         ativ_marcar elixir
     fi
