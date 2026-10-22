@@ -5048,6 +5048,71 @@ check "painel com login recusado ha pouco: um /user, sem POST, e espera o interv
 grep -q '^relogin_zerar$' "$LIB/sls.sh" && ok "login de entrada zera o portao da reconexao" || bad "sls.sh nao zera o portao"
 rm -rf "$_td61"; unset _td61 _r _t61 _anon61 _logada61; unset -f _rl61 _nova61 _posts61
 
+# =============================================================================
+printf "\n=== 62. troca prata -> ouro: clique sem resposta nao vira segunda troca ===\n"
+# =============================================================================
+# Passagens seguidas do func_trade na mesma conta. O clique de cada passagem
+# segue a lista _CLIQUES ("ok", "corta" = o servidor trocou mas a resposta
+# nao veio, "mudo" = nao trocou e nao respondeu). O ouro da conta fica em
+# $TMP/ouro (o clique que troca soma 100). Saida: "cliques=N dia=feito|aberto
+# pendente=sim|nao ouro=N".
+_td62t=`mktemp -d`
+_tr62() { # _tr62 "CLIQUES" [PASSAGENS] [ouro_inicial] [pagina_viva=1]
+    ( TMP="$_td62t/c"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP; URL=http://jogo
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+      FUNC_trade_dias=1; echo "${3:-50}" > "$TMP/ouro"; echo "$1" > "$TMP/cliques_roteiro"; : > "$TMP/cliques"
+      _viva="<script>jsInterface.event(\"user=5;level=40\")</script>"
+      fetch_page() { case "$1" in
+          /trade/exchange)
+              read -r _o < "$TMP/ouro"
+              [ -f "$TMP/sem_pagina" ] && { : > "$TMP/SRC"; return 1; }
+              echo "<img src='/images/icon/gold.png' alt='g'/> $_o <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a>$_viva" > "$TMP/SRC" ;;
+          /trade/exchange/gold/*)
+              # A marca ja tem de estar em disco quando o pedido sai.
+              cat "$TMP/trade_pendente" >> "$TMP/marca_no_clique" 2>/dev/null
+              read -r _r < "$TMP/cliques_roteiro"; set -- $_r; _c=$1; shift; echo "$*" > "$TMP/cliques_roteiro"
+              echo x >> "$TMP/cliques"
+              case "$_c" in ok|corta) read -r _o < "$TMP/ouro"; echo $(( _o + 100 )) > "$TMP/ouro" ;; esac
+              case "$_c" in ok) echo "trocou $_viva" > "$TMP/SRC"; return 0 ;; *) : > "$TMP/SRC"; return 1 ;; esac ;;
+          esac; }
+      _p=0; while [ "$_p" -lt "${2:-3}" ]; do func_trade > /dev/null 2>&1; _p=$((_p + 1)); done
+      printf 'cliques=%s dia=%s pendente=%s ouro=%s' "`wc -l < "$TMP/cliques" | tr -d ' '`" \
+          "`[ "\`cat "$TMP/last_trade" 2>/dev/null\`" = "\`date +%Y%m%d\`" ] && echo feito || echo aberto`" \
+          "`[ -f "$TMP/trade_pendente" ] && echo sim || echo nao`" "`cat "$TMP/ouro"`" )
+}
+check "troca: resposta normal, uma troca e o dia feito" "cliques=1 dia=feito pendente=nao ouro=150" "`_tr62 ok`"
+check "troca: o servidor trocou mas a resposta nao veio -> o ouro confirma, sem segunda troca" \
+    "cliques=1 dia=feito pendente=nao ouro=150" "`_tr62 corta`"
+check "troca: nao trocou e nao respondeu -> tenta de novo e a segunda sai" \
+    "cliques=2 dia=feito pendente=nao ouro=150" "`_tr62 'mudo ok'`"
+check "troca: duas tentativas sem confirmacao -> nao tenta a terceira no dia" \
+    "cliques=2 dia=feito pendente=nao ouro=50" "`_tr62 'mudo mudo mudo' 4`"
+check "troca: ouro abreviado (1,2K) nao enxerga o lote -> nao repete" \
+    "cliques=1 dia=feito pendente=nao ouro=1,2K" "`_tr62 mudo 3 1,2K`"
+_r=$( TMP="$_td62t/m"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 77 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          *) cat "$TMP/trade_pendente" > "$TMP/marca"; : > "$TMP/SRC"; return 1 ;; esac; }
+      func_trade > /dev/null 2>&1; cat "$TMP/marca" )
+check "troca: a marca pendente vai para o disco ANTES do clique (worker morto no meio)" \
+    "`date +%Y%m%d` 77 100 1" "$_r"
+# Pendente de outro dia nao vale; pagina de conferencia que nao veio nao decide.
+_r=$( TMP="$_td62t/o"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
+      echo "19990101 10 100 2" > "$TMP/trade_pendente"; : > "$TMP/cl"
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 10 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          *) echo x >> "$TMP/cl"; echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;; esac; }
+      func_trade > /dev/null 2>&1; printf '%s ' "`wc -l < "$TMP/cl" | tr -d ' '`"
+      echo "`date +%Y%m%d` 10 100 1" > "$TMP/trade_pendente"; rm -f "$TMP/last_trade"; : > "$TMP/cl"
+      fetch_page() { : > "$TMP/SRC"; return 1; }
+      func_trade > /dev/null 2>&1
+      printf '%s %s' "`[ -f "$TMP/last_trade" ] && echo feito || echo aberto`" "`cat "$TMP/trade_pendente"`" )
+check "troca: pendente de ontem nao conta; conferencia sem resposta nao decide" \
+    "1 aberto `date +%Y%m%d` 10 100 1" "$_r"
+rm -rf "$_td62t"; unset _td62t _r; unset -f _tr62
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
