@@ -3309,6 +3309,8 @@ _td15=`mktemp -d`
 _esp50() { # segundos_desde_o_ultimo_login [gap] -> segundos dormidos
     ( HOME="$_td15/h$1$2"; mkdir -p "$HOME/.sls"
       . "$LIB/info.sh" > /dev/null 2>&1
+      # Relogio fixo: o segundo virando entre gravar e ler dava 9 em vez de 10.
+      date() { case "$1" in +%s) echo 1700000000 ;; *) command date "$@" ;; esac; }
       [ "$1" != nunca ] && echo $(( `date +%s` - $1 )) > "$HOME/.sls/.login.ultimo"
       [ -n "$2" ] && SLS_LOGIN_GAP="$2"
       sleep() { printf '%s' "$1"; }
@@ -4493,7 +4495,9 @@ _r=$( ( TMP="$_td20/rec88"; URL=http://jogo; SLS_PACING=0; export TMP URL SLS_PA
       luta_teto() { echo $(( $(cat "$TMP/relogio") + 20 )); }; func_unset() { :; }
       cd "$TMP" && clanfight_fight > /dev/null 2>&1
       printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" ) )
-check "cura sempre sem conexao: 3 tentativas e a recarga de 90s vale, o ataque segue" "3 4" "$_r"
+# Desde a 3.9.99 cada tentativa ocupa uma janela de 5s (relogio unico, como
+# no Rei): em 20s, 3 curas e 1 ataque (antes as curas saiam coladas: 3 e 4).
+check "cura sempre sem conexao: 3 tentativas e a recarga de 90s vale, o ataque segue" "3 1" "$_r"
 unset -f _cp88 _cs88
 
 # ---- 3.9.96: regras do dono nas missoes do cla, ouro e Liga ----
@@ -4777,10 +4781,11 @@ _cura58() {
       cd "$TMP" && clanfight_fight > /dev/null 2>&1
       printf '%s %s' "$(grep -c '/heal/' "$TMP/req")" "$(grep -c '/attack/' "$TMP/req")" )
 }
-check "batalha: cura com a conexao pendurada sai de novo (3 tentativas, como a recusada)" "3 4" "`_K58=0.000000 _cura58 a`"
-check "batalha: cura que estourou o tempo depois de conectar conta como feita (como antes)" "1 4" "`_K58=0.120000 _cura58 b`"
+# (3.9.99: cada cura ocupa uma janela de 5s dos 20s da luta: 3+1 e 1+3.)
+check "batalha: cura com a conexao pendurada sai de novo (3 tentativas, como a recusada)" "3 1" "`_K58=0.000000 _cura58 a`"
+check "batalha: cura que estourou o tempo depois de conectar conta como feita (como antes)" "1 3" "`_K58=0.120000 _cura58 b`"
 _r=`( SLS_TELEMETRIA=0 _K58=0.000000 _cura58 c )`
-check "batalha: sem telemetria, curl 28 conta como feita (comportamento de antes)" "1 4" "$_r"
+check "batalha: sem telemetria, curl 28 conta como feita (comportamento de antes)" "1 3" "$_r"
 rm -rf "$_td58"; unset _td58 _r _k _p; unset -f _cura58
 
 printf "\n=== 59. reconexao com espera, Home do descanso, estatua, leitura das lutas ===\n"
@@ -4964,6 +4969,67 @@ _cv98() { ( TMP="$_td60/c"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > 
 check "caverna: (+) 5 min depois de visita sem acao espera; 25 min depois ou sem marca, libera" "espera libera libera" \
     "`_cv98 300` `_cv98 1500` `_cv98`"
 rm -rf "$_td60"; unset _td60 _r _e; unset -f _fs98 _sd98 _cv98
+
+printf "\n=== 61. lutas de cla e Coliseu no relogio unico de acoes (como o Rei) ===\n"
+_td61=`mktemp -d`
+# Decisao do dono: cura, esquiva e troca de alvo tambem esperam LA da ultima
+# acao, e o alvo cinza nao e atacado (a pagina e relida). Relogio falso: cada
+# pedido anota "segundo caminho"; a pagina N alterna HP, alvo cinza e aliado.
+#   _la99 MODULO SECAO FUNCAO FAMILIA -> "menor_intervalo cinza_atacado curas esquivas"
+_la99() {
+    ( TMP="$_td61/$1"; URL=http://jogo; SLS_PACING=0; SEC=$2; FAM=$4; export TMP URL SLS_PACING SEC FAM; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$LIB/$1.sh" > /dev/null 2>&1
+      pagina() {
+          n=$1; hp=$(( 8000 - 600 * (n % 10) )); inim=Inimigo
+          [ $(( n % 11 )) = 5 ] && inim="Aliado X"
+          case $FAM in col) va=atk; vr=atkrnd ;; *) va=attack; vr=attackrandom ;; esac
+          printf "<img src='/images/icon/level.png'/> 120\n<div><img src='/images/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> %s</span></div>\n" "$hp"
+          printf "<div><img src='/images/race/0.png' alt=''/> %s <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;%s</span></div>\n" "$inim" $(( 5000 + 9000 * (n % 7 == 3) ))
+          if [ $(( n % 6 )) = 4 ]; then printf "<a class='nbtn b_grey' href='/%s/%s/?r=%s1'><span class='txt smpl grey'>Atacar</span></a>\n" "$SEC" "$va" "$n"
+          else printf "<a class='nbtn' href='/%s/%s/?r=%s1'><span class='lbl'>Atacar</span></a>\n" "$SEC" "$va" "$n"; fi
+          printf "<a class='nbtn' href='/%s/%s/?r=%s2'>Troca</a><a class='nbtn' href='/%s/dodge/?r=%s3'>Esquiva</a>" "$SEC" "$vr" "$n" "$SEC" "$n"
+          printf "<a class='nbtn' href='/%s/heal/?r=%s4'>Curar</a><a class='nbtn' href='/%s/shield/?r=%s4'>Escudo</a>\n" "$SEC" "$n" "$SEC" "$n"
+          printf "<a href='/logout'>sair</a> <script>jsInterface.event(\"user=55\")</script>\n"
+          [ $(( n % 6 )) = 4 ] && echo CINZA > "$TMP/.cinza$n"; return 0
+      }
+      echo 100000 > "$TMP/relogio"; : > "$TMP/req"; echo 0 > "$TMP/.n"
+      date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
+      run_curl_exec() { _u=${1#http://jogo}; read -r _c < "$TMP/.n"
+          echo "`cat "$TMP/relogio"` $_u `[ -f "$TMP/.cinza$_c" ] && echo C`" >> "$TMP/req"
+          _c=$((_c + 1)); echo "$_c" > "$TMP/.n"; pagina "$_c"; }
+      luta_teto() { echo $(( $(cat "$TMP/relogio") + 120 )); }; func_unset() { :; }
+      for f in FULL ccol_full flag_full col_full; do echo 10000 > "$TMP/$f"; done
+      pagina 0 > "$TMP/SRC"; for f in src.html ccmd_src ccol_src flag_src col_src; do cp "$TMP/SRC" "$TMP/$f"; done
+      echo "Aliado_X" > "$TMP/callies.txt"; echo "Aliado_X" > "$TMP/allies.txt"
+      src_ram="$TMP/$( case $1 in clancoliseum) echo ccol_src;; flagfight) echo flag_src;; clancommand) echo ccmd_src;; coliseum) echo col_src;; *) echo SRC;; esac )"
+      full_ram="$TMP/$( case $1 in clancoliseum) echo ccol_full;; flagfight) echo flag_full;; coliseum) echo col_full;; *) echo FULL;; esac )"
+      cd "$TMP" && $3 > /dev/null 2>&1
+      # Acoes = tudo menos a releitura da pagina da secao e o preparo do
+      # Coliseu (/settings/); erva logo depois da cura conta junto com ela.
+      awk -v sec="/$2" '
+          { split($2, p, "/"); k = p[3]; if ($2 == sec || $2 == sec "/" || $2 ~ /^\/settings\//) next
+            if (k == "grass" && ant == "heal") next
+            if (t != "") { g = $1 - t; if (mn == "" || g < mn) mn = g }
+            t = $1; ant = k
+            if ($3 == "C" && (k == "attack" || k == "atk")) cz++
+            if (k == "heal" || k == "shield") cu++; if (k == "dodge") es++ }
+          END { printf "%s %d %d %d", mn, cz, cu, es }' "$TMP/req" )
+}
+for _p in "clanfight clanfight clanfight_fight cla" "clandmg clandmgfight clandmgfight_fight cla" \
+          "altars altars altars_fight cla" "clancoliseum clancoliseum clancoliseum_fight cla" \
+          "flagfight flagfight flagfight_fight cla" "clancommand clancommand clancommand_fight cla" \
+          "coliseum coliseum coliseum_fight col"; do
+    set -- $_p; _r=`_la99 $1 $2 $3 $4`; set -- $1 $_r
+    # LA=4 com "-gt" (Coliseu LA=5): o intervalo inteiro minimo e 5 (6).
+    _min=5; [ "$1" = coliseum ] && _min=6
+    if [ "${2:-0}" -ge "$_min" ] && [ "$3" = 0 ] && [ "${4:-0}" -ge 1 ] && [ "${5:-0}" -ge 1 ]; then
+        ok "$1: toda acao a ${_min}s+ da anterior, cura e esquiva saem, alvo cinza nao e atacado ($2 $3 $4 $5)"
+    else
+        bad "$1: relogio unico (menor intervalo=$2, golpes no cinza=$3, curas=$4, esquivas=$5)"
+    fi
+done
+rm -rf "$_td61"; unset _td61 _r _p _min; unset -f _la99
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

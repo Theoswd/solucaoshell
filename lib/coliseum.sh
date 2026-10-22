@@ -203,7 +203,10 @@ EOF
             time_since_last_dodge=$((now - last_dodge))
             time_since_last_atk=$((now - last_atk))
 
+            # Relogio unico das acoes (como no Rei): cura, esquiva e troca de
+            # alvo tambem so depois de LA da ultima acao.
             if [ -n "$HEAL" ] && \
+               [ "$time_since_last_atk" -gt "$LA" ] && \
                [ "$_cura" = 1 ] && \
                [ "$time_since_last_heal" -gt 90 ]; then
                 (
@@ -217,6 +220,7 @@ EOF
                 last_atk=$now
 
             elif [ -n "$DODGE" ] && [ "$_grey" = 0 ] && \
+                 [ "$time_since_last_atk" -gt "$LA" ] && \
                  [ "$time_since_last_dodge" -gt 20 ] && \
                  [ "$_caiu" = 1 ]; then
                 (
@@ -231,7 +235,7 @@ EOF
                 last_atk=$now
 
             elif [ -n "$ATKRND" ] && \
-                 [ "$time_since_last_atk" -ne "$LA" ] && \
+                 [ "$time_since_last_atk" -gt "$LA" ] && \
                  [ "$_grey" = 0 ] && \
                  [ "$_forte" = 1 ]; then
                 (
@@ -241,8 +245,10 @@ EOF
                 cl_access
                 last_atk=$now
 
+            # Ataque so com o alvo fora do cinza (invulneravel), como no Rei.
             elif [ -n "$ATK" ] && \
-                 [ "$time_since_last_atk" -gt "$LA" ]; then
+                 [ "$time_since_last_atk" -gt "$LA" ] && \
+                 [ "$_grey" = 0 ]; then
                 (
                     run_curl_exec "${URL}${ATK}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
@@ -253,7 +259,9 @@ EOF
             else
                 # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO. So rele com o
                 # alvo grey ou sem link de ataque; fora disso espera o restante.
-                if [ "$_grey" = 1 ] || [ -z "$ATK" ]; then
+                # So depois de LA da ultima acao (colada no golpe, a releitura
+                # voltava com o mesmo alvo cinza).
+                if { [ "$_grey" = 1 ] || [ -z "$ATK" ]; } && [ "$time_since_last_atk" -gt "$LA" ]; then
                     (
                         run_curl_exec "${URL}/coliseum" > "$src_ram"
                     ) </dev/null > /dev/null 2>&1 &

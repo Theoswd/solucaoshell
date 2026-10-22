@@ -93,6 +93,7 @@ clanfight_fight() {
     read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     # PRIORIDADE 1 — CURA: manter a conta viva vem antes da esquiva.
     if { [ -s HEAL ] || [ -s GRASS ]; } && \
+       [ "$_latk" -gt "$LA" ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       _saiu=0
@@ -118,9 +119,13 @@ clanfight_fight() {
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_heal
       fi
+      # Relogio unico das acoes (como no Rei): a proxima acao, qualquer uma,
+      # so depois de LA. Pedido que nao saiu tambem gasta a janela.
+      echo "$_atk0" > last_atk
 
     # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
+         [ "$_latk" -gt "$LA" ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
       _saiu=0
@@ -134,10 +139,13 @@ clanfight_fight() {
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_dodge
       fi
+      # Relogio unico das acoes (como no Rei): a proxima acao, qualquer uma,
+      # so depois de LA. Pedido que nao saiu tambem gasta a janela.
+      echo "$_atk0" > last_atk
 
     # Aliado na frente: troca de alvo (troca_aliado, em allies.sh). So por
     # aliado (regra do dono), com fogo amigo para nao virar laco de trocas.
-    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+    elif [ -s ATKRND ] && [ "$_latk" -gt "$LA" ] && [ "$_grey" = 0 ] && \
          troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$TMP/SRC"
@@ -147,8 +155,11 @@ clanfight_fight() {
       echo "$_atk0" > last_atk
       sleep 0.3s
 
+    # Ataque so com o alvo fora do cinza (invulneravel), como no Rei e no
+    # Torneio de Equipe: com ele cinza, a pagina e relida (ramo abaixo).
     elif [ -s ATK ] && \
-         [ "$_latk" -gt "$LA" ]; then
+         [ "$_latk" -gt "$LA" ] && \
+         [ "$_grey" = 0 ]; then
       (
         read -r _l < ATK; run_curl_exec "${URL}$_l" > "$TMP/SRC"
       ) </dev/null > /dev/null 2>&1 &
@@ -159,7 +170,9 @@ clanfight_fight() {
       # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO. So rele com o alvo grey
       # ou sem link de ataque (senao dormiria sobre pagina sem acao); fora
       # disso espera o restante da recarga, sem requisicao.
-      if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
+      # Alvo cinza ou sem ataque: rele, mas so depois de LA da ultima acao
+      # (colada no golpe, a releitura voltava com o mesmo alvo cinza).
+      if { [ "$_grey" = 1 ] || [ ! -s ATK ]; } && [ "$_latk" -gt "$LA" ]; then
         (
           run_curl_exec "${URL}/clanfight" > "$TMP/SRC"
         ) </dev/null > /dev/null 2>&1 &

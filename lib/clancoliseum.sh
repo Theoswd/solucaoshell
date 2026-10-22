@@ -87,6 +87,7 @@ clancoliseum_fight() {
     # Uma leitura so do last_atk por volta.
     read -r _latk < last_atk; _latk=$(( _atk0 - _latk ))
     if [ -s HEAL ] && \
+       [ "$_latk" -gt "$LA" ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
       _saiu=0
@@ -100,8 +101,12 @@ clancoliseum_fight() {
         cat USH > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_heal
       fi
+      # Relogio unico das acoes (como no Rei): a proxima acao, qualquer uma,
+      # so depois de LA. Pedido que nao saiu tambem gasta a janela.
+      echo "$_atk0" > last_atk
 
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
+         [ "$_latk" -gt "$LA" ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
          [ "$_caiu" = 1 ]; then
       _saiu=0
@@ -115,10 +120,13 @@ clancoliseum_fight() {
         cat USH > old_HP; _old_hp="$_hp"; _caiu=0
         date +%s > last_dodge
       fi
+      # Relogio unico das acoes (como no Rei): a proxima acao, qualquer uma,
+      # so depois de LA. Pedido que nao saiu tambem gasta a janela.
+      echo "$_atk0" > last_atk
 
     # Aliado na frente: troca de alvo (troca_aliado, em allies.sh). So por
     # aliado (regra do dono), com fogo amigo para nao virar laco de trocas.
-    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+    elif [ -s ATKRND ] && [ "$_latk" -gt "$LA" ] && [ "$_grey" = 0 ] && \
          troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"
@@ -127,8 +135,11 @@ clancoliseum_fight() {
       cf_access
       echo "$_atk0" > last_atk
 
+    # Ataque so com o alvo fora do cinza (invulneravel), como no Rei e no
+    # Torneio de Equipe: com ele cinza, a pagina e relida (ramo abaixo).
     elif [ -s ATK ] && \
-         [ "$_latk" -gt "$LA" ]; then
+         [ "$_latk" -gt "$LA" ] && \
+         [ "$_grey" = 0 ]; then
       (
         read -r _l < ATK; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
@@ -139,7 +150,9 @@ clancoliseum_fight() {
       # RECARGA DE ATAQUE — UMA REQUISICAO POR CICLO. So rele com o alvo grey
       # ou sem link de ataque (senao dormiria sobre pagina sem acao); fora
       # disso espera o restante da recarga, sem requisicao.
-      if [ "$_grey" = 1 ] || [ ! -s ATK ]; then
+      # Alvo cinza ou sem ataque: rele, mas so depois de LA da ultima acao
+      # (colada no golpe, a releitura voltava com o mesmo alvo cinza).
+      if { [ "$_grey" = 1 ] || [ ! -s ATK ]; } && [ "$_latk" -gt "$LA" ]; then
         (
           run_curl_exec "${URL}/clancoliseum" > "$src_ram"
         ) </dev/null > /dev/null 2>&1 &
