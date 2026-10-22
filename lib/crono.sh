@@ -245,10 +245,18 @@ atualiza_stats() {
     # jogo e servidor mudo (ver sessao_estado).
     if ! is_logged_in "$_pg"; then
         if [ "`printf '%s' "$_pg" | sessao_estado -`" = deslogado ]; then
-            printf "Sessao caiu no ocio - reconectando\n"
-            if type login_logoff > /dev/null 2>&1 && login_logoff; then
-                _pg=`run_curl "${URL}/user" 2>/dev/null`
+            if type relogin_liberado > /dev/null 2>&1 && ! relogin_liberado; then
+                printf "Sessao caiu no ocio - login recusado ha pouco, nova tentativa em %ss\n" "$RELOGIN_RESTA"
+            else
+                printf "Sessao caiu no ocio - reconectando\n"
+                if type login_logoff > /dev/null 2>&1 && login_logoff; then
+                    _pg=`run_curl "${URL}/user" 2>/dev/null`
+                fi
             fi
+            # Sessao morta e sem reconexao agora: o /user so volta no proximo
+            # intervalo do painel. Quem reconecta e o descanso, no degrau do
+            # portao; antes, cada volta pedia o /user e um login de novo.
+            is_logged_in "$_pg" || ativ_marcar stats
         else
             servidor_mudo_marcar
         fi
@@ -847,6 +855,11 @@ descansar() {
     # quem estava bem. O portao (luta_pode_reconectar, em info.sh) tem
     # deslocamento por conta derivado do PID e e o mesmo da luta, entao as
     # duas nao somam tentativas.
+    # Login recusado ha pouco (relogin_liberado, em loginlogoff.sh): espera o
+    # degrau sem pedir nem o /user.
+    if type relogin_liberado > /dev/null 2>&1 && ! relogin_liberado; then
+        return 1
+    fi
     luta_pode_reconectar || return 1
     date +%s > "$TMP/last_reconn" 2>/dev/null
 

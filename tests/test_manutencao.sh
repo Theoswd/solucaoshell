@@ -3312,7 +3312,10 @@ _td15=`mktemp -d`
 _esp50() { # segundos_desde_o_ultimo_login [gap] -> segundos dormidos
     ( HOME="$_td15/h$1$2"; mkdir -p "$HOME/.sls"
       . "$LIB/info.sh" > /dev/null 2>&1
-      [ "$1" != nunca ] && echo $(( `date +%s` - $1 )) > "$HOME/.sls/.login.ultimo"
+      # Relogio parado: com o date de verdade, o segundo podia virar entre
+      # gravar o carimbo e o login_espacar ler (dava 9, nao 10, as vezes).
+      date() { echo 1000000; }
+      [ "$1" != nunca ] && echo $(( 1000000 - $1 )) > "$HOME/.sls/.login.ultimo"
       [ -n "$2" ] && SLS_LOGIN_GAP="$2"
       sleep() { printf '%s' "$1"; }
       login_espacar )
@@ -4331,7 +4334,7 @@ check "painel: Home com outro numero, 3 conferencias e fica no /user" "4|0" "`_s
 check "painel: Home sem os icones do cabecalho, sempre /user" "4|-" "`_st87 sem`"
 check "painel: Home de mais de 2 min, sempre /user" "4|-" "`_st87 velha`"
 check "login: uma autenticacao so (login_autenticar) no login e na reconexao" "1 1 0" \
-    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
+    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || { relogin_falhou credencial; return 1; }$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
 _r=`( TMP="$_td20/la87"; mkdir -p "$TMP"; export TMP; URL=http://jogo
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
       printf '%s' 'login=Ze&pass=a b' | base64 > "$TMP/cript_file"
@@ -4960,6 +4963,90 @@ _ds60() {
 check "disjuntor aberto: o descanso nao pede a Home (so a sonda, uma vez)" "home=0 sonda=1" "`_ds60 aberto`"
 check "disjuntor fechado: o descanso pede a Home (a segunda volta reaproveita)" "home=1 sonda=0" "`_ds60 fechado`"
 rm -rf "$_td60"; unset _td60 _r _c60 _ok60; unset -f _clk60 _est60 _ds60
+
+# =============================================================================
+printf "\n=== 61. reconexao com espera crescente (portao unico) ===\n"
+# =============================================================================
+# Senha recusada na reconexao: 60s, 120s, 300s, 900s (+ PID % 10); sem
+# resposta: 30s sem escalar; sucesso zera. Relogio em $_td61/t.
+_td61=`mktemp -d`
+_anon61="<html><title>Error 404</title> jsInterface.event(\"user=0;level=0\")</html>"
+_logada61="<html><title>Conta</title> jsInterface.event(\"user=7;level=9\")</html>"
+#   _rl61 'COMANDOS' -> o que os comandos imprimem; pedidos em $_td61/req
+#   O /user devolve $_td61/user; o POST devolve nada se $_td61/post_mudo existe.
+_rl61() {
+    ( TMP="$_td61/c"; mkdir -p "$TMP"; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      export TMP URL TMP_COOKIE
+      printf 'login=a&pass=b' | base64 > "$TMP/cript_file"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1
+      . "$LIB/loginlogoff.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { case "$1" in +%s) cat "$_td61/t" ;; *) command date "$@" ;; esac; }
+      run_curl() {
+          case "$*" in
+              *data-urlencode*) echo POST >> "$_td61/req"; [ -f "$_td61/post_mudo" ] && return 28; cat /dev/null ;;
+              *sign_in*)        echo SIGNIN >> "$_td61/req" ;;
+              */user*)          echo USER >> "$_td61/req"; [ -f "$_td61/post_mudo" ] && [ -f "$_td61/ja_postou" ] && return 28
+                                cat "$_td61/user" ;;
+          esac
+          case "$*" in *data-urlencode*) : > "$_td61/ja_postou" ;; esac; }
+      fetch_train_stats() { :; }; clan_id() { :; }; messages_info() { :; }; parse_status() { :; }
+      eval "$1" )
+}
+_nova61() { rm -rf "$_td61/c" "$_td61/post_mudo" "$_td61/ja_postou"; : > "$_td61/req"
+            printf '%s' "$_anon61" > "$_td61/user"; echo 100000 > "$_td61/t"; }
+_posts61() { grep -c '^POST$' "$_td61/req"; }
+
+# Recusa em serie: so sai POST quando o degrau vence.
+_nova61
+_r=""
+for _t61 in 100000 100000 100030 100070 100100 100200 100400 100510 100600 101500 101600 100000; do
+    echo "$_t61" > "$_td61/t"; _rl61 'login_logoff > /dev/null 2>&1'
+    _r="$_r`_posts61` "
+done
+# (j = PID % 10, de 0 a 9)
+# 100000 POST 1 (proxima 100060+j) | 100000 e 100030 seguram
+# 100070 POST 2 (100190+j)        | 100100 segura
+# 100200 POST 3 (100500+j)        | 100400 segura
+# 100510 POST 4 (101410+j)        | 100600 segura
+# 101500 POST 5 (102400+j)        | 101600 segura
+# 100000 relogio voltou: a marca ficou mais de 30 min no futuro, POST 6
+check "reconexao: senha recusada espera 60s, 120s, 300s e 900s; relogio voltando nao prende" \
+    "1 1 1 2 2 3 3 4 4 5 5 6 " "$_r"
+check "reconexao: a marca guarda as recusas" 6 "`cut -d' ' -f2 "$_td61/c/relogin" 2>/dev/null`"
+# A segurada nao apaga o cookie (a sessao ja caiu, mas nada novo saiu) e diz quando volta.
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+echo ck > "$_td61/c/ck"
+_r=`_rl61 'login_logoff 2>&1; printf " rc=%s" $?'`
+case "$_r" in *"nova tentativa de login em 500s"*" rc=1") ok "reconexao segurada: rc=1 e diz quando volta" ;; *) bad "reconexao segurada ($_r)" ;; esac
+check "reconexao segurada: so o /user, cookie mantido" "0 1 S" \
+    "`_posts61` `grep -c '^USER$' "$_td61/req"` `[ -s "$_td61/c/ck" ] && echo S || echo N`"
+# Sem resposta no POST: 30s, sem escalar.
+_nova61; : > "$_td61/post_mudo"
+_rl61 'login_logoff > /dev/null 2>&1'
+check "reconexao sem resposta: espera 30s e nao conta como recusa" "100030 0" "`cat "$_td61/c/relogin" 2>/dev/null`"
+# Sessao de volta zera a marca.
+_nova61; mkdir -p "$_td61/c"; echo "99000 3" > "$_td61/c/relogin"; printf '%s' "$_logada61" > "$_td61/user"
+_rl61 'login_logoff > /dev/null 2>&1'
+check "reconexao: sessao viva zera a marca" "zerou" "`[ -f "$_td61/c/relogin" ] && echo ficou || echo zerou`"
+# A luta nao espera o portao (tem o proprio limite), mas a recusa conta.
+_nova61; mkdir -p "$_td61/c"; echo "100500 1" > "$_td61/c/relogin"
+_rl61 'login_logoff luta > /dev/null 2>&1'
+check "reconexao na luta: nao espera o portao e a recusa conta" "1 2" "`_posts61` `cut -d' ' -f2 "$_td61/c/relogin"`"
+check "luta_acabou: a reconexao da batalha passa 'luta'" 1 "`grep -c 'login_logoff luta$' "$LIB/info.sh"`"
+# Descanso e painel com o portao fechado: nenhum login, nem o /user do login.
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+_rl61 'batalha_retomar() { return 1; }; disjuntor_segura() { return 1; }; caverna_ler_menu() { :; }
+       fetch_page() { echo HOME >> "$_td61/req"; cat "$_td61/user" > "${2:-$TMP/SRC}"; return 0; }
+       descansar > /dev/null 2>&1'
+check "descanso com login recusado ha pouco: so a Home, sem /user nem POST" "1 0 0" \
+    "`grep -c '^HOME$' "$_td61/req"` `grep -c '^USER$' "$_td61/req"` `_posts61`"
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+# Duas voltas do tarefas_livres: o painel so roda com o intervalo dele vencido.
+_rl61 'for _v in 1 2; do stats_liberado && atualiza_stats > /dev/null 2>&1; done'
+check "painel com login recusado ha pouco: um /user, sem POST, e espera o intervalo" "1 0" \
+    "`grep -c '^USER$' "$_td61/req"` `_posts61`"
+grep -q '^relogin_zerar$' "$LIB/sls.sh" && ok "login de entrada zera o portao da reconexao" || bad "sls.sh nao zera o portao"
+rm -rf "$_td61"; unset _td61 _r _t61 _anon61 _logada61; unset -f _rl61 _nova61 _posts61
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

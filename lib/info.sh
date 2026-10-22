@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.101"
+versionNum="3.9.102"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -980,7 +980,9 @@ luta_acabou() {
                 _lt_relogin=$(( ${_lt_relogin:-0} + 1 ))
                 date +%s > "$TMP/last_reconn" 2>/dev/null
                 printf "Sessao caiu na batalha - reconectando (a conta continua na luta)\n"
-                type login_logoff > /dev/null 2>&1 && login_logoff
+                # "luta": a reconexao da batalha nao espera o portao de
+                # reconexao da rotina (relogin_liberado, em loginlogoff.sh).
+                type login_logoff > /dev/null 2>&1 && login_logoff luta
                 unset _lz_e; return 1
             fi
             # SEM SESSAO E SEM TENTATIVA AGORA: SAI DO LACO, NAO DA BATALHA.

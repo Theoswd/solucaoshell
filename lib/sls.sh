@@ -271,6 +271,8 @@ while true; do
     [ "$login_delay" -gt "$_cap" ] && login_delay=$_cap
     rm -f "$TMP_COOKIE"
 done
+# Logado: o portao de reconexao da rotina (loginlogoff.sh) recomeca do zero.
+relogin_zerar
 
 clan_id 2>/dev/null
 

@@ -50,10 +50,55 @@ login_autenticar() {
     return 0
 }
 
+# PORTAO UNICO DA RECONEXAO: $TMP/relogin = "PROXIMA_TENTATIVA RECUSAS".
+#
+# So o laco de entrada (sls.sh) tinha espera crescente. Depois do login, a
+# varredura, o painel (atualiza_stats) e o descanso reconectavam cada um por
+# si: com o servidor recusando a senha (o estrangulamento por IP responde
+# igual a senha errada), cada conta mandava 1-2 POSTs por minuto e mantinha
+# o proprio bloqueio. Agora toda reconexao fora da luta passa por aqui:
+#   senha recusada   60s, 120s, 300s e dai 900s (+ PID % 10, contas nao
+#                    reincidem juntas); zera quando a sessao volta
+#   sem resposta     30s, sem escalar (nao diz nada sobre a senha)
+# Marca mais de 30 min no futuro (relogio voltou) nao segura.
+relogin_liberado() {
+    _rg_p=0; { read -r _rg_p _rg_x < "$TMP/relogin"; } 2>/dev/null
+    case "$_rg_p" in ''|*[!0-9]*) _rg_p=0 ;; esac
+    RELOGIN_RESTA=$(( _rg_p - `date +%s` ))
+    unset _rg_p _rg_x
+    [ "$RELOGIN_RESTA" -le 0 ] || [ "$RELOGIN_RESTA" -gt 1800 ]
+}
+
+relogin_falhou() { # credencial|rede
+    _rg_p=0; _rg_n=0; { read -r _rg_p _rg_n < "$TMP/relogin"; } 2>/dev/null
+    case "$_rg_n" in ''|*[!0-9]*) _rg_n=0 ;; esac
+    if [ "$1" = rede ]; then
+        _rg_e=30
+    else
+        _rg_n=$(( _rg_n + 1 ))
+        case "$_rg_n" in
+            1) _rg_e=60 ;;
+            2) _rg_e=120 ;;
+            3) _rg_e=300 ;;
+            *) _rg_e=900 ;;
+        esac
+        _rg_e=$(( _rg_e + $$ % 10 ))
+    fi
+    echo "$(( `date +%s` + _rg_e )) $_rg_n" > "$TMP/relogin" 2>/dev/null
+    unset _rg_p _rg_n _rg_e
+}
+
+# So o [ -f ] do shell no caminho feliz: nenhum processo quando nao ha marca.
+relogin_zerar() { [ -f "$TMP/relogin" ] && rm -f "$TMP/relogin" 2>/dev/null; return 0; }
+
+# login_logoff [luta]: com "luta" a reconexao nao espera o portao (a luta tem
+# hora; ela ja tem o proprio limite, tres por luta e o luta_pode_reconectar),
+# mas a recusa conta para as tentativas seguintes.
 login_logoff() {
     PAGE=`run_curl "${URL}/user"`
 
     if is_logged_in "$PAGE"; then
+        relogin_zerar
         # Sessao confirmada: libera a varredura logo depois (ver servidor_mudo).
         sessao_marcar
         _acc=`extract_username "$PAGE"`
@@ -80,6 +125,14 @@ login_logoff() {
         return 1
     fi
 
+    if [ "$1" != luta ] && ! relogin_liberado; then
+        printf "[%s] %s — sessao expirada, nova tentativa de login em %ss\n" \
+            "$SLS_TAG" "$SLS_USER" "$RELOGIN_RESTA"
+        [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
+        unset PAGE
+        return 1
+    fi
+
     printf "[%s] %s — sessao expirada, reconectando...\n" "$SLS_TAG" "$SLS_USER"
     rm -f "$TMP_COOKIE"
 
@@ -88,13 +141,14 @@ login_logoff() {
 
     # A trava global de login vale tambem na reconexao (login_autenticar):
     # sessoes derrubadas juntas reconectariam no mesmo instante.
-    login_autenticar || return 1
+    login_autenticar || { relogin_falhou credencial; return 1; }
 
     # Rede nao e senha recusada: o log diz qual foi.
     if [ "$LOGIN_ERRO" = rede ]; then _ll_porque="sem resposta do servidor"; else _ll_porque="login recusado"; fi
 
     if is_logged_in "$PAGE"; then
         unset _ll_porque
+        relogin_zerar
         sessao_marcar
         printf "[%s] %s — reconectado\n" "$SLS_TAG" "$SLS_USER"
         _acc=`extract_username "$PAGE"`
@@ -110,6 +164,7 @@ login_logoff() {
 
     printf "[%s] %s — falha ao reconectar (%s)\n" "$SLS_TAG" "$SLS_USER" "$_ll_porque"
     unset _ll_porque
+    relogin_falhou "$LOGIN_ERRO"
     [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
     return 1
 }
