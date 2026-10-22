@@ -174,6 +174,9 @@ func_sleep() {
     case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
     case "$_fs_min" in
         9|1[0-4]|2[4-9]|30|5[4-9]) i=15 ;;
+        # Coliseu da madrugada (00:35-04:25, pulso nos minutos terminados em
+        # 5): uma espera de 60s iniciada no fim do :x4 acordava no :x6.
+        4|34|44) case "${HOUR:-99}" in 0|00|1|01|2|02|3|03|4|04) i=15 ;; *) i=60 ;; esac ;;
         *)                         i=60 ;;
     esac
     unset _fs_min
@@ -198,9 +201,10 @@ atualiza_stats() {
 
     # A HOME DO DESCANSO NO LUGAR DO /user, SO DEPOIS DE CONFERIDA.
     #
-    # A Home lida ha menos de 2 min, viva e com os cinco icones do cabecalho,
-    # serve no lugar do /user, mas so depois de o worker ver uma vez que ela da
-    # os mesmos numeros (nivel, ouro e prata iguais, HP e energia presentes).
+    # A Home lida ha menos de 5 min (o descanso a pede a cada ~4), viva e com
+    # os cinco icones do cabecalho, serve no lugar do /user, mas so depois de
+    # o worker ver uma vez que ela da os mesmos numeros (nivel, ouro e prata
+    # iguais, HP e energia presentes).
     # Sem bater em 3 conferencias, ou sem os icones, segue pelo /user.
     # HOME_STATS: vazio = conferindo, 1 = Home serve, 0 = so /user. O nome da
     # conta (ACC) continua vindo do /user do login.
@@ -210,7 +214,7 @@ atualiza_stats() {
         case "$_st_ok" in ''|*[!0-9]*) _st_ok=0 ;; esac
         agora_s
         _st_ok=$(( _AGORA - _st_ok ))
-        if [ "$_st_ok" -ge 0 ] && [ "$_st_ok" -lt 120 ]; then
+        if [ "$_st_ok" -ge 0 ] && [ "$_st_ok" -lt 300 ]; then
             _st_home=`cat "$TMP/REST" 2>/dev/null`
             for _st_m in "health.png' alt='hp'/>" "mana.png' alt='mp'/>" "level.png' alt=" \
                          "gold.png' alt='g'/>" "silver.png' alt='s'/>"; do
@@ -390,7 +394,14 @@ caverna_ler_menu() {
     if [ -n "$_cv" ]; then
         relogio_anotar caverna $(( `relogio_seg_sh "$_cv"` + 30 ))
     elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then
-        relogio_anotar caverna 0
+        # "(+)" logo depois de uma visita sem acao (link que a rotina nao
+        # conhece, botao pago): nao reabre a cada descanso; espera os 20 min.
+        _cv=0; { read -r _cv < "$TMP/.cave_vazia"; } 2>/dev/null
+        case "$_cv" in ''|*[!0-9]*) _cv=0 ;; esac
+        agora_s
+        if [ "$_cv" -eq 0 ] || [ $(( _AGORA - _cv )) -lt 0 ] || [ $(( _AGORA - _cv )) -ge 1200 ]; then
+            relogio_anotar caverna 0
+        fi
     fi
     unset _cv
 }
@@ -544,7 +555,7 @@ tarefas_livres() {
     fi
 
     liga_fora_da_inscricao || return 0
-    if ativ_liberada sabio 20; then
+    if ativ_liberada sabio 60; then
         check_missions
         check_rewards
         ativ_marcar sabio
@@ -771,18 +782,19 @@ descansar() {
     # HOME REPETIDA NAO E PEDIDA DE NOVO.
     #
     # Se a ultima pagina pedida ja foi a Home e ESTE descanso a confirmou com
-    # sessao viva ha menos de 50s, a leitura anterior ainda vale (voltas de
-    # 15s perto das janelas). A prova e o $TMP/.home_ok, gravado so no fim
+    # sessao viva ha menos de 230s, a leitura anterior ainda vale: parada, a
+    # conta pede a Home a cada ~4 min (era a cada minuto, ~1.200 pedidos por
+    # dia; decisao do dono). A prova e o $TMP/.home_ok, gravado so no fim
     # feliz do descanso; o last_ok nao serve, as lutas e o link_acao tambem o
     # carimbam.
-    # ponytail: a queda de sessao pode levar ate 50s a mais para ser vista.
+    # ponytail: a queda de sessao pode levar ate ~4 min a mais para ser vista.
     _ds_req=; _ds_ok=0
     { read -r _ds_req < "$TMP/.ult_req"; read -r _ds_ok < "$TMP/.home_ok"; } 2>/dev/null
     case "$_ds_ok" in ''|*[!0-9]*) _ds_ok=0 ;; esac
     agora_s
     _ds_ok=$(( _AGORA - _ds_ok ))
     # Diferenca negativa = relogio voltou: nao prova nada, pede a Home.
-    if [ "$_ds_req" = "/" ] && [ "$_ds_ok" -ge 0 ] && [ "$_ds_ok" -lt 50 ]; then
+    if [ "$_ds_req" = "/" ] && [ "$_ds_ok" -ge 0 ] && [ "$_ds_ok" -lt 230 ]; then
         unset _ds_req _ds_ok
         return 0
     fi

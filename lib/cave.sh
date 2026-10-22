@@ -163,7 +163,14 @@ cave_routine() {
 
     # Sem acao nenhuma a missao 5 nao andou: nada a concluir (o checklist de
     # 15 min recolhe as concluidas de qualquer jeito).
-    [ "${_cv_acao:-0}" = 1 ] && checkQuest 5 end
+    # Visita sem acao fica anotada: o "(+)" do menu nao a reabre por 20 min
+    # (ver caverna_ler_menu, em crono.sh).
+    if [ "${_cv_acao:-0}" = 1 ]; then
+        rm -f "$TMP/.cave_vazia" 2>/dev/null
+        checkQuest 5 end
+    else
+        date +%s > "$TMP/.cave_vazia" 2>/dev/null
+    fi
     unset _cv_acao
     printf "Cave ok\n"
 }

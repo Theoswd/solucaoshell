@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.97"
+versionNum="3.9.98"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -616,12 +616,18 @@ disjuntor_sondar() {   # AGORA
     if [ "$_dj_i" -ge 0 ] && [ "$_dj_i" -lt 20 ]; then unset _dj_u _dj_i; return 0; fi
     if ! mkdir "$_DJ.sonda" 2>/dev/null; then
         _dj_p=""; { read -r _dj_p < "$_DJ.sonda/pid"; } 2>/dev/null
-        case "$_dj_p" in
-            ''|*[!0-9]*) unset _dj_u _dj_i _dj_p; return 0 ;;
-            *) kill -0 "$_dj_p" 2>/dev/null && { unset _dj_u _dj_i _dj_p; return 0; }
-               rm -rf "$_DJ.sonda" 2>/dev/null
-               mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; } ;;
-        esac
+        # Sonda de menos de 60s (o pedido dela corta em 17s) com o dono vivo,
+        # ou que ainda grava o pid: espera por ela. Mais velha e trava
+        # esquecida (PID reaproveitado por outro processo, ou queda entre o
+        # mkdir e o pid): antes ninguem mais sondava ate o disjuntor vencer.
+        if [ "$_dj_i" -lt 60 ]; then
+            case "$_dj_p" in
+                ''|*[!0-9]*) unset _dj_u _dj_i _dj_p; return 0 ;;
+            esac
+            kill -0 "$_dj_p" 2>/dev/null && { unset _dj_u _dj_i _dj_p; return 0; }
+        fi
+        rm -rf "$_DJ.sonda" 2>/dev/null
+        mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; }
     fi
     echo $$ > "$_DJ.sonda/pid" 2>/dev/null
     echo "$1" > "$_DJ.sonda_ult" 2>/dev/null
@@ -638,6 +644,7 @@ disjuntor_sondar() {   # AGORA
 
 # 0 = segure (sem pedir nada fora de batalha); 1 = siga.
 disjuntor_segura() {
+    _DJ_FALTA=""
     [ "${SLS_DISJUNTOR:-1}" = 0 ] && return 1
     disjuntor_base
     if [ ! -f "$_DJ.aberto" ]; then
@@ -650,6 +657,8 @@ disjuntor_segura() {
         if [ "$_dj_i" -lt 0 ] || [ "$_dj_i" -ge $(( $$ % 21 )) ]; then
             _DJ_LIBERADO=$_dj_f; unset _dj_f _dj_i; return 1
         fi
+        # Quanto falta da vez desta conta (o login dorme so isso).
+        _DJ_FALTA=$(( $$ % 21 - _dj_i ))
         unset _dj_f _dj_i
         return 0
     fi
@@ -952,6 +961,9 @@ luta_inicio() {
     _lt_hp0=0
     _reviveu=0
     _rs_falhas=0
+    # Pedidos que nao sairam (pedido_nao_saiu): a conta e desta luta, nao da
+    # anterior (o worker nao reinicia entre eventos).
+    _pns_n=0
     LUTA_MOTIVO=""
     LUTA_SESSAO_CAIU=0
     # Troca por aliado e fogo amigo (allies.sh).
@@ -1152,12 +1164,16 @@ janela_alvo() { # MMSS_base [VAO] -> MMSS
 # Dorme enquanto o relogio estiver em [DE, ATE). Passou de ATE — ou o minuto
 # ja virou e ficou abaixo de DE —, sai na hora (esperar o relogio MOSTRAR
 # uma hora prenderia por uma hora quem chega atrasado).
+# Um sleep so ate ATE (era date + sleep 3 a cada 3s, ~180 processos numa
+# espera de 4,5 min); o laco confere o relogio de novo ao acordar.
 espera_janela() {
     while :; do
         _ej=`date +%M%S`
         while :; do case "$_ej" in 0?*) _ej=${_ej#0} ;; *) break ;; esac; done
         { [ "$_ej" -ge "$1" ] && [ "$_ej" -lt "$2" ]; } || break
-        sleep 3
+        _ej=$(( ($2 / 100 * 60 + $2 % 100) - (_ej / 100 * 60 + _ej % 100) ))
+        [ "$_ej" -ge 1 ] || _ej=1
+        sleep "$_ej"
     done
     unset _ej
 }

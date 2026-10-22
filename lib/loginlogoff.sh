@@ -81,7 +81,7 @@ reconexao_falhou() {   # rede|credencial
 }
 
 login_logoff() {   # [inicio]
-    # Do start() (inicio) com a Home do descanso viva ha menos de 2 min: a
+    # Do start() (inicio) com a Home do descanso viva ha menos de 5 min: a
     # sessao ja esta provada e o /user seria so a mesma prova (67 por dia). O
     # painel tem o atualiza_stats. O descanso apaga o .home_ok quando a acha
     # caida, entao uma prova velha nao vale.
@@ -89,7 +89,7 @@ login_logoff() {   # [inicio]
         _ll_ok=0; { read -r _ll_ok < "$TMP/.home_ok"; } 2>/dev/null
         case "$_ll_ok" in ''|*[!0-9]*) _ll_ok=0 ;; esac
         if type agora_s > /dev/null 2>&1; then agora_s; _ll_t=$_AGORA; else _ll_t=`date +%s`; fi
-        if [ "$_ll_ok" -gt 0 ] && [ $(( _ll_t - _ll_ok )) -ge 0 ] && [ $(( _ll_t - _ll_ok )) -lt 120 ]; then
+        if [ "$_ll_ok" -gt 0 ] && [ $(( _ll_t - _ll_ok )) -ge 0 ] && [ $(( _ll_t - _ll_ok )) -lt 300 ]; then
             unset _ll_ok _ll_t
             clan_id
             return 0

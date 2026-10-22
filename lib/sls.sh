@@ -226,7 +226,9 @@ while true; do
     # cada conta tentar a cada 20-40s.
     if disjuntor_segura; then
         [ -n "$SLS_STATUS_FILE" ] && echo "login_retry" > "$SLS_STATUS_FILE"
-        sleep 20
+        # Ja fechou e falta so a vez desta conta: dorme so o que falta (com
+        # 20s fixos, a volta para uma batalha atrasava ate ~40s).
+        sleep "${_DJ_FALTA:-20}"
         continue
     fi
     if do_login; then

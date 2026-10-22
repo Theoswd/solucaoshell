@@ -1719,28 +1719,31 @@ printf "\n=== 31. NENHUMA FUNCAO PRENDE A CONTA ===\n"
 _pz=$(mktemp -d)
 
 # --- 31.1 espera de inicio: nunca a do relogio da HORA SEGUINTE --------------
-# Relogio falso: date +%M%S devolve o valor do arquivo; cada sleep avanca 3s.
+# Relogio falso: date +%M%S devolve o valor do arquivo; cada sleep avanca o
+# relogio os segundos pedidos (no formato MMSS). ESPERA_SIM_SEG = total dormido.
 espera_sim() {  # $1 relogio MMSS inicial  $2 DE  $3 ATE  -> sonos dados
     (
         . "$LIB/info.sh"
-        echo "$1" > "$_pz/rel"; echo 0 > "$_pz/sonos"
+        echo "$1" > "$_pz/rel"; echo 0 > "$_pz/sonos"; echo 0 > "$_pz/seg"
         date() { case "$1" in +%M%S) cat "$_pz/rel" ;; *) command date "$@" ;; esac; }
         sleep() { _s=`cat "$_pz/sonos"`; echo $((_s + 1)) > "$_pz/sonos"
+                  echo $(( `cat "$_pz/seg"` + $1 )) > "$_pz/seg"
                   _r=`cat "$_pz/rel"`
                   while :; do case "$_r" in 0?*) _r=${_r#0} ;; *) break ;; esac; done
-                  printf '%04d\n' $((_r + 3)) > "$_pz/rel"
+                  _r=$(( (_r / 100 * 60 + _r % 100 + $1) % 3600 ))
+                  printf '%02d%02d\n' $((_r / 60)) $((_r % 60)) > "$_pz/rel"
                   [ "`cat "$_pz/sonos"`" -gt 1500 ] && exit 9; }
         espera_janela "$2" "$3"
-        cat "$_pz/sonos"
+        printf '%s %s' "`cat "$_pz/sonos"`" "`cat "$_pz/seg"`"
     ) 2>/dev/null
 }
-_s=$(espera_sim 5920 5500 5930)
-[ "${_s:-99}" -le 4 ] && ok "espera_janela: dentro da janela espera ate :59:30 ($_s sonos)" \
-                      || bad "espera_janela: espera errada dentro da janela ($_s)"
+check "espera_janela: dentro da janela, um sono so ate :59:30" "1 10" "$(espera_sim 5920 5500 5930)"
+check "espera_janela: do inicio da janela, um sono de 4,5 min (era um date e sleep 3 a cada 3s)" "1 270" "$(espera_sim 5500 5500 5930)"
+check "espera_janela: limite com segundos (:29:59)" "1 59" "$(espera_sim 2900 2500 2959)"
 _s=$(espera_sim 0005 5500 5930)
-check "espera_janela: chegou depois de :59:59 -> segue na hora (antes: ~1h)" 0 "$_s"
+check "espera_janela: chegou depois de :59:59 -> segue na hora (antes: ~1h)" "0 0" "$_s"
 _s=$(espera_sim 1502 1000 1430)
-check "espera_janela: Bandeiras chegando em :15:02 -> segue na hora" 0 "$_s"
+check "espera_janela: Bandeiras chegando em :15:02 -> segue na hora" "0 0" "$_s"
 for _p in "flagfight.sh 1000 1400" "clanfight.sh 5500 5900" "clandmg.sh 2500 2900"; do
     set -- $_p
     if grep -q "espera_janela $2 .janela_alvo $3." "$LIB/$1" && \
@@ -2663,7 +2666,7 @@ printf "\n=== 42. Menos requisicoes: Home repetida, portoes sem cat, limpezas ==
 # Medido em 13/09 (numa conta): 1.155 voltas ociosas, 641 delas de 15s perto
 # das janelas de evento, cada uma pedindo a Home.
 
-# --- descansar: so pula a Home que ELE confirmou viva ha menos de 50s
+# --- descansar: so pula a Home que ELE confirmou viva ha menos de 230s (~4 min)
 #
 # Casos de "achar que e uma coisa e ser outra": uma luta carimbou o last_ok,
 # a Home veio vazia (servidor mudo) ou mostrou o personagem preso na batalha.
@@ -2676,16 +2679,17 @@ _r=`( TMP=\`mktemp -d\`; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > 
       m() { printf %s "$1" > "$TMP/.ult_req"; echo $(( \`date +%s\` - $2 )) > "$TMP/.home_ok"; echo $(( \`date +%s\` - $3 )) > "$TMP/last_ok"; }
       PAG="$VIVA"
       m / 10 10;      printf '[home10:%s] '      "\`g\`"
-      m / 120 120;    printf '[home120:%s] '     "\`g\`"
+      m / 200 200;    printf '[home200:%s] '     "\`g\`"
+      m / 300 300;    printf '[home300:%s] '     "\`g\`"
       m /arena/ 10 10; printf '[arena10:%s] '    "\`g\`"
-      m / 120 5;      printf '[luta_marcou:%s] ' "\`g\`"
+      m / 300 5;      printf '[luta_marcou:%s] ' "\`g\`"
       m / -3600 -3600; printf '[relogio_voltou:%s] ' "\`g\`"
-      PAG='';                   m / 120 5; printf '[mudo:%s|%s] '  "\`g\`" "\`g\`"
+      PAG='';                   m / 300 5; printf '[mudo:%s|%s] '  "\`g\`" "\`g\`"
       PAG="$VIVA out_gate_confirm"; batalha_pendente() { return 0; }
-                                m / 120 5; printf '[preso:%s|%s] ' "\`g\`" "\`g\`"
+                                m / 300 5; printf '[preso:%s|%s] ' "\`g\`" "\`g\`"
       rm -rf "$TMP" )`
 check "descansar: pula so a Home confirmada por ele; luta, servidor mudo e batalha presa pedem de novo" \
-    "[home10:] [home120:GET] [arena10:GET] [luta_marcou:GET] [relogio_voltou:GET] [mudo:GET|GET] [preso:GET|GET] " "$_r"
+    "[home10:] [home200:] [home300:GET] [arena10:GET] [luta_marcou:GET] [relogio_voltou:GET] [mudo:GET|GET] [preso:GET|GET] " "$_r"
 
 # --- ativ_liberada lendo o marcador com read (com e sem quebra de linha)
 _r=`( TMP=\`mktemp -d\`; . "$LIB/crono.sh" > /dev/null 2>&1
@@ -3588,6 +3592,12 @@ _r=$( TMP="$_td20/se"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"; . "$LIB/spec
       echo "<div class='shb_text'><a href='/marathon/'>Maratona</a></div>" > "$TMP/REST"; date +%s > "$TMP/.home_ok"
       specialEvent > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
 check "evento especial: usa a Home do descanso, sem pedir /" "/marathon/ " "$_r"
+# Home de 2 min pode ser de antes do evento abrir: pede a Home.
+_r=$( TMP="$_td20/se2"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"; . "$LIB/specialevent.sh" > /dev/null 2>&1
+      fetch_page() { echo "$1" >> "$TMP/req"; : > "$TMP/SRC"; }
+      echo "<div class='shb_text'><a href='/marathon/'>Maratona</a></div>" > "$TMP/REST"; echo $(( `date +%s` - 120 )) > "$TMP/.home_ok"
+      specialEvent > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+check "evento especial: Home de 2 min (antes do evento?) e pedida de novo" "/ " "$_r"
 
 check "releitura com alvo cinza: pausa sempre (seis modulos)" 0 \
     "$(cat "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/clandmg.sh" "$LIB/clanfight.sh" "$LIB/flagfight.sh" "$LIB/coliseum.sh" | grep -c '|| sleep 1$')"
@@ -4313,7 +4323,7 @@ _st87() {
       _v=$1
       for _i in 1 2 3 4; do
           if [ "$_v" = velha ] || { [ "$_v" = igual ] && [ "$_i" = 4 ]; }; then
-              echo $(( `date +%s` - 200 )) > "$TMP/.home_ok"; [ "$_v" = velha ] && _cab 396 > "$TMP/REST"
+              echo $(( `date +%s` - 400 )) > "$TMP/.home_ok"; [ "$_v" = velha ] && _cab 396 > "$TMP/REST"
           else echo "`date +%s`" > "$TMP/.home_ok"; fi
           atualiza_stats > /dev/null 2>&1
       done
@@ -4322,7 +4332,7 @@ _st87() {
 check "painel: Home conferida uma vez, depois sem /user (velha de novo: /user)" "2|1" "`_st87 igual`"
 check "painel: Home com outro numero, 3 conferencias e fica no /user" "4|0" "`_st87 difere`"
 check "painel: Home sem os icones do cabecalho, sempre /user" "4|-" "`_st87 sem`"
-check "painel: Home de mais de 2 min, sempre /user" "4|-" "`_st87 velha`"
+check "painel: Home de mais de 5 min, sempre /user" "4|-" "`_st87 velha`"
 check "login: uma autenticacao so (login_autenticar) no login e na reconexao" "1 1 0" \
     "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || { reconexao_falhou credencial; return 1; }$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
 _r=`( TMP="$_td20/la87"; mkdir -p "$TMP"; export TMP; URL=http://jogo
@@ -4776,6 +4786,7 @@ rm -rf "$_td58"; unset _td58 _r _k _p; unset -f _cura58
 printf "\n=== 59. reconexao com espera, Home do descanso, estatua, leitura das lutas ===\n"
 _td59=`mktemp -d`
 # Reconexao recusada: 60s, 300s, 900s sem POST no meio; pagina da sessao zera.
+# (a espera e arredondada: o segundo pode virar entre gravar e ler)
 _r=$( TMP="$_td59/rc"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG=BR; SLS_USER=Ze
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
       printf '%s' 'login=Ze&pass=a' | base64 > "$TMP/cript_file"; : > "$TMP/req"
@@ -4785,18 +4796,18 @@ _r=$( TMP="$_td59/rc"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG=BR;
       servidor_mudo_marcar() { :; }; sessao_estado() { echo deslogado; }
       _o=""
       for _i in 1 2; do login_logoff > /dev/null 2>&1; _o="$_o`grep -c POST "$TMP/req"`"; done
-      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( _ate - `date +%s` ))"
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( (_ate - `date +%s` + 1) / 5 * 5 ))"
       echo "1 $(( `date +%s` - 1 ))" > "$TMP/reconn_falha"; login_logoff > /dev/null 2>&1
-      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o `grep -c POST "$TMP/req"` n=$_n e=$(( _ate - `date +%s` ))"
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o `grep -c POST "$TMP/req"` n=$_n e=$(( (_ate - `date +%s` + 1) / 5 * 5 ))"
       echo "2 $(( `date +%s` - 1 ))" > "$TMP/reconn_falha"; login_logoff > /dev/null 2>&1
-      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( _ate - `date +%s` ))"
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( (_ate - `date +%s` + 1) / 5 * 5 ))"
       sessao_marcar; [ -f "$TMP/reconn_falha" ] && _o="$_o ficou" || _o="$_o zerou"
       printf '%s' "$_o" )
 check "reconexao: recusada espera 60s, 300s, 900s sem POST no meio; sessao provada zera" \
     "11 n=1 e=60 2 n=2 e=300 n=3 e=900 zerou" "$_r"
 _r=$( TMP="$_td59/rr"; mkdir -p "$TMP"; export TMP; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
       for _i in 1 2 3; do reconexao_falhou rede > /dev/null; done; read -r _n _ate < "$TMP/reconn_falha"
-      printf 'n=%s e=%s ' "$_n" "$(( _ate - `date +%s` ))"
+      printf 'n=%s e=%s ' "$_n" "$(( (_ate - `date +%s` + 1) / 5 * 5 ))"
       echo "1 $(( `date +%s` + 7200 ))" > "$TMP/reconn_falha"; reconexao_em_espera && printf trava || printf livre )
 check "reconexao: rede sem resposta espera 60s; marca de mais de 1h adiante nao trava" "n=3 e=60 livre" "$_r"
 # Sessao caida e reconexao em espera: as atividades nao rodam na pagina de login.
@@ -4815,7 +4826,8 @@ _ll97() {
       tr '\n' ' ' < "$TMP/req" )
 }
 check "login_logoff inicio: Home de 30s prova a sessao, sem /user" "rc=0 CLAN " "`_ll97 30 inicio`"
-check "login_logoff inicio: Home de 3 min, pede o /user" "rc=1 GET /user " "`_ll97 180 inicio`"
+check "login_logoff inicio: Home de 4 min prova a sessao (o descanso a pede a cada ~4)" "rc=0 CLAN " "`_ll97 240 inicio`"
+check "login_logoff inicio: Home de 7 min, pede o /user" "rc=1 GET /user " "`_ll97 420 inicio`"
 check "login_logoff sem inicio (painel, reconexao): sempre o /user" "rc=1 GET /user " "`_ll97 30`"
 grep -q 'rm -f "$TMP/.home_ok"' "$LIB/crono.sh" && grep -q '^        if ! login_logoff inicio; then$' "$LIB/crono.sh" \
     && ok "descanso: Home caida apaga a prova; start() usa login_logoff inicio" \
@@ -4891,6 +4903,67 @@ _r=$( cd "$_td59" && . "$LIB/info.sh" > /dev/null 2>&1
       done )
 check "luta_ler e luta_menor: mesmos achados e comparacoes da leitura antiga" "igual 00 011001" "$_r"
 rm -rf "$_td59"; unset _td59 _r; unset -f _ll97 _es97 _cv97
+
+printf "\n=== 60. painel em luta num awk, esperas, sabio, Home e disjuntor ===\n"
+_td60=`mktemp -d`
+# Painel: a linha da conta montada no shell e igual ao printf "%-N.Ns" (corta
+# e completa em bytes) e o registro de todas as contas num awk so e igual ao
+# combate_log de cada uma.
+_r=$( . "$LIB/panel.sh" > /dev/null 2>&1; _o=""
+      for _c in "Draco|14" "Zé Ninguém da Silva|5" "ã|16" "X\\Y|3" "|4" "Torneio dos Clãs|14"; do
+          painel_campo "${_c%|*}" "${_c#*|}"; _a=`printf '%-*.*s' "${_c#*|}" "${_c#*|}" "${_c%|*}"`
+          [ "$_PC" = "$_a" ] && _o="${_o}=" || _o="${_o}X"; done
+      for _d in a b c; do mkdir -p "$_td60/$_d"; done
+      printf '%s' "<div>Bahamut acertar Você por 2864 crítico</div><div>Você usou Posição defensiva</div><div>Bahamut usou Contra ataque</div>" > "$_td60/a/SRC"
+      printf '%s' "<p>Você usou Erva\\n de cura</p><br/>Grimlock acertar Você por 1234567890 crítico com texto longo para cortar aqui</br>" > "$_td60/b/ccol_src"
+      _v=""; _rec=""
+      for _d in a b c; do _v="$_v  linha $_d
+`combate_log "$_td60/$_d" 2 40`
+"; _rec="${_rec}H	  linha $_d
+"; pagina_batalha "$_td60/$_d"; [ -n "$_PB" ] && _rec="${_rec}L	$_PB
+"; done
+      _n="`printf '%s' "$_rec" | painel_batalhas 2 40`"
+      _v=`printf '%s' "$_v" | grep -v '^$'`
+      [ "$_n" = "$_v" ] && _o="$_o igual" || _o="$_o difere"
+      printf '%s' "$_o `printf '%s\n' "$_n" | grep -c 'acertar\|usou'`" )
+check "painel em luta: linha no shell = printf; registro num awk = combate_log por conta" "====== igual 4" "$_r"
+sed -n '/^painel_loop() {/,/^}/p' "$LIB/panel.sh" | grep -q '\$(combate_log\|\$(printf "  %b%s' \
+    && bad "painel em luta: ainda um \$(...) por conta" || ok "painel em luta: sem \$(...) por conta (era ~5 processos por conta)"
+# Sabio a cada 60 min (decisao do dono).
+sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -q 'ativ_liberada sabio 60' \
+    && ok "sabio: a cada 60 min" || bad "sabio: intervalo diferente de 60 min"
+# Pedidos que nao sairam: a conta zera em cada luta.
+_r=$( . "$LIB/info.sh" > /dev/null 2>&1; batalha_marcar() { :; }; _pns_n=2; luta_inicio; printf '%s' "$_pns_n" )
+check "luta_inicio: zera a conta de pedidos que nao sairam (era herdada da luta anterior)" 0 "$_r"
+# Coliseu da madrugada: espera curta no minuto antes do pulso.
+_fs98() { ( TMP="$_td60/fs"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+            _M98=$2; dia_atual() { _DIA=15; }; minuto_atual() { _MIN=$_M98; }; func_cat() { printf '%s' "$i"; }
+            HOUR=$1; func_sleep 2>/dev/null ) ; }
+check "func_sleep: :x4 da madrugada espera 15s (pulso do Coliseu no :x5); de dia 60s" "15 15 15 60 60 60" \
+    "`_fs98 1 4` `_fs98 3 34` `_fs98 00 44` `_fs98 13 34` `_fs98 5 44` `_fs98 2 40`"
+# Disjuntor ja fechado, esperando a vez da conta: o login dorme so o que falta.
+_r=$( HOME="$_td60/h"; SLS_TAG=BR; SLS_DISJUNTOR=1; mkdir -p "$HOME/.sls/net"; . "$LIB/info.sh" > /dev/null 2>&1
+      date +%s > "$HOME/.sls/net/BR.fechou"
+      if disjuntor_segura; then printf 'segura %s' "$_DJ_FALTA"; else printf 'segue %s' "${_DJ_FALTA:-vazio}"; fi )
+_e="segue vazio"; [ $(( $$ % 21 )) -gt 0 ] && _e="segura $(( $$ % 21 ))"
+case "$_r" in "$_e"|"segura $(( $$ % 21 - 1 ))") ok "disjuntor: na volta escalonada diz quanto falta (o login nao dorme 20s fixos)" ;;
+    *) bad "disjuntor: falta da volta escalonada (esperado=$_e obtido=$_r)" ;; esac
+grep -q 'sleep "${_DJ_FALTA:-20}"' "$LIB/sls.sh" && ok "login: com o disjuntor dorme so o que falta" || bad "login: disjuntor com 20s fixos"
+# Sonda presa: trava de mais de 60s com o PID reaproveitado e retomada.
+_sd98() { ( HOME="$_td60/s$1"; SLS_TAG=BR; SLS_DISJUNTOR=1; URL=http://jogo; TMP="$_td60/s$1"; mkdir -p "$HOME/.sls/net/BR.sonda"
+            . "$LIB/info.sh" > /dev/null 2>&1; disjuntor_base
+            echo $$ > "$_DJ.sonda/pid"; echo $(( `date +%s` - $1 )) > "$_DJ.sonda_ult"
+            run_curl() { : > "$TMP/sondou"; }; sessao_estado() { echo sem_resposta; }
+            disjuntor_sondar `date +%s`; [ -f "$TMP/sondou" ] && printf SONDOU ) ; }
+check "sonda: trava de 30s com o dono vivo espera; de 90s (PID reaproveitado) sonda" "|SONDOU" "`_sd98 30`|`_sd98 90`"
+# Caverna: "(+)" logo depois de uma visita sem acao nao reabre a cada descanso.
+_cv98() { ( TMP="$_td60/c"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+            echo 999 > "$TMP/next_caverna"; [ -n "$1" ] && echo $(( `date +%s` - $1 )) > "$TMP/.cave_vazia"
+            printf '%s' "<li><a href='/cave/'><img src='/images/icon/cave.png' alt=''/>Caverna<span class='green'> (+)</span></a></li>" > "$TMP/REST"
+            caverna_ler_menu "$TMP/REST"; [ "`cat "$TMP/next_caverna"`" = 999 ] && printf espera || printf libera ) ; }
+check "caverna: (+) 5 min depois de visita sem acao espera; 25 min depois ou sem marca, libera" "espera libera libera" \
+    "`_cv98 300` `_cv98 1500` `_cv98`"
+rm -rf "$_td60"; unset _td60 _r _e; unset -f _fs98 _sd98 _cv98
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

@@ -4,13 +4,14 @@ specialEvent() {
     [ "${FUNC_auto_events:-y}" = "y" ] || return 0
     # O worker nao reinicia: limpa o evento e o link da volta anterior.
     unset EVENT event_link
-    # A Home que o descanso gravou ha menos de 5 min (com a sessao viva) ja
-    # traz o banner do evento: sem pedir de novo.
+    # A Home que o descanso gravou ha menos de 1 min (com a sessao viva) ja
+    # traz o banner do evento: sem pedir de novo. Mais velha pode ser de antes
+    # do evento abrir (o descanso pede a Home a cada ~4 min).
     _se_pg="$TMP/REST"
     _se_ok=0; { read -r _se_ok < "$TMP/.home_ok"; } 2>/dev/null
     case "$_se_ok" in ''|*[!0-9]*) _se_ok=0 ;; esac
     _se_ok=$(( `date +%s` - _se_ok ))
-    if [ ! -s "$_se_pg" ] || [ "$_se_ok" -lt 0 ] || [ "$_se_ok" -ge 300 ]; then
+    if [ ! -s "$_se_pg" ] || [ "$_se_ok" -lt 0 ] || [ "$_se_ok" -ge 60 ]; then
         fetch_page "/"
         _se_pg="$TMP/SRC"
     fi

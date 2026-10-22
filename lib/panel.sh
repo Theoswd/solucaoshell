@@ -863,17 +863,17 @@ combate_de_v() {
 #  modulo de batalha ja gravou no diretorio da conta: nenhuma requisicao nova.
 # ============================================================
 
-# Arquivo da pagina de luta mais recente desta conta: cada modulo usa um nome
-# (SRC, src.html, ccol_src...), e o mais novo e o da luta em andamento.
+# Arquivo da pagina de luta mais recente desta conta em _PB (vazio sem
+# nenhuma): cada modulo usa um nome (SRC, src.html, ccol_src...), e o mais
+# novo e o da luta em andamento. Sem $(...): roda por conta a cada desenho.
 pagina_batalha() {
-    _pb_f=""
+    _PB=""
     for _pb_c in "$1/SRC" "$1/src.html" "$1/ccol_src" "$1/col_src" \
                  "$1/flag_src" "$1/ARENA"; do
         [ -s "$_pb_c" ] || continue
-        if [ -z "$_pb_f" ] || [ "$_pb_c" -nt "$_pb_f" ]; then _pb_f="$_pb_c"; fi
+        if [ -z "$_PB" ] || [ "$_pb_c" -nt "$_PB" ]; then _PB="$_pb_c"; fi
     done
-    printf '%s' "$_pb_f"
-    unset _pb_c _pb_f
+    unset _pb_c
 }
 
 # As ultimas linhas do combate que dizem respeito A ESTA CONTA:
@@ -884,77 +884,109 @@ pagina_batalha() {
 # Golpe entre terceiros fica de fora (numa batalha de cla nao caberia na
 # tela); por isso o "usou" so passa de quem ja apareceu acertando a conta.
 # O log do jogo vem do mais novo para o mais antigo.
+# log_de(ARQUIVO): o programa awk e o mesmo do combate_log e do ao vivo do
+# painel (painel_batalhas), que le todas as contas num awk so.
+_CL_AWK='
+    function log_de(f,    todo, l, n, linha, i, t, quem, bate, achou, cor, autor, corte, p) {
+        todo = ""
+        while ((getline l < f) > 0) todo = todo l " "
+        close(f)
+        # Fim de bloco vira quebra de linha: e o que separa uma acao da
+        # seguinte no log do jogo.
+        gsub(/<\/div>|<\/p>|<\/li>|<\/tr>|<br[^>]*>/, "\n", todo)
+        gsub(/<[^>]*>/, " ", todo)
+        gsub(/&nbsp;|&#160;/, " ", todo)
+        # O painel imprime tudo com printf %b: uma barra invertida vinda
+        # da pagina viraria sequencia de escape no meio do texto.
+        gsub(/\\/, " ", todo)
+        n = split(todo, linha, "\n")
+
+        # Passada 1: quem acertou esta conta.
+        for (i = 1; i <= n; i++) {
+            t = limpa(linha[i])
+            if (t ~ /acert/ && t ~ /[Vv]oc/ && t !~ /^[Vv]oc/) {
+                quem = t
+                sub(/ +acert.*$/, "", quem)
+                if (length(quem) > 0 && length(quem) < 30) bate[quem] = 1
+            }
+        }
+
+        # Passada 2: as ultimas acoes que interessam, do topo para baixo.
+        achou = 0
+        for (i = 1; i <= n && achou < lim; i++) {
+            t = limpa(linha[i])
+            if (length(t) < 6) continue
+
+            cor = ""
+            if (t ~ /^[Vv]oc/)          cor = cUsou      # a conta agiu
+            else if (t ~ /[Vv]oc/)      cor = cLevou     # a conta levou
+            else {
+                autor = t
+                sub(/ +usou.*$/, "", autor)
+                if (t ~ / usou / && autor in bate) cor = cDeles
+            }
+            if (cor == "") continue
+
+            # Corta na ultima palavra que couber, e nao no meio de um
+            # caractere: acentuado ocupa dois bytes, e um corte cego
+            # deixaria meio caractere na tela.
+            if (length(t) > larg) {
+                corte = substr(t, 1, larg - 1)
+                p = match(corte, / [^ ]*$/)
+                if (p > larg / 2) corte = substr(corte, 1, p - 1)
+                t = corte "…"
+            }
+            print pre cor t cFim
+            achou++
+        }
+    }
+    function limpa(x) {
+        gsub(/[ \t\r]+/, " ", x)
+        sub(/^ /, "", x); sub(/ $/, "", x)
+        return x
+    }'
+
 # $1 pasta da conta, $2 linhas (padrao 2), $3 largura (padrao 60, minimo 24).
 combate_log() {
-    _cl_f=`pagina_batalha "$1"`
-    [ -n "$_cl_f" ] || return 0
+    pagina_batalha "$1"
+    [ -n "$_PB" ] || return 0
     _cl_n="${2:-2}"
     _cl_w="${3:-60}"
     [ "$_cl_w" -lt 24 ] && _cl_w=24
 
     # ESC de verdade: quem imprime aqui e o awk, que nao expande "\033".
-    awk -v lim="$_cl_n" -v larg="$_cl_w" -v pre="      " \
+    awk -v f="$_PB" -v lim="$_cl_n" -v larg="$_cl_w" -v pre="      " \
         -v cLevou="${ESC}[1;31m" -v cUsou="${ESC}[1;32m" \
-        -v cDeles="${ESC}[0;37m" -v cFim="${ESC}[0m" '
-        { todo = todo $0 " " }
-        END {
-            # Fim de bloco vira quebra de linha: e o que separa uma acao da
-            # seguinte no log do jogo.
-            gsub(/<\/div>|<\/p>|<\/li>|<\/tr>|<br[^>]*>/, "\n", todo)
-            gsub(/<[^>]*>/, " ", todo)
-            gsub(/&nbsp;|&#160;/, " ", todo)
-            # O painel imprime tudo com printf %b: uma barra invertida vinda
-            # da pagina viraria sequencia de escape no meio do texto.
-            gsub(/\\/, " ", todo)
-            n = split(todo, linha, "\n")
+        -v cDeles="${ESC}[0;37m" -v cFim="${ESC}[0m" \
+        "$_CL_AWK"' BEGIN { log_de(f) }' 2>/dev/null
 
-            # Passada 1: quem acertou esta conta.
-            for (i = 1; i <= n; i++) {
-                t = limpa(linha[i])
-                if (t ~ /acert/ && t ~ /[Vv]oc/ && t !~ /^[Vv]oc/) {
-                    quem = t
-                    sub(/ +acert.*$/, "", quem)
-                    if (length(quem) > 0 && length(quem) < 30) bate[quem] = 1
-                }
-            }
+    unset _cl_n _cl_w
+}
 
-            # Passada 2: as ultimas acoes que interessam, do topo para baixo.
-            achou = 0
-            for (i = 1; i <= n && achou < lim; i++) {
-                t = limpa(linha[i])
-                if (length(t) < 6) continue
+# AO VIVO DAS BATALHAS NUM AWK SO.   painel_batalhas LINHAS LARGURA < registros
+#
+# Eram ~5 processos por conta em luta a cada desenho (o $(printf) da linha,
+# o $(combate_log), o `pagina_batalha` e o awk; ~90 com 18 contas). O laco
+# junta "H<TAB>linha da conta" e "L<TAB>pagina da luta" e um awk imprime as
+# linhas e o registro de cada conta, na mesma ordem e com o mesmo texto.
+painel_batalhas() {
+    _pbt_w="${2:-60}"
+    [ "$_pbt_w" -lt 24 ] && _pbt_w=24
+    awk -v lim="${1:-2}" -v larg="$_pbt_w" -v pre="      " \
+        -v cLevou="${ESC}[1;31m" -v cUsou="${ESC}[1;32m" \
+        -v cDeles="${ESC}[0;37m" -v cFim="${ESC}[0m" \
+        "$_CL_AWK"'
+        substr($0, 1, 2) == "H\t" { print substr($0, 3); next }
+        substr($0, 1, 2) == "L\t" { log_de(substr($0, 3)) }' 2>/dev/null
+    unset _pbt_w
+}
 
-                cor = ""
-                if (t ~ /^[Vv]oc/)          cor = cUsou      # a conta agiu
-                else if (t ~ /[Vv]oc/)      cor = cLevou     # a conta levou
-                else {
-                    autor = t
-                    sub(/ +usou.*$/, "", autor)
-                    if (t ~ / usou / && autor in bate) cor = cDeles
-                }
-                if (cor == "") continue
-
-                # Corta na ultima palavra que couber, e nao no meio de um
-                # caractere: acentuado ocupa dois bytes, e um corte cego
-                # deixaria meio caractere na tela.
-                if (length(t) > larg) {
-                    corte = substr(t, 1, larg - 1)
-                    p = match(corte, / [^ ]*$/)
-                    if (p > larg / 2) corte = substr(corte, 1, p - 1)
-                    t = corte "…"
-                }
-                print pre cor t cFim
-                achou++
-            }
-        }
-        function limpa(x) {
-            gsub(/[ \t\r]+/, " ", x)
-            sub(/^ /, "", x); sub(/ $/, "", x)
-            return x
-        }
-    ' "$_cl_f" 2>/dev/null
-
-    unset _cl_f _cl_n _cl_w
+# Texto em _PC com N bytes exatos, como o printf "%-N.Ns" (corta ou completa
+# com espacos), sem processo.   painel_campo TEXTO N
+painel_campo() {
+    _PC=$1
+    while [ "${#_PC}" -gt "$2" ]; do _PC=${_PC%?}; done
+    while [ "${#_PC}" -lt "$2" ]; do _PC="$_PC "; done
 }
 
 # Quantas linhas do registro da luta aparecem por conta. 0 desliga.
@@ -1018,7 +1050,7 @@ while true; do
 
     n_on=0; n_up=0; n_off=0; n_fight=0; idx=0
     PANEL_EVENTO_ATIVO=''
-    LISTA=""; BATALHAS=""
+    LISTA=""; BATALHAS=""; _BT_REC=""
 
     # Le tambem a ultima linha sem quebra de linha final (ver play.sh).
     while IFS='|' read -r srv user _enc <&3 || [ -n "$srv" ]; do
@@ -1200,18 +1232,18 @@ while true; do
                 _pre="$I_LIVE"
                 _nw=14; _bw=16
             fi
-            BATALHAS="${BATALHAS}$(printf "  %b%s %b%-*.*s %b%-*.*s %b%s%b" \
-                "$_cor_c" "$_pre" "$C_LARANJA" "$_nw" "$_nw" "$nome" \
-                "$C_CYAN" "$_bw" "$_bw" "$_aba" "$_cor_c" "$_cbt" "$C_RESET")
+            # A linha vai crua: as cores viram cor no printf "%b" do desenho.
+            painel_campo "$nome" "$_nw"; _btn="$_PC"
+            painel_campo "$_aba" "$_bw"
+            _BT_REC="${_BT_REC}H	  $_cor_c$_pre $C_LARANJA$_btn $C_CYAN$_PC $_cor_c$_cbt$C_RESET
 "
             # Registro da luta, logo abaixo do nome, a partir da margem esquerda.
             if [ "$PANEL_LOG_LINHAS" -gt 0 ]; then
-                # 6 colunas de recuo + o texto tem de caber na tela.
-                _log=$(combate_log "$acc_dir" "$PANEL_LOG_LINHAS" $((LARG - 7)))
-                # %s, e nao %b: o texto vem da pagina do jogo.
-                [ -n "$_log" ] && BATALHAS="${BATALHAS}$(printf '%s' "$_log")
+                pagina_batalha "$acc_dir"
+                [ -n "$_PB" ] && _BT_REC="${_BT_REC}L	$_PB
 "
             fi
+            unset _btn _PC _PB
         fi
 
         # Uma linha por conta para o painel_render, que desenha a tabela.
@@ -1226,6 +1258,14 @@ while true; do
         LISTA="${LISTA}R$_US$_st$_US$sim$_US$nome$_US$_aba$_US$hp$_US$_hpmax$_US$ene$_US$lvl$_US$ouro$_US$prata$_US$_av$_US$_avk
 "
     done 3< "$ACCOUNTS_FILE"
+    # As linhas e o registro das contas em luta (6 colunas de recuo + o texto
+    # tem de caber na tela). O texto da pagina vai com %s no awk: o "%b" do
+    # desenho nao acha barra invertida nele (o log_de as tira).
+    if [ -n "$_BT_REC" ]; then
+        BATALHAS="$(printf '%s' "$_BT_REC" | painel_batalhas "$PANEL_LOG_LINHAS" $((LARG - 7)))
+"
+    fi
+    unset _BT_REC
 
     if [ "${PANEL_DRAW:-$HAS_TTY}" = 1 ]; then
         # Titulo centralizado. Largura em COLUNAS ("·" tem 2 bytes): parte fixa
