@@ -236,6 +236,10 @@ clandmgfight_start() {
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       link_acao "$TMP/SRC" clandmgfight > "$TMP/ACCESS" 2>/dev/null
+      # Espera da rodada: pagina do jogo com a conta logada prova a sessao.
+      # O Duelo nao passa pelo descanso por ~25 min, e sem isto o painel
+      # acusava "sessao caida" com a conta so esperando o adversario.
+      [ "`sessao_estado "$TMP/SRC"`" = viva ] && sessao_marcar
       sleep 3
     done
     clandmgfight_fight
@@ -243,6 +247,15 @@ clandmgfight_start() {
     ;;
   09:[3-4][0-9]|21:[3-4][0-9])
     printf "The clan duel will be started...\n"
+    # FECHA O RESULTADO DA RODADA ANTERIOR, como a rodada das :25 (pedido do
+    # dono). Aberto, o jogo segue mostrando a tela de resultado e o enterFight
+    # nao pega: em 13/10 as contas que morreram na primeira rodada passaram
+    # 20 min relendo "/clandmgfight/" sem lutar (mesmo defeito do Torneio de
+    # Equipe na 3.9.79).
+    (
+      run_curl_exec "$URL/clandmgfight/?close=reward" > "$TMP/SRC"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
     batalha_marcar clandmgfight
     (
       run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"
@@ -259,6 +272,10 @@ clandmgfight_start() {
       ) </dev/null > /dev/null 2>&1 &
       time_exit 17
       link_acao "$TMP/SRC" clandmgfight > "$TMP/ACCESS" 2>/dev/null
+      # Espera da rodada: pagina do jogo com a conta logada prova a sessao.
+      # O Duelo nao passa pelo descanso por ~25 min, e sem isto o painel
+      # acusava "sessao caida" com a conta so esperando o adversario.
+      [ "`sessao_estado "$TMP/SRC"`" = viva ] && sessao_marcar
       sleep 3
     done
     clandmgfight_fight

@@ -174,11 +174,15 @@ func_sleep() {
     case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
     case "$_fs_min" in
         9|1[0-4]|2[4-9]|30|5[4-9]) i=15 ;;
-        # Coliseu da madrugada (00:35-04:25, pulso nos minutos terminados em
+        # Coliseu da madrugada (02:45-04:25, pulso nos minutos terminados em
         # 5): uma espera de 60s iniciada no fim do :x4 acordava no :x6.
-        4|34|44) case "${HOUR:-99}" in 0|00|1|01|2|02|3|03|4|04) i=15 ;; *) i=60 ;; esac ;;
+        4|34|44) case "${HOUR:-99}" in 2|02) [ "$_fs_min" = 44 ] && i=15 || i=60 ;;
+                                       3|03|4|04) i=15 ;; *) i=60 ;; esac ;;
         *)                         i=60 ;;
     esac
+    # Caverna da madrugada (00:30-02:40) com limite ainda livre: o proximo
+    # bloco sai em 15s, nao em 60s (a conta se concentra nela).
+    caverna_noite_ativa && i=15
     unset _fs_min
     func_cat
 }
@@ -346,7 +350,8 @@ masmorra_adiar() {
 #     <a href='/cave/'>... Caverna <span class='grey'>(21:04)</span></a>
 #     <a href='/cave/'>... Caverna<span class='green'> (+)</span></a>
 #
-#  Entra quando o menu da (+) ou o relogio zera; sem leitura do menu, 20 min.
+#  Entra quando o menu da (+) ou o relogio zera; sem leitura do menu, 25 min
+#  (regra do jogo, conferida pelo dono).
 #
 #  CAMPANHA. Feita, a pagina mostra "Nova campanha em 7 h 38 min" (uma a
 #  cada 8h). Le esse relogio; sem ele, concluida a campanha, espera as 8h.
@@ -395,11 +400,11 @@ caverna_ler_menu() {
         relogio_anotar caverna $(( `relogio_seg_sh "$_cv"` + 30 ))
     elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then
         # "(+)" logo depois de uma visita sem acao (link que a rotina nao
-        # conhece, botao pago): nao reabre a cada descanso; espera os 20 min.
+        # conhece, botao pago): nao reabre a cada descanso; espera os 25 min.
         _cv=0; { read -r _cv < "$TMP/.cave_vazia"; } 2>/dev/null
         case "$_cv" in ''|*[!0-9]*) _cv=0 ;; esac
         agora_s
-        if [ "$_cv" -eq 0 ] || [ $(( _AGORA - _cv )) -lt 0 ] || [ $(( _AGORA - _cv )) -ge 1200 ]; then
+        if [ "$_cv" -eq 0 ] || [ $(( _AGORA - _cv )) -lt 0 ] || [ $(( _AGORA - _cv )) -ge 1500 ]; then
             relogio_anotar caverna 0
         fi
     fi
@@ -412,7 +417,7 @@ caverna_liberada() {
         0) return 0 ;;
         1) return 1 ;;
     esac
-    ativ_liberada caverna 20
+    ativ_liberada caverna 25
 }
 
 # Depois de mexer na caverna o relogio muda. Ate o proximo descanso reler o
@@ -420,7 +425,7 @@ caverna_liberada() {
 # e reaberta a cada minuto.
 caverna_marcar() {
     ativ_marcar caverna
-    relogio_anotar caverna 1200
+    relogio_anotar caverna 1500
 }
 
 # "Nova campanha em 7 h 38 min" -> segundos. Sem tags no meio do texto.
@@ -547,8 +552,21 @@ tarefas_livres() {
         campaign_func
     fi
 
+    # Das 00:30 as 02:40 a caverna e acelerada com prata, um bloco por volta
+    # (caverna_noite, em cave.sh), ate 15% da prata da conta; atingido o
+    # limite, fica parada ate as 02:40. Fora da janela, o ritmo comum de 25 min.
     liga_fora_da_inscricao || return 0
-    if caverna_liberada; then
+    if caverna_noite_janela; then
+        if caverna_noite_ativa; then
+            # A missao 5 do cla (8 pesquisas) tomada no maximo a cada 15 min:
+            # tomar a cada bloco seriam dois pedidos a mais por volta.
+            if ativ_liberada cq_caverna 15; then
+                cq_antes caverna 2>/dev/null
+                ativ_marcar cq_caverna
+            fi
+            caverna_noite
+        fi
+    elif caverna_liberada; then
         cq_antes caverna 2>/dev/null
         cave_routine
         caverna_marcar

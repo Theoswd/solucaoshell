@@ -101,12 +101,14 @@ sls_play() {
             start
             ;;
 
-        # --- Coliseu comum: 00:30 as 04:30, pulsado de 10 em 10 minutos
+        # --- Coliseu comum: 02:40 as 04:30, pulsado de 10 em 10 minutos
         #
+        # Das 00:30 as 02:40 a madrugada e da caverna (pedido do dono: ver
+        # caverna_noite, em cave.sh); o Coliseu vem depois, de 02:45 a 04:25.
         # Cada coliseum_fight faz tres requisicoes de preparo; pulsar nos
         # minutos terminados em 5 evita rajada. Os minutos que sobram caem no
         # ramo (*), que ja chama tarefas_livres.
-        (00:[345]5|0[123]:[0-5]5|04:[012]5)
+        (02:[45]5|03:[0-5]5|04:[012]5)
             # UM PULSO POR MINUTO QUANDO NAO HA LUTA: achou o Coliseu sem luta
             # neste minuto, o resto dele e como o ramo (*). A marca leva o dia
             # (o worker vive dias). No modo -cl nao ha guarda.

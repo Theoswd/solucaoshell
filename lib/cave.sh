@@ -174,3 +174,153 @@ cave_routine() {
     unset _cv_acao
     printf "Cave ok\n"
 }
+
+# ============================================================
+#  CAVERNA DA MADRUGADA (00:30-02:40), A PEDIDO DO DONO
+#
+#  Das 00:30 as 02:40 a conta se concentra na caverna, acelerando com prata:
+#  nova pesquisa -> acelera -> inicia mineracao -> acelera -> nova pesquisa...
+#  Monstro na pesquisa: foge (o runaway) e segue. Depois das 02:40 e o
+#  Coliseu (run.sh) e a caverna volta ao ritmo comum (25 min, sem acelerar).
+#
+#  LIMITE: 15% da prata que a conta tinha na primeira leitura da noite
+#  (CAVE_NOITE_PCT). Atingido, a caverna fica pausada ate a noite seguinte.
+#  O gasto e o maior de dois numeros: a soma do preco lido nos botoes de
+#  acelerar e a queda da prata no cabecalho desde o inicio. Assim o limite
+#  vale mesmo que o preco do botao nao seja lido.
+#
+#  Estado em disco ($TMP/cave_noite), para o worker relancado nao recomecar a
+#  conta: "AAAAMMDD PRATA_INICIAL GASTO_NOS_BOTOES PAUSADA"
+# ============================================================
+CAVE_NOITE_PCT=${CAVE_NOITE_PCT:-15}
+CAVE_NOITE_BLOCO=${CAVE_NOITE_BLOCO:-240}
+
+# Agora e a janela da caverna (00:30 <= hora < 02:40)?
+caverna_noite_janela() {
+    hora_atual; minuto_atual
+    _cnj=$(( ${_HOR:-0} * 60 + ${_MIN:-0} ))
+    [ "$_cnj" -ge 30 ] && [ "$_cnj" -lt 160 ]
+    _cnj=$?
+    return $_cnj
+}
+
+# Janela da caverna E limite desta noite ainda nao atingido. So le o disco.
+caverna_noite_ativa() {
+    caverna_noite_janela || return 1
+    _cna_d=; _cna_f=0
+    { read -r _cna_d _cna_x _cna_y _cna_f < "$TMP/cave_noite"; } 2>/dev/null
+    _cna_r=0
+    [ "$_cna_d" = "`date +%Y%m%d`" ] && [ "$_cna_f" = 1 ] && _cna_r=1
+    unset _cna_d _cna_x _cna_y _cna_f
+    return $_cna_r
+}
+
+# Prata do cabecalho de uma pagina, em numero inteiro ("408,1M" -> 408100000).
+# Vazio quando a pagina nao traz o icone. Um awk, sem {n,m} (mawk).
+prata_pagina() {
+    awk '
+        { t = t $0 " " }
+        END {
+            if (!match(t, "silver[.]png'"'"' alt='"'"'s'"'"'/>[^0-9]*[0-9][0-9.,'"'"']*[KMBkmb]?")) exit
+            v = substr(t, RSTART, RLENGTH); sub(/^[^0-9]*/, "", v)
+            m = 1; u = toupper(substr(v, length(v), 1))
+            if (u == "K") m = 1000; else if (u == "M") m = 1000000; else if (u == "B") m = 1000000000
+            if (m > 1) { v = substr(v, 1, length(v) - 1); gsub(/'"'"'/, "", v); gsub(/,/, ".", v) }
+            else gsub(/[^0-9]/, "", v)
+            if (v == "") exit
+            printf "%.0f\n", v * m
+        }' "$1" 2>/dev/null
+}
+
+_cn_gravar() {
+    printf '%s %s %s %s\n' "$_cn_dia" "$_cn_base" "$_cn_soma" "$_cn_fim" > "$TMP/cave_noite" 2>/dev/null
+}
+
+# Um bloco de ate CAVE_NOITE_BLOCO segundos de caverna. Entre os blocos a
+# rotina segue (checklist, Liga, carreira, descanso), cada uma no seu horario.
+# 0 = fez alguma acao; 1 = nada (pausada, sem acao ou sem pagina).
+caverna_noite() {
+    _cn_dia=`date +%Y%m%d`
+    _cn_d=; _cn_base=0; _cn_soma=0; _cn_fim=0
+    { read -r _cn_d _cn_base _cn_soma _cn_fim < "$TMP/cave_noite"; } 2>/dev/null
+    if [ "$_cn_d" != "$_cn_dia" ]; then _cn_base=0; _cn_soma=0; _cn_fim=0; fi
+    case "$_cn_base" in ''|*[!0-9]*) _cn_base=0 ;; esac
+    case "$_cn_soma" in ''|*[!0-9]*) _cn_soma=0 ;; esac
+    if [ "$_cn_fim" = 1 ]; then
+        unset _cn_dia _cn_d _cn_base _cn_soma _cn_fim
+        return 1
+    fi
+    _cn_pct=$CAVE_NOITE_PCT
+    case "$_cn_pct" in ''|*[!0-9]*) _cn_pct=15 ;; esac
+
+    printf "Caverna da madrugada\n"
+    fetch_page "/cave/" || { unset _cn_dia _cn_d _cn_base _cn_soma _cn_fim _cn_pct; return 1; }
+    _cn_agora=`prata_pagina "$TMP/SRC"`
+    if [ "$_cn_base" -eq 0 ]; then
+        case "$_cn_agora" in
+            ''|*[!0-9]*|0)
+                printf "Caverna: prata da conta nao lida - sem acelerar agora\n"
+                unset _cn_dia _cn_d _cn_base _cn_soma _cn_fim _cn_pct _cn_agora
+                return 1 ;;
+        esac
+        _cn_base=$_cn_agora
+        _cn_gravar
+        printf "Caverna: limite da noite %s%% de %s = %s de prata\n" \
+            "$_cn_pct" "$_cn_base" "$(( _cn_base * _cn_pct / 100 ))"
+    fi
+    _cn_lim=$(( _cn_base * _cn_pct / 100 ))
+
+    _cn_acao=1
+    _cn_ate=$(( `date +%s` + ${CAVE_NOITE_BLOCO:-240} ))
+    while [ "`date +%s`" -lt "$_cn_ate" ]; do
+        CAVE=`grep -o -E '/cave/(gather|down|runaway|speedUp)/[?]r[=][0-9]+' "$TMP/SRC" | sed -n '1p'`
+        RESULT=`echo "$CAVE" | cut -d'/' -f3`
+        if [ -z "$CAVE" ]; then
+            printf "Caverna sem acao disponivel agora\n"
+            break
+        fi
+        if botao_pago "$TMP/SRC" "$CAVE"; then
+            printf "Caverna: %s cobra ouro - para aqui\n" "$RESULT"
+            break
+        fi
+
+        # Gasto ate aqui: o maior entre a soma dos botoes e a queda da prata.
+        _cn_gasto=$_cn_soma
+        case "$_cn_agora" in
+            ''|*[!0-9]*) ;;
+            *) [ $(( _cn_base - _cn_agora )) -gt "$_cn_gasto" ] && _cn_gasto=$(( _cn_base - _cn_agora )) ;;
+        esac
+
+        _cn_preco=0
+        if [ "$RESULT" = speedUp ]; then
+            read_speedup_silver_cost
+            _cn_preco=$SPEEDUP_SILVER_COST
+            # Limite atingido, ou este clique passaria dele: pausa a noite.
+            if [ "$_cn_gasto" -ge "$_cn_lim" ] || \
+               [ $(( _cn_gasto + _cn_preco )) -gt "$_cn_lim" ]; then
+                _cn_fim=1
+                _cn_gravar
+                printf "Caverna: %s%% da prata gasto (%s de %s) - pausada ate a proxima noite\n" \
+                    "$_cn_pct" "$_cn_gasto" "$_cn_lim"
+                break
+            fi
+        fi
+
+        fetch_page "$CAVE"
+        _cn_acao=0
+        case $RESULT in
+            down)    printf "New search\n" ;;
+            gather)  printf "Start mining\n" ;;
+            runaway) printf "Monster - running away\n" ;;
+            speedUp) printf "Speed up (%s de prata)\n" "$_cn_preco"
+                     _cn_soma=$(( _cn_soma + _cn_preco ))
+                     _cn_gravar ;;
+        esac
+
+        fetch_page "/cave/"
+        _cn_agora=`prata_pagina "$TMP/SRC"`
+    done
+
+    unset _cn_dia _cn_d _cn_base _cn_soma _cn_fim _cn_pct _cn_lim _cn_agora _cn_gasto _cn_preco _cn_ate
+    return $_cn_acao
+}

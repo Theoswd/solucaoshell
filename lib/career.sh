@@ -29,6 +29,16 @@ career_func() {
         fi
 
         checkQuest 6 end
+    else
+        # RECOMPENSA SEM TORNEIO: o torneio volta a cada 8h e a coleta da
+        # recompensa e uma vez ao dia (regra do jogo, conferida pelo dono).
+        # Sem ataque na pagina a recompensa ficava esperando o proximo
+        # torneio; agora e recolhida na visita, sem tomar a missao do cla.
+        CAREER=`grep -o -E '/career/take/[?]r[=][0-9]+' "$TMP/SRC" | sed -n 1p`
+        if [ -n "$CAREER" ] && ! botao_pago "$TMP/SRC" "$CAREER"; then
+            fetch_page "$CAREER"
+            printf "Career -> recompensa recolhida\n"
+        fi
     fi
 
     printf "Career ok\n"
