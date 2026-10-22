@@ -8,7 +8,9 @@ SILVER_SPENT_TOTAL=0
 
 # Preco do speedUp: o icone de prata logo DEPOIS do link (nao o saldo do
 # cabecalho). Sem preco perto do link, 0.
-# ponytail: formato do botao nao conferido em pagina real; so o modo -cv usa.
+# Conferido na pagina real (22/10): o rotulo e "Acelerar para <img
+# .../silver.png' alt=''/> 41580" e o preco e o TOTAL para terminar agora
+# (cai com o tempo que falta; o preco por minuto depende do nivel da conta).
 read_speedup_silver_cost() {
     _sc=`grep -o -E "/cave/speedUp/[^<]*(<[^>]*>[^<]*){0,4}<[^>]*silver\.png[^>]*>[^0-9<]{0,40}[0-9][0-9.,']*[KMBkmb]?" "$TMP/SRC" \
          | head -n1 | grep -o -E "[0-9][0-9.,']*[KMBkmb]?$"`
@@ -215,14 +217,24 @@ caverna_noite_ativa() {
     return $_cna_r
 }
 
-# Prata do cabecalho de uma pagina, em numero inteiro ("408,1M" -> 408100000).
+# Prata da conta numa pagina, em numero inteiro ("1819,8M" -> 1819800000).
 # Vazio quando a pagina nao traz o icone. Um awk, sem {n,m} (mawk).
+#
+# VALE O ULTIMO ICONE DE PRATA, NAO O PRIMEIRO. Na caverna a prata da conta
+# fica no RODAPE ("lvl 105 | g 132 | s 1819,8M"), e antes dela a dica da
+# aceleracao traz o mesmo icone com o preco por minuto:
+#     Minutos 1 de aceleracao preco <img .../silver.png' alt='s'/> <span class='bold'>1260</span>
+# (pagina real de 22/10). O primeiro icone dava 1260 como prata da conta: o
+# limite da noite virava 189 e o primeiro acelerar (41580) ja parava tudo.
 prata_pagina() {
     awk '
         { t = t $0 " " }
         END {
-            if (!match(t, "silver[.]png'"'"' alt='"'"'s'"'"'/>[^0-9]*[0-9][0-9.,'"'"']*[KMBkmb]?")) exit
-            v = substr(t, RSTART, RLENGTH); sub(/^[^0-9]*/, "", v)
+            p = "silver[.]png'"'"' alt='"'"'s'"'"'/>[^0-9]*[0-9][0-9.,'"'"']*[KMBkmb]?"
+            v = ""
+            while (match(t, p)) { v = substr(t, RSTART, RLENGTH); t = substr(t, RSTART + RLENGTH) }
+            if (v == "") exit
+            sub(/^[^0-9]*/, "", v)
             m = 1; u = toupper(substr(v, length(v), 1))
             if (u == "K") m = 1000; else if (u == "M") m = 1000000; else if (u == "B") m = 1000000000
             if (m > 1) { v = substr(v, 1, length(v) - 1); gsub(/'"'"'/, "", v); gsub(/,/, ".", v) }

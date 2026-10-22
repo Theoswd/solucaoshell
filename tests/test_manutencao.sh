@@ -5063,17 +5063,22 @@ _cn100() {
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
       _M=$1
       _pg() { read -r _p < "$TMP/passo"; read -r _s < "$TMP/prata"
-          _cab="<img src='/images/icon/silver.png' alt='s'/> $_s"
-          case "$_M" in preco) _rot="Acelerar <img src='/images/icon/silver.png' alt='s'/> 40" ;;
-                        ouro)  _rot="Acelerar <img src='/images/icon/gold.png' alt='g'/> 5" ;;
-                        *)     _rot="Acelerar" ;; esac
+          # Como a pagina real: HP no topo, a dica da aceleracao com o preco
+          # por minuto (icone alt='s') e a prata da conta no rodape.
+          _top="<span class='bl rght nwr'><img src='/images/icon/health.png' alt='hp'/> <span class='white'>99171</span></span>"
+          _dica="<ul class='hint'><li>Minutos <span class='bold'>1</span> de aceleração preço <img src='/images/icon/silver.png' alt='s'/> <span class='bold'>3</span> pratas</li></ul>"
+          _rod="<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 105 | <img src='/images/icon/gold.png' alt='g'/> 132 | <img src='/images/icon/silver.png' alt='s'/> $_s</div>"
+          case "$_M" in preco) _rot="<span class='end'><span class='label'>Acelerar para <img src='/images/icon/silver.png' alt=''/> 40</span></span>" ;;
+                        ouro)  _rot="<span class='label'>Acelerar para <img src='/images/icon/gold.png' alt=''/> 5</span>" ;;
+                        *)     _rot="<span class='label'>Acelerar</span>" ;; esac
           case $_p in
-              0|2|6|10|14) echo "$_cab <a href='/cave/down/?r=$_p'>Nova pesquisa</a>" ;;
-              1)           echo "$_cab Monstro! <a href='/cave/runaway/?r=$_p'>Escapar</a>" ;;
-              3|5|7|9|11|13|15) echo "$_cab <a href='/cave/speedUp/?r=$_p'>$_rot</a>" ;;
-              4|8|12)      echo "$_cab <a href='/cave/gather/?r=$_p'>Iniciar mineracao</a>" ;;
-              *)           echo "$_cab espera" ;;
-          esac > "$TMP/SRC"; }
+              0|2|6|10|14) _m="<a class='btn' href='/cave/down/?r=$_p'>Nova pesquisa</a>" ;;
+              1)           _m="Monstro! <a class='btn' href='/cave/runaway/?r=$_p'>Escapar</a>" ;;
+              3|5|7|9|11|13|15) _m="<a class='btn' href='/cave/speedUp/?r=$_p'>$_rot</a>$_dica" ;;
+              4|8|12)      _m="<a class='btn' href='/cave/gather/?r=$_p'>Iniciar mineracao</a>" ;;
+              *)           _m="espera" ;;
+          esac
+          echo "$_top $_m $_rod" > "$TMP/SRC"; }
       fetch_page() {
           case "$1" in
               /cave/) : ;;
@@ -5100,6 +5105,20 @@ _r=$( . "$LIB/cave.sh" > /dev/null 2>&1
       printf '%s' "<img src='/images/icon/silver.png' alt='s'/> <span>96'629</span>" > "$_td62/p2"; printf '%s ' "`prata_pagina "$_td62/p2"`"
       printf '%s' "sem icone" > "$_td62/p3"; printf '[%s]' "`prata_pagina "$_td62/p3"`" )
 check "prata_pagina: 408,1M, 96'629 e pagina sem icone" "408100000 96629 []" "$_r"
+# Pagina real da caverna (22/10, nome e id da conta trocados): o preco do
+# botao e 41580; a prata da conta e a do RODAPE (1819,8M), nao o 1260 da dica
+# que vem antes dela com o mesmo icone.
+cat > "$_td62/cave_real.html" <<'HTML'
+<html><head><title>Caverna</title></head><body><div class='head  cntr' style='position:relative;' onclick="location.href='/';"><span class='ttl fl'>Caverna</span><span class='bl rght nwr'><img src='/images/icon/health.png' alt='hp'/> <span class='white'>99171</span> | <img src='/images/icon/mana.png' alt='mp'/> 242</span><div class='clr'></div></div><div class='center'><div class='block_zero'><span class='blue'>Você está tentando obter os recursos...</span><br/>Tempo de sobra: 32:23</div><div class='mini-line'></div><div class='block_zero center'><a class='btn' href='/cave/speedUp/?r=53383440'><span class='end'><span class='label'>Acelerar para <img src='/images/icon/silver.png' alt=''/> 41580</span></span></a></div></div><div class='mini-line'></div><ul class='hint'><li>Minutos <span class='bold'>1</span> de aceleração preço <img src='/images/icon/silver.png' alt='s'/> <span class='bold'>1260</span> pratas</li></ul><div class='foot'><div><img src='/images/icon/race/1.png' alt='Bóreas'/> Conta Teste</div><div class='center'><img src='/images/icon/level.png' alt='lvl'/> 105 | <img src='/images/icon/gold.png' alt='g'/> 132 | <img src='/images/icon/silver.png' alt='s'/> 1819,8M</div></div><script>jsInterface.event("user=5;level=105");</script></body></html>
+HTML
+_r=$( TMP="$_td62"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      cp "$_td62/cave_real.html" "$TMP/SRC"; read_speedup_silver_cost
+      _c=`grep -o -E '/cave/(gather|down|runaway|speedUp)/[?]r[=][0-9]+' "$TMP/SRC" | sed -n 1p`
+      botao_pago "$TMP/SRC" "$_c" && _o=pago || _o=prata
+      _pr=`prata_pagina "$TMP/SRC"`
+      printf '%s %s %s %s' "$SPEEDUP_SILVER_COST" "$_pr" "$_o" "$(( ${_pr:-0} * 15 / 100 ))" )
+check "caverna, pagina real: preco 41580, prata da conta 1819,8M (rodape), botao em prata, limite 15%" \
+    "41580 1819800000 prata 272970000" "$_r"
 # Caverna fora da madrugada: 25 min (regra do jogo).
 sed -n '/^caverna_liberada() {/,/^}/p' "$LIB/crono.sh" | grep -q 'ativ_liberada caverna 25' \
     && ok "caverna: sem relogio no menu, 25 min" || bad "caverna: intervalo sem relogio diferente de 25 min"
