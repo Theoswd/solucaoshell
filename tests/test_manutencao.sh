@@ -4216,16 +4216,16 @@ unset -f _cnt85
 # ---- 3.9.87: itens aprovados pelo dono ----
 # Coliseu da madrugada: sem luta, um pulso por minuto (o resto do minuto e
 # como um minuto comum); com luta, como antes.
-#   _cp87 nada|luta -> chamadas em tres voltas no 01:15 e uma no 01:25
+#   _cp87 nada|luta -> chamadas em tres voltas no 03:15 e uma no 03:25
 _cp87() {
     ( TMP="$_td20/cp87_$1"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
-      _HORA=01:15; relogio_sync() { _HH=${_HORA%:*}; _MM=${_HORA#*:}; }
+      _HORA=03:15; relogio_sync() { _HH=${_HORA%:*}; _MM=${_HORA#*:}; }
       batalha_retomar() { return 1; }; CLD=1; RUN=-boot
       coliseum_fight() { echo COL >> "$TMP/r"; if [ "$ACHA" = nada ]; then COLISEU_SEM_LUTA=1; else COLISEU_SEM_LUTA=0; fi; }
       tarefas_livres() { :; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
       func_sleep() { echo ESPERA >> "$TMP/r"; }
-      ACHA=$1; sls_play; sls_play; sls_play; _HORA=01:25; sls_play
+      ACHA=$1; sls_play; sls_play; sls_play; _HORA=03:25; sls_play
       tr '\n' ' ' < "$TMP/r" )
 }
 check "Coliseu sem luta: um pulso por minuto, o resto do minuto e comum" "COL ESPERA ESPERA COL " "`_cp87 nada`"
@@ -4395,11 +4395,11 @@ _cp88() {
       func_sleep() { echo ESPERA >> "$TMP/r"; }
       ACHA=nada; _DIAH="12 04:25"; sls_play
       ACHA=luta
-      for _DIAH in "13 00:35" "13 01:05" "13 02:15" "13 03:45" "13 04:15" "13 04:25"; do sls_play; done
+      for _DIAH in "13 02:45" "13 02:55" "13 03:15" "13 03:45" "13 04:15" "13 04:25"; do sls_play; done
       tr '\n' ' ' < "$TMP/r" )
 }
 check "Coliseu: a marca do pulso sem luta nao vale na noite seguinte" \
-    "COL04:25 COL00:35 COL01:05 COL02:15 COL03:45 COL04:15 COL04:25 " "`_cp88`"
+    "COL04:25 COL02:45 COL02:55 COL03:15 COL03:45 COL04:15 COL04:25 " "`_cp88`"
 # Conferencia da Home no atualiza_stats: a subida de nivel no meio dela
 # ainda apaga o last_train (o nivel de antes nao pode ser o da Home).
 _r=`( TMP="$_td20/st88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
@@ -4415,11 +4415,11 @@ unset -f _cp88
 # ---- 3.9.89: revisao da 3.9.87 (o que faltava na 3.9.88) ----
 # Guarda do Coliseu: a marca leva o dia (o worker vive dias) e nao vale no
 # modo -cl.
-#   _cp88 MODO -> chamadas: 01:15 duas vezes no dia 1, 01:15 no dia 2
+#   _cp88 MODO -> chamadas: 03:15 duas vezes no dia 1, 03:15 no dia 2
 _cp88() {
     ( TMP="$_td20/cp88_$1"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
-      _D=01; relogio_sync() { _HH=01; _MM=15; _DD=$_D; }
+      _D=01; relogio_sync() { _HH=03; _MM=15; _DD=$_D; }
       batalha_retomar() { return 1; }; CLD=1; RUN=$1
       coliseum_fight() { echo COL >> "$TMP/r"; COLISEU_SEM_LUTA=1; }
       coliseum_start() { :; }; messages_info() { :; }
@@ -4767,6 +4767,105 @@ check "batalha: cura que estourou o tempo depois de conectar conta como feita (c
 _r=`( SLS_TELEMETRIA=0 _K58=0.000000 _cura58 c )`
 check "batalha: sem telemetria, curl 28 conta como feita (comportamento de antes)" "1 4" "$_r"
 rm -rf "$_td58"; unset _td58 _r _k _p; unset -f _cura58
+
+printf "\n=== 59. MADRUGADA: CAVERNA 00:30-02:40, COLISEU 02:45-04:25 (3.9.100) ===\n"
+_td62=`mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/sls_t62_$$"`; mkdir -p "$_td62"
+# Janela da caverna: 00:30 <= hora < 02:40.
+_r=$( TMP="$_td62/j"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      for _h in 00:29 00:30 01:15 02:39 02:40 03:00; do
+          hora_atual() { _HOR=${_h%:*}; _HOR=${_HOR#0}; }; minuto_atual() { _MIN=${_h#*:}; _MIN=${_MIN#0}; }
+          caverna_noite_janela && printf 's' || printf 'n'
+      done )
+check "caverna da madrugada: janela 00:30 ate 02:40 (00:29 00:30 01:15 02:39 02:40 03:00)" "nsssnn" "$_r"
+# Cronograma: 01:15 e da caverna (ramo comum), 02:45 e pulso do Coliseu.
+_r=$( TMP="$_td62/c"; mkdir -p "$TMP"; export TMP; : > "$TMP/r"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/run.sh" > /dev/null 2>&1
+      relogio_sync() { _HH=${_HORA%:*}; _MM=${_HORA#*:}; _DD=22; }
+      batalha_retomar() { return 1; }; CLD=1; RUN=-boot
+      coliseum_fight() { echo "COL$_HH:$_MM" >> "$TMP/r"; COLISEU_SEM_LUTA=1; }
+      tarefas_livres() { echo "ROT$_HH:$_MM" >> "$TMP/r"; }; descansar() { :; }; sleep() { :; }; func_crono() { :; }
+      func_sleep() { :; }; start() { echo "START$_HH:$_MM" >> "$TMP/r"; }
+      for _HORA in 00:35 01:15 02:35 02:45 03:55 04:25 04:35; do sls_play; done
+      tr '\n' ' ' < "$TMP/r" )
+check "madrugada: Coliseu so de 02:45 a 04:25; antes, a rotina (com a caverna)" \
+    "ROT00:35 ROT01:15 ROT02:35 COL02:45 ROT02:45 COL03:55 ROT03:55 COL04:25 ROT04:25 ROT04:35 " "$_r"
+# Caverna da madrugada contra um roteiro de paginas: pesquisa, monstro (foge),
+# pesquisa, acelera, minera, acelera... com o limite de 15% da prata.
+#   _cn100 preco|cabecalho|ouro -> acoes pedidas | estado gravado | segunda chamada
+#   preco:     o botao de acelerar mostra 40 de prata, a prata cai 40 por clique
+#   cabecalho: o botao nao mostra o preco; so a prata do cabecalho cai (60)
+#   ouro:      o acelerar cobra ouro
+_cn100() {
+    ( TMP="$_td62/n$1"; export TMP; rm -rf "$TMP"; mkdir -p "$TMP"; : > "$TMP/req"; echo 0 > "$TMP/passo"; echo 1000 > "$TMP/prata"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      _M=$1
+      _pg() { read -r _p < "$TMP/passo"; read -r _s < "$TMP/prata"
+          # Como a pagina real: HP no topo, a dica da aceleracao com o preco
+          # por minuto (icone alt='s') e a prata da conta no rodape.
+          _top="<span class='bl rght nwr'><img src='/images/icon/health.png' alt='hp'/> <span class='white'>99171</span></span>"
+          _dica="<ul class='hint'><li>Minutos <span class='bold'>1</span> de aceleração preço <img src='/images/icon/silver.png' alt='s'/> <span class='bold'>3</span> pratas</li></ul>"
+          _rod="<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 105 | <img src='/images/icon/gold.png' alt='g'/> 132 | <img src='/images/icon/silver.png' alt='s'/> $_s</div>"
+          case "$_M" in preco) _rot="<span class='end'><span class='label'>Acelerar para <img src='/images/icon/silver.png' alt=''/> 40</span></span>" ;;
+                        ouro)  _rot="<span class='label'>Acelerar para <img src='/images/icon/gold.png' alt=''/> 5</span>" ;;
+                        *)     _rot="<span class='label'>Acelerar</span>" ;; esac
+          case $_p in
+              0|2|6|10|14) _m="<a class='btn' href='/cave/down/?r=$_p'>Nova pesquisa</a>" ;;
+              1)           _m="Monstro! <a class='btn' href='/cave/runaway/?r=$_p'>Escapar</a>" ;;
+              3|5|7|9|11|13|15) _m="<a class='btn' href='/cave/speedUp/?r=$_p'>$_rot</a>$_dica" ;;
+              4|8|12)      _m="<a class='btn' href='/cave/gather/?r=$_p'>Iniciar mineracao</a>" ;;
+              *)           _m="espera" ;;
+          esac
+          echo "$_top $_m $_rod" > "$TMP/SRC"; }
+      fetch_page() {
+          case "$1" in
+              /cave/) : ;;
+              *) echo "$1" >> "$TMP/req"; read -r _p < "$TMP/passo"
+                 case "$1" in */speedUp/*) read -r _s < "$TMP/prata"
+                     [ "$_M" = preco ] && _s=$((_s - 40)); [ "$_M" = cabecalho ] && _s=$((_s - 60)); echo "$_s" > "$TMP/prata" ;; esac
+                 echo $((_p + 1)) > "$TMP/passo" ;;
+          esac
+          _pg; }
+      caverna_noite > /dev/null 2>&1
+      _a=`sed 's,^/cave/,,; s,/.*,,' "$TMP/req" | tr '\n' ' '`
+      read -r _d _b _g _f < "$TMP/cave_noite"
+      : > "$TMP/req"; caverna_noite > /dev/null 2>&1; _seg="$?:`wc -l < "$TMP/req" | tr -d ' '`"
+      printf '%s|%s %s %s|%s' "$_a" "$_b" "$_g" "$_f" "$_seg" )
+}
+check "caverna da madrugada: pesquisa, foge do monstro, acelera e minera ate 15% (preco do botao)" \
+    "down runaway down speedUp gather speedUp down speedUp gather |1000 120 1|1:0" "`_cn100 preco`"
+check "caverna da madrugada: sem preco no botao, o limite vem da queda da prata no cabecalho" \
+    "down runaway down speedUp gather speedUp down speedUp gather |1000 0 1|1:0" "`_cn100 cabecalho`"
+check "caverna da madrugada: acelerar pago em ouro nao e clicado" \
+    "down runaway down |1000 0 0|1:0" "`_cn100 ouro`"
+_r=$( . "$LIB/cave.sh" > /dev/null 2>&1
+      printf '%s' "<img src='/images/icon/silver.png' alt='s'/> 408,1M" > "$_td62/p1"; printf '%s ' "`prata_pagina "$_td62/p1"`"
+      printf '%s' "<img src='/images/icon/silver.png' alt='s'/> <span>96'629</span>" > "$_td62/p2"; printf '%s ' "`prata_pagina "$_td62/p2"`"
+      printf '%s' "sem icone" > "$_td62/p3"; printf '[%s]' "`prata_pagina "$_td62/p3"`" )
+check "prata_pagina: 408,1M, 96'629 e pagina sem icone" "408100000 96629 []" "$_r"
+# Pagina real da caverna (22/10, nome e id da conta trocados): o preco do
+# botao e 41580; a prata da conta e a do RODAPE (1819,8M), nao o 1260 da dica
+# que vem antes dela com o mesmo icone.
+cat > "$_td62/cave_real.html" <<'HTML'
+<html><head><title>Caverna</title></head><body><div class='head  cntr' style='position:relative;' onclick="location.href='/';"><span class='ttl fl'>Caverna</span><span class='bl rght nwr'><img src='/images/icon/health.png' alt='hp'/> <span class='white'>99171</span> | <img src='/images/icon/mana.png' alt='mp'/> 242</span><div class='clr'></div></div><div class='center'><div class='block_zero'><span class='blue'>Você está tentando obter os recursos...</span><br/>Tempo de sobra: 32:23</div><div class='mini-line'></div><div class='block_zero center'><a class='btn' href='/cave/speedUp/?r=53383440'><span class='end'><span class='label'>Acelerar para <img src='/images/icon/silver.png' alt=''/> 41580</span></span></a></div></div><div class='mini-line'></div><ul class='hint'><li>Minutos <span class='bold'>1</span> de aceleração preço <img src='/images/icon/silver.png' alt='s'/> <span class='bold'>1260</span> pratas</li></ul><div class='foot'><div><img src='/images/icon/race/1.png' alt='Bóreas'/> Conta Teste</div><div class='center'><img src='/images/icon/level.png' alt='lvl'/> 105 | <img src='/images/icon/gold.png' alt='g'/> 132 | <img src='/images/icon/silver.png' alt='s'/> 1819,8M</div></div><script>jsInterface.event("user=5;level=105");</script></body></html>
+HTML
+_r=$( TMP="$_td62"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      cp "$_td62/cave_real.html" "$TMP/SRC"; read_speedup_silver_cost
+      _c=`grep -o -E '/cave/(gather|down|runaway|speedUp)/[?]r[=][0-9]+' "$TMP/SRC" | sed -n 1p`
+      botao_pago "$TMP/SRC" "$_c" && _o=pago || _o=prata
+      _pr=`prata_pagina "$TMP/SRC"`
+      printf '%s %s %s %s' "$SPEEDUP_SILVER_COST" "$_pr" "$_o" "$(( ${_pr:-0} * 15 / 100 ))" )
+check "caverna, pagina real: preco 41580, prata da conta 1819,8M (rodape), botao em prata, limite 15%" \
+    "41580 1819800000 prata 272970000" "$_r"
+# Espera entre as voltas: 15s na janela da caverna (limite livre) e no :x4
+# antes dos pulsos do Coliseu (02:44-04:24); 60s no resto da madrugada.
+#   _fs100 HORA MIN ATIVA -> i
+_fs100() { ( TMP="$_td62/fs"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+             _M=$2; _A=$3; dia_atual() { _DIA=15; }; minuto_atual() { _MIN=$_M; }; func_cat() { printf '%s' "$i"; }
+             caverna_noite_ativa() { [ "$_A" = 1 ]; }
+             HOUR=$1; func_sleep 2>/dev/null ) ; }
+check "func_sleep: caverna 15s; :x4 antes dos pulsos (02:44-04:24) 15s; resto 60s" "15 15 15 15 60 60 60 60" \
+    "`_fs100 1 17 1` `_fs100 2 44 0` `_fs100 3 34 0` `_fs100 4 4 0` `_fs100 2 34 0` `_fs100 1 17 0` `_fs100 0 44 0` `_fs100 13 34 0`"
+rm -rf "$_td62"; unset _td62 _r; unset -f _cn100 _fs100
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

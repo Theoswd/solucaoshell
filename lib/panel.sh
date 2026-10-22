@@ -514,7 +514,8 @@ painel_render() {
 
 # Agenda de eventos, extraida do case de horarios do run.sh.
 # Horarios em America/Bahia (BRT), que e o fuso usado pelos workers.
-EVENTOS="0030|Coliseu
+EVENTOS="0030|Caverna
+0245|Coliseu
 0925|Evento especial
 0955|Imortais
 1010|Batalha de Bandeiras

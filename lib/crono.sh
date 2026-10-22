@@ -174,8 +174,15 @@ func_sleep() {
     case "$_fs_min" in ''|*[!0-9]*) _fs_min=0 ;; esac
     case "$_fs_min" in
         9|1[0-4]|2[4-9]|30|5[4-9]) i=15 ;;
+        # Coliseu da madrugada (02:45-04:25, pulso nos minutos terminados em
+        # 5): uma espera de 60s iniciada no fim do :x4 acordava no :x6.
+        4|34|44) case "${HOUR:-99}" in 2|02) [ "$_fs_min" = 44 ] && i=15 || i=60 ;;
+                                       3|03|4|04) i=15 ;; *) i=60 ;; esac ;;
         *)                         i=60 ;;
     esac
+    # Caverna da madrugada (00:30-02:40) com limite ainda livre: o proximo
+    # bloco sai em 15s, nao em 60s (a conta se concentra nela).
+    caverna_noite_ativa && i=15
     unset _fs_min
     func_cat
 }
@@ -526,8 +533,21 @@ tarefas_livres() {
         campaign_func
     fi
 
+    # Das 00:30 as 02:40 a caverna e acelerada com prata, um bloco por volta
+    # (caverna_noite, em cave.sh), ate 15% da prata da conta; atingido o
+    # limite, fica parada ate as 02:40. Fora da janela, o ritmo comum.
     liga_fora_da_inscricao || return 0
-    if caverna_liberada; then
+    if caverna_noite_janela; then
+        if caverna_noite_ativa; then
+            # A missao 5 do cla (8 pesquisas) tomada no maximo a cada 15 min:
+            # tomar a cada bloco seriam dois pedidos a mais por volta.
+            if ativ_liberada cq_caverna 15; then
+                cq_antes caverna 2>/dev/null
+                ativ_marcar cq_caverna
+            fi
+            caverna_noite
+        fi
+    elif caverna_liberada; then
         cq_antes caverna 2>/dev/null
         cave_routine
         caverna_marcar
