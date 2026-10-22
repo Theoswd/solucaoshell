@@ -12,20 +12,20 @@ flagfight_fight() {
   cf_access() {
     # Alvo cinza uma vez por pagina.
     if alvo_grey "$src_ram"; then _grey=1; else _grey=0; fi
-    grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[?]r[=][0-9]+)' "$src_ram" | sed -n '1p' > ATK 2>/dev/null
-    grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > ATKRND 2>/dev/null
-    grep -o -E '(/flagfight/dodge/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > DODGE 2>/dev/null
-    grep -o -E '(/flagfight/heal/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > HEAL 2>/dev/null
-    grep -o -E '(/[a-z]+/shield/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > SHIELD 2>/dev/null
     alvo_nome "$src_ram" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
+    luta_ler "$src_ram" USH \
+        -e '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[?]r[=][0-9]+)' \
+        -e '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[?]r[=][0-9]+)' \
+        -e '(/flagfight/dodge/[?]r[=][0-9]+)' \
+        -e '(/flagfight/heal/[?]r[=][0-9]+)' \
+        -e '(/[a-z]+/shield/[?]r[=][0-9]+)' \
+        -e "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}"
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
-    _hp=`cat USH`
-    _cura=0; [ -s SHIELD ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
+    _cura=0; [ -s SHIELD ] && luta_menor "$_hp" "$_hlhp" && _cura=1
+    _caiu=0; [ -s DODGE ] && luta_menor "$_hp" "$_old_hp" && _caiu=1
 
-    if grep -q -o '/dodge/' "$src_ram"; then
+    if [ "$_emluta" = 1 ]; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
       sessao_marcar

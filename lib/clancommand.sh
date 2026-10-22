@@ -347,6 +347,16 @@ clancommand_start() {
   BREAK=$(($(date +%s) + _cc_lim))
   ACCESS=`link_acao "$src_ram" clancommand`
 
+  # Ate perto do inicio nao ha o que ler: o contador da pagina diz quando a
+  # luta comeca. Dorme ate ~10s antes e so entao rele de 3 em 3s (eram ~100
+  # releituras por torneio). A hora de entrar nao muda.
+  _cc_dorme=$(( _cc_seg - 10 ))
+  if [ "$_cc_dorme" -gt 0 ] && [ "`estado_luta "$src_ram" clancommand`" != luta ]; then
+    printf " aguardando o inicio (%ss)...\n" "$_cc_seg"
+    if type espera_interrompivel > /dev/null 2>&1; then espera_interrompivel "$_cc_dorme"; else sleep "$_cc_dorme"; fi
+  fi
+  unset _cc_dorme
+
   until [ "`estado_luta "$src_ram" clancommand`" = luta ] || \
         [ "$(date +%s)" -gt "$BREAK" ]; do
     printf " aguardando o inicio...\n"

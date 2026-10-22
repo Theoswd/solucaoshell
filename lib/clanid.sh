@@ -248,13 +248,18 @@ clan_statue() {
     [ "${FUNC_clan_statue:-y}" = "y" ] || return 1
     [ -n "$CLD" ] || return 1
 
-    # Bonus do cla so podem ser ativados por quem tem cargo.
+    # Portao de 6h ANTES de ler a pagina do cla: o clan_lider lia /clan/ID/
+    # em todo start(), tambem em quem nao tem cargo (67 por dia).
+    estatua_liberada || return 1
+
+    # Bonus do cla so podem ser ativados por quem tem cargo (lider e vice).
+    # Sem cargo, marca as 6h: a pagina so e relida para ver se o cargo mudou.
+    # Pagina sem resposta nao prova falta de cargo: tenta no proximo start().
+    clan_pagina || return 1
     if ! clan_lider; then
+        estatua_marcar
         return 1
     fi
-
-    # Se a ultima tentativa foi recusada, espera antes de repetir.
-    estatua_liberada || return 1
 
     fetch_page "/clan/${CLD}/built/" "$TMP/STATUE"
     [ -s "$TMP/STATUE" ] || return 1

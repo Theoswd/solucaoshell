@@ -101,22 +101,44 @@ coliseum_fight() {
             # Os relogios de cura/esquiva/ataque sao iniciados uma vez, antes
             # do laco, nunca aqui (a recarga de 90s nunca valeria).
 
-            # Mesmo padrao dos outros modulos: 1 a 6 digitos, primeira ocorrencia.
-            USH=`grep -o -E '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}' "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
-            ENH=`grep -o -E '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}' "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p'`
-
-            ATK=`grep -o -E '/coliseum/atk/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
-            ATKRND=`grep -o -E '/coliseum/atkrnd/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
-            DODGE=`grep -o -E '/coliseum/dodge/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
-            HEAL=`grep -o -E '/coliseum/heal/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
+            # UM GREP PARA A PAGINA (eram seis grep|sed, ~29 processos por
+            # pagina): os mesmos padroes, e o primeiro achado de cada um sai
+            # como antes (ver luta_ler, em info.sh). HP: os digitos do fim do
+            # 1o "hp"; ENH: o 1o "nbsp" com o sed "s,nbsp;,,;s, ,," de antes.
+            USH=""; ENH=""; ATK=""; ATKRND=""; DODGE=""; HEAL=""; _emluta=0
+            _cl_l=`grep -o -E -e '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}' -e '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}' \
+                -e '/coliseum/atk/[?]r[=][0-9]+' -e '/coliseum/atkrnd/[?]r[=][0-9]+' \
+                -e '/coliseum/dodge/[?]r[=][0-9]+' -e '/coliseum/heal/[?]r[=][0-9]+' \
+                -e '/dodge/' "$src_ram" 2>/dev/null`
+            _cl_hp=0; _cl_en=0
+            while IFS= read -r _cl_x; do
+                case "$_cl_x" in
+                    '') ;;
+                    /dodge/) _emluta=1 ;;
+                    hp*) [ "$_cl_hp" = 1 ] || { USH=${_cl_x##*[!0-9]}; _cl_hp=1; } ;;
+                    nbsp*)
+                        if [ "$_cl_en" = 0 ]; then
+                            case "$_cl_x" in *"nbsp;"*) _cl_x="${_cl_x%%"nbsp;"*}${_cl_x#*"nbsp;"}" ;; esac
+                            case "$_cl_x" in *" "*) _cl_x="${_cl_x%%" "*}${_cl_x#*" "}" ;; esac
+                            ENH=$_cl_x; _cl_en=1
+                        fi ;;
+                    /coliseum/atk/*)    [ -n "$ATK" ]    || ATK=$_cl_x ;;
+                    /coliseum/atkrnd/*) [ -n "$ATKRND" ] || ATKRND=$_cl_x ;;
+                    /coliseum/dodge/*)  _emluta=1; [ -n "$DODGE" ] || DODGE=$_cl_x ;;
+                    /coliseum/heal/*)   [ -n "$HEAL" ]   || HEAL=$_cl_x ;;
+                esac
+            done <<EOF
+$_cl_l
+EOF
+            unset _cl_l _cl_x _cl_hp _cl_en
 
             RHP=`awk -v ush="$USH" -v rper="$RPER" 'BEGIN { printf "%.0f", ush * rper / 100 + ush }'`
             # Marcas da pagina, calculadas uma vez por pagina.
-            _cura=0; [ -n "$HEAL" ] && awk -v ush="$USH" -v hlhp="$HLHP" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
-            _caiu=0; [ -n "$DODGE" ] && awk -v ush="$USH" -v oldhp="$OLDHP" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
-            _forte=0; [ -n "$ATKRND" ] && awk -v rhp="$RHP" -v enh="$ENH" 'BEGIN { exit !(rhp < enh) }' && _forte=1
+            _cura=0; [ -n "$HEAL" ] && luta_menor "$USH" "$HLHP" && _cura=1
+            _caiu=0; [ -n "$DODGE" ] && luta_menor "$USH" "$OLDHP" && _caiu=1
+            _forte=0; [ -n "$ATKRND" ] && luta_menor "$RHP" "$ENH" && _forte=1
 
-            if grep -q -o '/dodge/' "$src_ram"; then
+            if [ "$_emluta" = 1 ]; then
                 # A pagina respondeu com a luta: sessao confirmada.
                 _reconf=0
                 sessao_marcar

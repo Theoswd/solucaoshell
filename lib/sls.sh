@@ -165,6 +165,7 @@ do_login() {
             messages_info
             printf "[%s] %s — sessao reaproveitada (sem novo login)
 " "$SLS_TAG" "$ACC"
+            rm -f "$TMP/reconn_falha" 2>/dev/null
             unset PAGE
             return 0
         fi
@@ -205,6 +206,7 @@ do_login() {
         # Grava a linha de status ja no login, para o func_cat ter o que exibir.
         messages_info
         printf "[%s] %s — login OK\n" "$SLS_TAG" "$ACC"
+        rm -f "$TMP/reconn_falha" 2>/dev/null
         unset PAGE
         return 0
     fi

@@ -113,6 +113,7 @@ cave_routine() {
     # LIMITE DE TEMPO: sem teto, a caverna em espera repetiria /cave/ sem fim.
     CAVE_BREAK=$(($(date +%s) + 240))
 
+    _cv_acao=0
     fetch_page "/cave/"
 
     while [ "$(date +%s)" -lt "$CAVE_BREAK" ]; do
@@ -138,6 +139,7 @@ cave_routine() {
         case $RESULT in
             gather|down|runaway|speedUp)
                 fetch_page "$CAVE"
+                _cv_acao=1
                 case $RESULT in
                     down*)
                         printf "New search\n"
@@ -159,6 +161,9 @@ cave_routine() {
         fetch_page "/cave/"
     done
 
-    checkQuest 5 end
+    # Sem acao nenhuma a missao 5 nao andou: nada a concluir (o checklist de
+    # 15 min recolhe as concluidas de qualquer jeito).
+    [ "${_cv_acao:-0}" = 1 ] && checkQuest 5 end
+    unset _cv_acao
     printf "Cave ok\n"
 }

@@ -1848,7 +1848,8 @@ _r=$(
 unset _r
 # Coliseu: o USH aceita 1 a 6 digitos, a primeira ocorrencia (HP entre 1 e 9
 # e vida, nao morte; 123456 nao vira 12345).
-grep -q '\[0-9\]{1,6}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
+grep -q "(hp)\[^A-Za-z0-9\]{1,4}\[0-9\]{1,6}' -e" "$LIB/coliseum.sh" \
+    && grep -q '\[ "\$_cl_hp" = 1 \] || { USH=' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: HP de 1 digito nao passa por morte" \
     || bad "coliseum.sh: HP entre 1 e 9 seria lido como morte"
 # Espera sem luta nas Bandeiras / Coliseu do Cla: sem batalha a retomar.
@@ -2589,9 +2590,12 @@ sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'caverna_ler_menu "$TM
 # --- uma varredura completa por minuto
 _r=`( TMP="$_td10/s"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
       load_config() { printf 'VARREDURA'; exit 0; }; espera_interrompivel() { printf 'espera '; }
+      disjuntor_segura() { return 1; }
       date +%Y%m%d%H%M > "$TMP/last_start"; start; printf '| '
       echo 190001010000 > "$TMP/last_start"; start )`
-check "start(): segunda chamada no mesmo minuto so espera; minuto novo varre" "espera | VARREDURA" "$_r"
+# A varredura nova espera o deslocamento da conta ($$ % 30 s) antes de sair.
+_e="espera | VARREDURA"; [ $(( $$ % 30 )) -gt 0 ] && _e="espera | espera VARREDURA"
+check "start(): segunda chamada no mesmo minuto so espera; minuto novo varre" "$_e" "$_r"
 
 unset -f _perto _agora_mais _rm _cv _camp _tr
 rm -rf "$_td10"; unset _td10 _r _MD _MD3 _MENU_T _MENU_H _MENU_P _MENU_0
@@ -2984,6 +2988,7 @@ check "fetch_page sem link: nao pede a Home, esvazia a pagina e diz a origem" "f
 # com ou sem outros comandos no pipe e com continuacao de linha.
 # Contar (wc -l, grep -c) e testar (grep -q) nao pedem uma linha so.
 # A lista do check.sh (_ck_l=) tambem nao: o _ck_link tira dela um link so.
+# Nem a do Coliseu (_cl_l=): o laco guarda so o primeiro de cada padrao.
 _soltos=$(awk '
     FNR == 1 { buf = "" }
     /^[ \t]*#/ { next }
@@ -2994,7 +2999,7 @@ _soltos=$(awk '
         buf = ""
     }
     l ~ /grep -o/ && (l ~ /r\[=\]|r=/ || l ~ /\(\[0-9\]\+\)/) {
-        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q|_ck_l=/) next
+        if (l ~ /head -n ?1|tail -n ?1|sed -n .?1p|sed -n "\$[{]?[a-z_]+[}]?p|wc -l|grep -c|grep -q|_ck_l=|_cl_l=/) next
         f = FILENAME; sub(/.*\//, "", f); printf "%s:%s ", f, FNR
     }' "$LIB"/*.sh)
 check "grep -o de link ou HP maximo sempre com uma linha so" "" "$_soltos"
@@ -3745,7 +3750,7 @@ check "painel: teto do /train desde a primeira leitura, nunca abaixo do visto" \
 # HP da pagina lido uma vez: o _hp dos modulos de cla e o arquivo do HP da
 # conta (HP ou USH), e as comparacoes de cura/esquiva sao marcas da pagina.
 check "_hp vem do HP da conta (cinco modulos de cla)" "HP HP HP USH USH" \
-    "$(for _m in clanfight clandmg altars clancoliseum flagfight; do sed -n 's/^ *_hp=`cat \([A-Z]*\)`$/\1/p' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
+    "$(for _m in clanfight clandmg altars clancoliseum flagfight; do sed -n 's/^ *luta_ler "[^"]*" \([A-Z]*\) .*/\1/p' "$LIB/$_m.sh"; done | tr '\n' ' ' | sed 's/ $//')"
 check "cura e esquiva sem cat por volta (sete modulos)" 0 \
     "$(cat "$LIB/clanfight.sh" "$LIB/clandmg.sh" "$LIB/altars.sh" "$LIB/clancoliseum.sh" "$LIB/flagfight.sh" \
            "$LIB/clancommand.sh" "$LIB/coliseum.sh" | grep -v '^ *_hlhp=' | grep -c 'cat HLHP\|cat old_HP')"
@@ -4319,7 +4324,7 @@ check "painel: Home com outro numero, 3 conferencias e fica no /user" "4|0" "`_s
 check "painel: Home sem os icones do cabecalho, sempre /user" "4|-" "`_st87 sem`"
 check "painel: Home de mais de 2 min, sempre /user" "4|-" "`_st87 velha`"
 check "login: uma autenticacao so (login_autenticar) no login e na reconexao" "1 1 0" \
-    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
+    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || { reconexao_falhou credencial; return 1; }$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
 _r=`( TMP="$_td20/la87"; mkdir -p "$TMP"; export TMP; URL=http://jogo
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
       printf '%s' 'login=Ze&pass=a b' | base64 > "$TMP/cript_file"
@@ -4767,6 +4772,125 @@ check "batalha: cura que estourou o tempo depois de conectar conta como feita (c
 _r=`( SLS_TELEMETRIA=0 _K58=0.000000 _cura58 c )`
 check "batalha: sem telemetria, curl 28 conta como feita (comportamento de antes)" "1 4" "$_r"
 rm -rf "$_td58"; unset _td58 _r _k _p; unset -f _cura58
+
+printf "\n=== 59. reconexao com espera, Home do descanso, estatua, leitura das lutas ===\n"
+_td59=`mktemp -d`
+# Reconexao recusada: 60s, 300s, 900s sem POST no meio; pagina da sessao zera.
+_r=$( TMP="$_td59/rc"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG=BR; SLS_USER=Ze
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      printf '%s' 'login=Ze&pass=a' | base64 > "$TMP/cript_file"; : > "$TMP/req"
+      _sair="<a href='/?sign_in=1'>entrar</a> <a href='/registration/'>novo</a>"
+      run_curl() { echo "GET ${1#http://jogo}" >> "$TMP/req"; printf '%s' "$_sair"; }
+      login_autenticar() { echo POST >> "$TMP/req"; LOGIN_ERRO=credencial; return 1; }
+      servidor_mudo_marcar() { :; }; sessao_estado() { echo deslogado; }
+      _o=""
+      for _i in 1 2; do login_logoff > /dev/null 2>&1; _o="$_o`grep -c POST "$TMP/req"`"; done
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( _ate - `date +%s` ))"
+      echo "1 $(( `date +%s` - 1 ))" > "$TMP/reconn_falha"; login_logoff > /dev/null 2>&1
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o `grep -c POST "$TMP/req"` n=$_n e=$(( _ate - `date +%s` ))"
+      echo "2 $(( `date +%s` - 1 ))" > "$TMP/reconn_falha"; login_logoff > /dev/null 2>&1
+      read -r _n _ate < "$TMP/reconn_falha"; _o="$_o n=$_n e=$(( _ate - `date +%s` ))"
+      sessao_marcar; [ -f "$TMP/reconn_falha" ] && _o="$_o ficou" || _o="$_o zerou"
+      printf '%s' "$_o" )
+check "reconexao: recusada espera 60s, 300s, 900s sem POST no meio; sessao provada zera" \
+    "11 n=1 e=60 2 n=2 e=300 n=3 e=900 zerou" "$_r"
+_r=$( TMP="$_td59/rr"; mkdir -p "$TMP"; export TMP; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      for _i in 1 2 3; do reconexao_falhou rede > /dev/null; done; read -r _n _ate < "$TMP/reconn_falha"
+      printf 'n=%s e=%s ' "$_n" "$(( _ate - `date +%s` ))"
+      echo "1 $(( `date +%s` + 7200 ))" > "$TMP/reconn_falha"; reconexao_em_espera && printf trava || printf livre )
+check "reconexao: rede sem resposta espera 60s; marca de mais de 1h adiante nao trava" "n=3 e=60 livre" "$_r"
+# Sessao caida e reconexao em espera: as atividades nao rodam na pagina de login.
+_r=$( TMP="$_td59/tl"; mkdir -p "$TMP"; export TMP; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      disjuntor_segura() { return 1; }; batalha_pendente() { return 1; }; clan_id() { echo CLAN; }; atualiza_stats() { echo STATS; }
+      echo "1 $(( `date +%s` + 50 ))" > "$TMP/reconn_falha"; tarefas_livres 2>&1 | tr '\n' ' ' )
+case "$_r" in "Sessao fora - atividades seguradas ate reconectar ("*"s) ") ok "varredura: sessao fora com reconexao em espera segura as atividades" ;;
+    *) bad "varredura com reconexao em espera rodou: $_r" ;; esac
+# start(): a Home do descanso de menos de 2 min ja prova a sessao (sem /user).
+_ll97() {
+    ( TMP="$_td59/ll$1"; mkdir -p "$TMP"; export TMP; URL=http://jogo; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
+      run_curl() { echo "GET ${1#http://jogo}" >> "$TMP/req"; }
+      clan_id() { echo CLAN >> "$TMP/req"; }; servidor_mudo_marcar() { :; }
+      echo $(( `date +%s` - $1 )) > "$TMP/.home_ok"; login_logoff $2 > /dev/null 2>&1; printf 'rc=%s ' $?
+      tr '\n' ' ' < "$TMP/req" )
+}
+check "login_logoff inicio: Home de 30s prova a sessao, sem /user" "rc=0 CLAN " "`_ll97 30 inicio`"
+check "login_logoff inicio: Home de 3 min, pede o /user" "rc=1 GET /user " "`_ll97 180 inicio`"
+check "login_logoff sem inicio (painel, reconexao): sempre o /user" "rc=1 GET /user " "`_ll97 30`"
+grep -q 'rm -f "$TMP/.home_ok"' "$LIB/crono.sh" && grep -q '^        if ! login_logoff inicio; then$' "$LIB/crono.sh" \
+    && ok "descanso: Home caida apaga a prova; start() usa login_logoff inicio" \
+    || bad "descanso/start: prova da Home"
+# Disjuntor aberto: o descanso nao pede a Home.
+_r=$( TMP="$_td59/ds"; mkdir -p "$TMP"; export TMP; . "$LIB/crono.sh" > /dev/null 2>&1
+      batalha_retomar() { :; }; disjuntor_segura() { return 0; }
+      fetch_page() { echo "$1" >> "$TMP/req"; }; run_curl() { echo "$1" >> "$TMP/req"; }
+      descansar > /dev/null 2>&1; printf 'rc=%s pedidos=%s' $? "`cat "$TMP/req" 2>/dev/null | wc -l | tr -d ' '`" )
+check "descanso: disjuntor aberto, sem Home" "rc=0 pedidos=0" "$_r"
+# Varredura: deslocamento fixo por conta antes de sair.
+sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -q '_st_d=$(( $$ % 30 ))' \
+    && ok "start(): varredura sai com o deslocamento da conta (sem rajada das :00/:30)" \
+    || bad "start(): sem deslocamento por conta"
+# Painel que falhou espera o proximo intervalo.
+sed -n '/^atualiza_stats() {/,/^}/p' "$LIB/crono.sh" | grep -B1 -A2 'ativ_marcar stats' | grep -q 'return 1' \
+    && ok "painel: falha marca o intervalo (sem /user a cada volta)" \
+    || bad "painel: falha repete a cada volta"
+# Estatua: sem cargo marca as 6h e nao rele; pagina sem resposta nao marca.
+# (o clan_lider le a clan_pagina de novo: no jogo ela vem do cache)
+_es97() {
+    ( TMP="$_td59/es$1"; CLD=999; FUNC_clan_statue=y; export TMP CLD; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      _ES=$1
+      clan_pagina() { echo CLANPG >> "$TMP/req"; [ "$_ES" = rede ] && return 1
+                      echo "<a href='/clan/999/'>cla</a>" > "$TMP/CLANPG"; }
+      fetch_page() { echo "$1" >> "$TMP/req"; : > "$2"; }
+      clan_statue > /dev/null 2>&1; clan_statue > /dev/null 2>&1
+      printf '%s|%s' "`tr '\n' ' ' < "$TMP/req"`" "`[ -f "$TMP/last_estatua" ] && echo marcou || echo aberto`" )
+}
+check "estatua: sem cargo (nem lider nem vice) marca 6h, a segunda chamada nem le" "CLANPG CLANPG |marcou" "`_es97 membro`"
+check "estatua: pagina do cla sem resposta nao marca (tenta de novo)" "CLANPG CLANPG |aberto" "`_es97 rede`"
+# Caverna em espera: sem acao, sem conclusao da missao 5.
+_cv97() {
+    ( TMP="$_td59/cv$1"; export TMP; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      checkQuest() { echo "Q$1$2" >> "$TMP/req"; [ "$2" = apply ] && return 1; return 0; }; cq_ativa() { return 1; }
+      fetch_page() { echo "$1" >> "$TMP/req"
+          if [ "$_CV" = acao ] && [ ! -f "$TMP/foi" ]; then : > "$TMP/foi"; echo "<a href='/cave/gather/?r=1'>m</a>" > "$TMP/SRC"
+          else echo "espera" > "$TMP/SRC"; fi; }
+      _CV=$1 cave_routine > /dev/null 2>&1; tr '\n' ' ' < "$TMP/req" )
+}
+check "caverna em espera: nenhuma acao, sem checkQuest 5 end" "Q5apply /cave/ " "`_cv97 espera`"
+check "caverna com acao: conclui a missao 5 como antes" "Q5apply /cave/ /cave/gather/?r=1 /cave/ Q5end " "`_cv97 acao`"
+sed -n '/^clancommand_start() {/,/^}/p' "$LIB/clancommand.sh" | grep -q 'espera_interrompivel "$_cc_dorme"' \
+    && ok "Comando: dorme ate ~10s do inicio em vez de reler de 3 em 3s" \
+    || bad "Comando: releitura do inicio de 3 em 3s"
+# luta_ler: os mesmos achados do grep|sed antigo (primeiro de cada link, HP
+# com todas as linhas, /dodge/ = em luta); luta_menor = o awk de antes.
+_r=$( cd "$_td59" && . "$LIB/info.sh" > /dev/null 2>&1
+      printf "%s\n" "<img src='/images/icon/health.png' alt='hp'/> 4 210 x" "<a href='/clanfight/attack/?r=11'>a</a><a href='/clanfight/attack/?r=12'>a</a>" \
+          "<a href='/clanfight/attackrandom/?r=13'>r</a><a href='/clanfight/dodge/?r=14'>e</a><a href='/clanfight/heal/?r=15'>c</a>" \
+          "<img src='/images/icon/health.png' alt='hp'/> 900" > pg
+      luta_ler pg HP -e "(hp'/>)[ 0-9]+" \
+          -e '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+          -e '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+          -e '(/clanfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' -e '(/clanfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)'
+      _novo="`cat ATK ATKRND DODGE HEAL HP | tr '\n' ,`$_emluta"
+      grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' pg | sed -n 1p > ATK
+      grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' pg | sed -n 1p > ATKRND
+      grep -o -E '(/clanfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' pg | sed -n 1p > DODGE
+      grep -o -E '(/clanfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' pg | sed -n 1p > HEAL
+      grep -o -E "(hp'/>)[ 0-9]+" pg | sed "s,hp'/>,,;s, ,," > HP
+      grep -q '/dodge/' pg && _e=1 || _e=0
+      _velho="`cat ATK ATKRND DODGE HEAL HP | tr '\n' ,`$_e"
+      [ "$_novo" = "$_velho" ] && printf 'igual ' || printf 'difere(%s|%s) ' "$_novo" "$_velho"
+      : > vazio; luta_ler vazio HP -e 'nada'; printf '%s%s ' "`cat ATK HP | wc -c | tr -d ' '`" "$_emluta"
+      for _p in "5 10" "10 5" "7 7" "|5" "4210
+900|5000" "abc|5"; do
+          case "$_p" in *"|"*) _a=${_p%|*}; _b=${_p#*|} ;; *) _a=${_p% *}; _b=${_p#* } ;; esac
+          luta_menor "$_a" "$_b"; _x=$?; awk -v a="$_a" -v b="$_b" 'BEGIN { exit !(a < b) }'; _y=$?
+          [ "$_x" = "$_y" ] && printf '%s' "$_x" || printf 'X'
+      done )
+check "luta_ler e luta_menor: mesmos achados e comparacoes da leitura antiga" "igual 00 011001" "$_r"
+rm -rf "$_td59"; unset _td59 _r; unset -f _ll97 _es97 _cv97
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

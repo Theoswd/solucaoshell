@@ -14,19 +14,19 @@ clanfight_fight() {
   cf_access() {
     # Alvo cinza uma vez por pagina.
     if alvo_grey "$TMP/SRC"; then _grey=1; else _grey=0; fi
-    grep -o -E '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n '1p' > ATK 2>/dev/null
-    grep -o -E '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > ATKRND 2>/dev/null
-    grep -o -E '(/clanfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > DODGE 2>/dev/null
-    grep -o -E '(/clanfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' "$TMP/SRC" | sed -n 1p > HEAL 2>/dev/null
     erva_gratis clanfight "$TMP/SRC" > GRASS
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
+    luta_ler "$TMP/SRC" HP \
+        -e '(/[a-z]+/[a-z]{0,4}at[a-z]{0,3}k/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+        -e '(/[a-z]+/at[a-z]{0,3}k[a-z]{3,6}/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+        -e '(/clanfight/dodge/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+        -e '(/clanfight/heal/[^A-Za-z0-9]r[^A-Za-z0-9][0-9]+)' \
+        -e "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}"
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
-    _hp=`cat HP`
-    _cura=0; { [ -s HEAL ] || [ -s GRASS ]; } && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
-    if grep -q -o '/dodge/' "$TMP/SRC"; then
+    _cura=0; { [ -s HEAL ] || [ -s GRASS ]; } && luta_menor "$_hp" "$_hlhp" && _cura=1
+    _caiu=0; [ -s DODGE ] && luta_menor "$_hp" "$_old_hp" && _caiu=1
+    if [ "$_emluta" = 1 ]; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
       sessao_marcar

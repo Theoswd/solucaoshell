@@ -249,6 +249,8 @@ atualiza_stats() {
 
     if [ -z "$_pg" ] || ! is_logged_in "$_pg"; then
         printf %s "$_aba_ant" > "${TMP}/pagina" 2>/dev/null
+        # Falhou: tenta no proximo intervalo (5 min), nao a cada volta.
+        ativ_marcar stats
         unset _pg _aba_ant _st_home
         return 1
     fi
@@ -459,6 +461,14 @@ tarefas_livres() {
     # Disjuntor aberto (servidor fora do ar para varias contas): nada aqui.
     if disjuntor_segura; then
         printf "Servidor fora do ar (disjuntor) - atividades seguradas\n"
+        return 0
+    fi
+    # Sessao caida e a reconexao falhou ha pouco: as atividades rodariam na
+    # pagina de login e seriam marcadas como feitas (15 a 45 min sem rodar de
+    # verdade). Seguram ate a sessao voltar.
+    if type reconexao_em_espera > /dev/null 2>&1 && reconexao_em_espera; then
+        printf "Sessao fora - atividades seguradas ate reconectar (%ss)\n" "$RECONN_FALTA"
+        unset RECONN_FALTA
         return 0
     fi
     [ -n "$CLD" ] || clan_id 2>/dev/null
@@ -752,6 +762,12 @@ descansar() {
     # Com batalha pendente, a conta volta para ela em vez de ir para a Home.
     batalha_retomar
 
+    # Servidor fora do ar (disjuntor aberto): a Home tambem espera; so a sonda
+    # pede. Antes cada conta continuava pedindo a Home (~21/min com 18 contas).
+    if type disjuntor_segura > /dev/null 2>&1 && disjuntor_segura; then
+        return 0
+    fi
+
     # HOME REPETIDA NAO E PEDIDA DE NOVO.
     #
     # Se a ultima pagina pedida ja foi a Home e ESTE descanso a confirmou com
@@ -808,6 +824,11 @@ descansar() {
             echo "$_ds_ok" > "$TMP/last_ok" 2>/dev/null
             echo "$_ds_ok" > "$TMP/.home_ok" 2>/dev/null
             unset _ds_ok
+            # Sessao provada (como no sessao_marcar, sem o date): zera a
+            # escada de reconexao e fecha o disjuntor, se aberto.
+            [ -f "$TMP/reconn_falha" ] && rm -f "$TMP/reconn_falha"
+            [ -f "$HOME/.sls/net/${SLS_TAG:-BR}.aberto" ] && type disjuntor_fechar > /dev/null 2>&1 && \
+                disjuntor_fechar descanso
             return 0
             ;;
         sem_resposta)
@@ -822,6 +843,8 @@ descansar() {
     # quem estava bem. O portao (luta_pode_reconectar, em info.sh) tem
     # deslocamento por conta derivado do PID e e o mesmo da luta, entao as
     # duas nao somam tentativas.
+    # Caida: a prova da Home deixa de valer (ver login_logoff inicio).
+    rm -f "$TMP/.home_ok" 2>/dev/null
     luta_pode_reconectar || return 1
     date +%s > "$TMP/last_reconn" 2>/dev/null
 
@@ -857,10 +880,17 @@ start() {
     printf '%s' "$_st_min" > "$TMP/last_start" 2>/dev/null
     unset _st_min
 
+    # RAJADA DAS :00/:30: todas as contas comecavam a varredura no mesmo
+    # segundo (~360 pedidos em 20-30s com 18 contas no mesmo IP). Cada uma
+    # espera um deslocamento fixo de $$ % 30 s, como na entrada dos eventos.
+    _st_d=$(( $$ % 30 ))
+    [ "$_st_d" -gt 0 ] && espera_interrompivel "$_st_d"
+    unset _st_d
+
     load_config
 
     if type login_logoff > /dev/null 2>&1; then
-        if ! login_logoff; then
+        if ! login_logoff inicio; then
             printf "Sessao invalida — pulando este ciclo\n"
             func_crono
             func_sleep

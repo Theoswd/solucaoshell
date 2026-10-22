@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.96"
+versionNum="3.9.97"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -410,8 +410,62 @@ erva_gratis() { # SECAO ARQUIVO
         }' "$2" 2>/dev/null
 }
 
-# Erva e pedra de graca, num awk so: grava GRASS e STONE no diretorio
-# corrente (vazio se nao ha ou se cobra ouro). Usado no Vale.
+# LEITURA DA PAGINA DE LUTA NUM GREP SO.   luta_ler ARQUIVO ARQ_HP -e PADRAO...
+#
+# Os modulos de cla liam cada link com um grep|sed (23-25 processos por
+# pagina, ~9.500/min com 18 contas no Torneio). Os MESMOS padroes de cada
+# modulo vao aqui num grep so, com o mesmo motor de regex, e o shell separa:
+# o primeiro de cada tipo vai para ATK, ATKRND, DODGE, HEAL e SHIELD, como o
+# "sed -n 1p" fazia, e o arquivo de HP fica com TODAS as linhas do padrao hp,
+# tratadas como o sed "s,hp'/>,,;s, ,," de antes. _emluta = havia "/dodge/"
+# na pagina (o "grep -q /dodge/" de antes). Um teste compara com a leitura
+# antiga em paginas geradas.
+luta_ler() {
+    _lr_f="$1"; _lr_hpa="$2"; shift 2
+    _lr_l=`grep -o -E "$@" -e '/dodge/' "$_lr_f" 2>/dev/null`
+    _lr_atk=""; _lr_rnd=""; _lr_dg=""; _lr_he=""; _lr_sh=""; _lr_h=""; _lr_hn=0; _emluta=0
+    while IFS= read -r _lr_x; do
+        case "$_lr_x" in
+            '') ;;
+            /dodge/) _emluta=1 ;;
+            hp*)
+                case "$_lr_x" in *"hp'/>"*) _lr_x="${_lr_x%%"hp'/>"*}${_lr_x#*"hp'/>"}" ;; esac
+                case "$_lr_x" in *" "*) _lr_x="${_lr_x%%" "*}${_lr_x#*" "}" ;; esac
+                if [ "$_lr_hn" = 0 ]; then _lr_h=$_lr_x; else _lr_h="$_lr_h
+$_lr_x"; fi
+                _lr_hn=1 ;;
+            /*/dodge/*)  _emluta=1; [ -n "$_lr_dg" ] || _lr_dg=$_lr_x ;;
+            /*/heal/*)   [ -n "$_lr_he" ] || _lr_he=$_lr_x ;;
+            /*/shield/*) [ -n "$_lr_sh" ] || _lr_sh=$_lr_x ;;
+            /*/*k/*)     [ -n "$_lr_atk" ] || _lr_atk=$_lr_x ;;
+            /*)          [ -n "$_lr_rnd" ] || _lr_rnd=$_lr_x ;;
+        esac
+    done <<EOF
+$_lr_l
+EOF
+    # Mesma saida do "grep | sed -n 1p > ARQUIVO": vazio sem achado, com
+    # quebra de linha no fim com achado.
+    if [ -n "$_lr_atk" ]; then printf '%s\n' "$_lr_atk" > ATK; else : > ATK; fi
+    if [ -n "$_lr_rnd" ]; then printf '%s\n' "$_lr_rnd" > ATKRND; else : > ATKRND; fi
+    if [ -n "$_lr_dg" ];  then printf '%s\n' "$_lr_dg"  > DODGE; else : > DODGE; fi
+    if [ -n "$_lr_he" ];  then printf '%s\n' "$_lr_he"  > HEAL; else : > HEAL; fi
+    if [ -n "$_lr_sh" ];  then printf '%s\n' "$_lr_sh"  > SHIELD; else : > SHIELD; fi
+    if [ "$_lr_hn" = 1 ]; then printf '%s\n' "$_lr_h" > "$_lr_hpa"; else : > "$_lr_hpa"; fi
+    # O HP como o `cat ARQ_HP` de antes (sem a quebra final).
+    _hp=$_lr_h
+    unset _lr_f _lr_hpa _lr_l _lr_x _lr_atk _lr_rnd _lr_dg _lr_he _lr_sh _lr_h _lr_hn
+}
+
+# A < B, como o "awk BEGIN { exit !(a < b) }" dos modulos: com dois inteiros,
+# no proprio shell; com outra coisa (HP de varias linhas, vazio), o awk de
+# sempre, que compara texto quando o valor nao parece numero.
+luta_menor() {
+    case "$1" in ''|*[!0-9]*) ;; *)
+        case "$2" in ''|*[!0-9]*) ;; *) [ "$1" -lt "$2" ]; return ;; esac ;;
+    esac
+    awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'
+}
+
 # O BOTAO COBRA OURO?   botao_pago ARQUIVO LINK
 # Regra do dono: o bot nunca gasta ouro. Le o rotulo do botao, do link ate o
 # </a> (o mesmo criterio do itens_gratis): com "gold" ou "ouro" ali, e pago.
@@ -424,6 +478,8 @@ botao_pago() {
         exit !(c && tolower(substr(r, 1, c)) ~ /gold|ouro/) }' "$1" 2>/dev/null
 }
 
+# Erva e pedra de graca, num awk so: grava GRASS e STONE no diretorio
+# corrente (vazio se nao ha ou se cobra ouro). Usado no Vale.
 itens_gratis() { # SECAO ARQUIVO
     awk -v sec="$1" '
         function item(nome, arq,    l, r, c) {
@@ -446,6 +502,8 @@ itens_gratis() { # SECAO ARQUIVO
 # link de golpe so aparece para quem esta logado.
 sessao_marcar() {
     date +%s > "$TMP/last_ok" 2>/dev/null
+    # Sessao provada: a escada de reconexao (loginlogoff.sh) zera.
+    [ -f "$TMP/reconn_falha" ] && rm -f "$TMP/reconn_falha"
     # Pagina do jogo chegou: o servidor voltou (fecha o disjuntor, se aberto).
     [ -f "$HOME/.sls/net/${SLS_TAG:-BR}.aberto" ] && disjuntor_fechar resposta
     return 0
