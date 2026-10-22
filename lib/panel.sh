@@ -96,7 +96,7 @@ painel_icones_carregar() {
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
         A_CLANCOL="🏅  Coliseu do Clã"
         A_ARENA="💥  Arena"
-        A_TORNEQ="⚔️  Torneio de Equipe"
+        A_TORNEQ="🤺  Torneio de Equipe"
     else
         # Em texto puro byte e coluna sao a mesma coisa.
         S_COL=5

@@ -17,6 +17,11 @@ career_func() {
             while [ -n "$CAREER" ] && [ "$(date +%s)" -lt "$BREAK" ]; do
                 case $CAREER in
                     *attack*|*take*)
+                        # Regra do dono: nunca gasta ouro (ver botao_pago).
+                        if botao_pago "$TMP/SRC" "$CAREER"; then
+                            printf "Career: botao cobra ouro - para aqui\n"
+                            break
+                        fi
                         fetch_page "$CAREER"
                         CARREIRA_LUTOU=1
                         RESULT=`echo "$CAREER" | cut -d'/' -f3`

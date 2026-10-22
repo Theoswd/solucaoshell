@@ -45,6 +45,11 @@ specialEvent() {
             SE_BREAK=$(($(date +%s) + 90))
             while [ "$(date +%s)" -lt "$SE_BREAK" ]; do
                 if [ -n "${click}" ]; then
+                    # Regra do dono: nunca gasta ouro (ver botao_pago).
+                    if botao_pago "$TMP/SRC" "${click}"; then
+                        printf "Event fault: ataque cobra ouro - para aqui\n"
+                        break
+                    fi
                     fetch_page "${click}"
                     click=`grep -o -E "/fault/attack/\?r=[0-9]+" "$TMP/SRC" | sed -n '1p'`
                     printf "Attacking monster\n"

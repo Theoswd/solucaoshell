@@ -1628,8 +1628,19 @@ printf "\n=== 29. icones do painel sem seletor de variacao ===\n"
 # caixa enquanto 🧡 🔷 🪙 🥈, todos de codepoint unico, desenhavam certo.
 #
 # Dai a regra: nenhum icone do painel usa seletor de variacao.
-if LC_ALL=C grep -q $'\xef\xb8\x8f' "$ROOT/lib/panel.sh"; then
-    _vs=`LC_ALL=C grep -n $'\xef\xb8\x8f' "$ROOT/lib/panel.sh" | grep -vE '^[0-9]+:[[:space:]]*#' | head -n3`
+#
+# Os bytes do seletor (EF B8 8F) saem do printf em OCTAL: o $'\xef...' e do
+# bash, e no dash virava outro texto — o teste passava sem testar nada, e o
+# "⚔️" do Torneio de Equipe chegou a main assim (3.9.67 a 3.9.100).
+_fe0f=`printf '\357\270\217'`
+# A busca acha o seletor NESTE shell? Sem isso o teste volta a passar vazio.
+if printf 'x%sy\n' "$_fe0f" | LC_ALL=C grep -q "$_fe0f"; then
+    ok "painel: a busca do seletor funciona neste shell"
+else
+    bad "painel: a busca do seletor nao acha nem o proprio seletor"
+fi
+if LC_ALL=C grep -q "$_fe0f" "$ROOT/lib/panel.sh"; then
+    _vs=`LC_ALL=C grep -n "$_fe0f" "$ROOT/lib/panel.sh" | grep -vE '^[0-9]+:[[:space:]]*#' | head -n3`
     if [ -n "$_vs" ]; then
         bad "painel: ha icone com seletor de variacao ($_vs)"
     else
@@ -1639,6 +1650,7 @@ if LC_ALL=C grep -q $'\xef\xb8\x8f' "$ROOT/lib/panel.sh"; then
 else
     ok "painel: nenhum seletor de variacao"
 fi
+unset _fe0f
 
 # Os simbolos de estado de cada modo tem os mesmos bytes: e o que deixa o
 # nome da conta na mesma coluna em qualquer estado.
@@ -4866,6 +4878,88 @@ _fs100() { ( TMP="$_td62/fs"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&
 check "func_sleep: caverna 15s; :x4 antes dos pulsos (02:44-04:24) 15s; resto 60s" "15 15 15 15 60 60 60 60" \
     "`_fs100 1 17 1` `_fs100 2 44 0` `_fs100 3 34 0` `_fs100 4 4 0` `_fs100 2 34 0` `_fs100 1 17 0` `_fs100 0 44 0` `_fs100 13 34 0`"
 rm -rf "$_td62"; unset _td62 _r; unset -f _cn100 _fs100
+
+# =============================================================================
+printf "\n=== 60. sem ouro nos lacos de clique, estatua e descanso sob o disjuntor ===\n"
+# =============================================================================
+_td60=`mktemp -d`
+_ok60="<html>x jsInterface.event(\"user=7;level=9\")</html>"
+
+# --- botao_pago nos lacos de clique (carreira, campanha, arena, elixir,
+# evento "fault" e caverna -cv). Pagina com UM link de acao; o rotulo diz se
+# cobra ouro. Clicar devolve a pagina sem link (fim). Saida: quantos cliques
+# (pedidos com ?r=) sairam.
+#   _clk60 FUNCAO LINK pago|gratis
+_clk60() {
+    ( TMP="$_td60/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; RUN=-cv
+      export TMP URL RUN
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      for _m in career campaign arena check specialevent cave; do . "$LIB/$_m.sh" > /dev/null 2>&1; done
+      cq_antes() { :; }; checkQuest() { :; }; clan_id() { :; }; get_config() { :; }
+      espera_interrompivel() { :; }; sleep() { :; }; CLD=""
+      case "$3" in pago) _rot="Atacar <img src='/images/icon/gold.png' alt=''/> 5" ;; *) _rot="Atacar" ;; esac
+      printf "%s <a class='btn' href='%s'>%s</a> %s" "$_ok60" "$2" "$_rot" "$_ok60" > "$TMP/acao"
+      # Home com o banner do evento (specialEvent), pagina do evento e o resto.
+      printf "%s<div class='shb_text'><a href='/fault/'>Evento</a></div>" "$_ok60" > "$TMP/home"
+      fetch_page() {
+          case "$1" in *'?r='*) echo "$1" >> "$TMP/cliques"; : > "$TMP/clicou"; echo "fim" > "${2:-$TMP/SRC}"; return 0 ;; esac
+          [ -f "$TMP/clicou" ] && { echo "fim" > "${2:-$TMP/SRC}"; return 0; }
+          case "$1" in /) cp "$TMP/home" "${2:-$TMP/SRC}" ;; *) cp "$TMP/acao" "${2:-$TMP/SRC}" ;; esac
+          return 0; }
+      "$1" > /dev/null 2>&1
+      [ -s "$TMP/cliques" ] && wc -l < "$TMP/cliques" | tr -d ' ' || printf 0 )
+}
+for _c60 in "career_func /career/attack/?r=11" "campaign_func /campaign/fight/?r=12" \
+            "arena_duel /arena/attack/1/?r=13" "use_elixir /inv/chest/use/4/1/?r=14" \
+            "specialEvent /fault/attack/?r=15" "cave_start /cave/speedUp/?r=16"; do
+    set -- $_c60
+    check "sem ouro: $1 nao clica botao pago" 0 "`_clk60 "$1" "$2" pago`"
+    # O mesmo botao de graca: o laco segue clicando (o portao novo nao trava o normal).
+    _r=`_clk60 "$1" "$2" gratis`
+    case "$_r" in [1-9]*) ok "sem ouro: $1 ainda clica o botao gratis ($_r)" ;; *) bad "sem ouro: $1 parou de clicar o botao gratis ($_r)" ;; esac
+done
+set --
+
+# --- Estatua: portao de 6h ANTES do cargo; conta sem cargo nao pede a pagina
+# do cla a cada varredura.  _est60 CENARIO -> "pedidos marca"
+_est60() {
+    ( TMP="$_td60/e"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; CLD=999; FUNC_clan_statue=y
+      export TMP URL CLD
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      case "$1" in
+          recente)   date +%s > "$TMP/last_estatua"; _pg="$_ok60" ;;
+          sem_cargo) _pg="$_ok60" ;;
+          mudo)      _pg="" ;;
+      esac
+      fetch_page() { echo "$1" >> "$TMP/req"; printf '%s' "$_pg" > "${2:-$TMP/SRC}"; return 0; }
+      clan_statue > /dev/null 2>&1
+      # Segunda varredura, ja sem o cache de 45s da pagina do cla.
+      _CLAN_TS=0; clan_statue > /dev/null 2>&1
+      _n=0; [ -s "$TMP/req" ] && _n=`wc -l < "$TMP/req" | tr -d ' '`
+      printf '%s %s' "$_n" "`[ -f "$TMP/last_estatua" ] && echo marcou || echo sem_marca`" )
+}
+check "estatua: portao de 6h fechado nao pede a pagina do cla" "0 marcou" "`_est60 recente`"
+check "estatua: conta sem cargo pede a pagina uma vez e espera o intervalo" "1 marcou" "`_est60 sem_cargo`"
+check "estatua: pagina do cla sem resposta nao marca (tenta na proxima)" "2 sem_marca" "`_est60 mudo`"
+
+# --- Descanso com o disjuntor aberto: so a sonda pede (no maximo 1 a cada
+# 20s por aparelho); a Home nao sai. Fechado, o descanso pede a Home.
+#   _ds60 aberto|fechado -> "home=N sonda=N"
+_ds60() {
+    ( HOME="$_td60/h"; TMP="$_td60/d"; rm -rf "$HOME" "$TMP"; mkdir -p "$HOME/.sls/net" "$TMP"
+      URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1; export HOME TMP URL SLS_TAG SLS_DISJUNTOR
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      [ "$1" = aberto ] && date +%s > "$HOME/.sls/net/BR.aberto"
+      batalha_retomar() { return 1; }; caverna_ler_menu() { :; }
+      run_curl() { echo sonda >> "$TMP/req"; }
+      fetch_page() { echo "$1" >> "$TMP/req"; printf %s "$1" > "$TMP/.ult_req"
+                     printf '%s' "$_ok60" > "${2:-$TMP/SRC}"; return 0; }
+      descansar > /dev/null 2>&1; descansar > /dev/null 2>&1
+      printf 'home=%s sonda=%s' "`grep -c '^/$' "$TMP/req"`" "`grep -c '^sonda$' "$TMP/req"`" )
+}
+check "disjuntor aberto: o descanso nao pede a Home (so a sonda, uma vez)" "home=0 sonda=1" "`_ds60 aberto`"
+check "disjuntor fechado: o descanso pede a Home (a segunda volta reaproveita)" "home=1 sonda=0" "`_ds60 fechado`"
+rm -rf "$_td60"; unset _td60 _r _c60 _ok60; unset -f _clk60 _est60 _ds60
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

@@ -67,6 +67,14 @@ cave_start() {
             espera_interrompivel 60
             break
         fi
+        # CAVERNA SEM OURO tambem no modo -cv (o cave_routine e o
+        # caverna_noite ja conferiam). A espera e a mesma do "sem acao": o
+        # laco principal chama o cave_start de novo na hora.
+        if botao_pago "$TMP/SRC" "$CAVE"; then
+            printf "Caverna: %s cobra ouro - para aqui\n" "$RESULT"
+            espera_interrompivel 60
+            break
+        fi
 
         MONSTER_RUNAWAY=`grep -o -E '/cave/runaway/[?]r=[0-9]+' "$TMP/SRC" | head -n1`
 

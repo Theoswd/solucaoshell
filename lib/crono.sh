@@ -772,6 +772,11 @@ descansar() {
     # Com batalha pendente, a conta volta para ela em vez de ir para a Home.
     batalha_retomar
 
+    # DISJUNTOR ABERTO: fora de batalha so a sonda pede (ver disjuntor_falha,
+    # em info.sh). Sem isto cada conta seguia pedindo a Home a cada volta com
+    # o servidor fora do ar. A batalha pendente ja foi retomada acima.
+    disjuntor_segura && return 1
+
     # HOME REPETIDA NAO E PEDIDA DE NOVO.
     #
     # Se a ultima pagina pedida ja foi a Home e ESTE descanso a confirmou com
