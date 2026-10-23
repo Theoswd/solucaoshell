@@ -158,6 +158,10 @@ add_account() {
         sleep 2; return
     fi
 
+    # Conta que nao esta no accounts.conf: um "stopped" que sobrou dela
+    # (removida antes) seguraria o painel de subi-la com o bot no ar.
+    rm -f "$HOME/.sls/status/${tag}_${user}.status" 2>/dev/null
+
     printf "Senha: "
     # Ctrl+C na senha nao pode deixar o terminal sem eco.
     trap 'stty echo 2>/dev/null; printf "\n"; exit 130' INT TERM
@@ -245,8 +249,11 @@ remove_account() {
             # do awk, para o painel (que le o accounts.conf) nao relancar.
             _pf="$HOME/.sls/status/${tag}_${user}"
             _pid=$(cat "$_pf.pid" 2>/dev/null)
-            # .pid antes do kill: painel sem PID gravado nao relanca.
-            rm -f "$_pf.pid" "$_pf.status"
+            # "stopped" ANTES de apagar o .pid, e o .pid antes do kill. O
+            # painel que ja abriu o accounts.conf antigo ve, sem .pid e sem
+            # status, uma "conta nova" e a relancava; com "stopped" nao sobe.
+            echo stopped > "$_pf.status" 2>/dev/null
+            rm -f "$_pf.pid"
             if worker_vivo "$_pid" "$acc_dir"; then
                 kill -TERM "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
             fi

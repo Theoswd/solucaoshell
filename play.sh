@@ -165,10 +165,13 @@ launch_worker() {
 
     echo "starting" > "$lw_status"
 
+    # 3<&- : quem chama le o accounts.conf pelo fd 3 (o laco daqui e o do
+    # painel); sem fechar, o worker e cada curl dele herdavam um descritor
+    # aberto no arquivo com as credenciais de TODAS as contas.
     nohup $SETSID sh "$LIBDIR/worker.sh" \
         "$lw_srv" "$lw_user" "$lw_tag" \
         "https://${lw_host}" "$lw_dir" "$lw_status" "$RUN" \
-        < /dev/null >> "$lw_log" 2>&1 &
+        < /dev/null >> "$lw_log" 2>&1 3<&- &
 
     return 0
 }
@@ -197,7 +200,21 @@ printf "\n"
 # Limpa workers orfaos de execucoes anteriores: com nohup+setsid eles
 # sobrevivem ao SIGKILL da sessao e contam para esse limite. Morrem os que
 # nenhum .pid em $STATUS_DIR conhece.
+#
+# O SUBSHELL DE UM WORKER VIVO NAO E ORFAO. Um "( ... ) &" ou "$( ... )" do
+# sls.sh e um fork: tem PID novo e o MESMO cmdline do sls.sh. Matar esse
+# processo cortava a requisicao em andamento (pagina vazia, "servidor sem
+# resposta", acao de luta perdida) a cada ./play.sh com o bot no ar. Fica
+# vivo quem tem o GRUPO (com setsid, todo descendente do worker tem o PID
+# dele como grupo) ou o PAI entre os PIDs conhecidos.
 limpa_orfaos() {
+    # PIDs que os arquivos de estado conhecem, lidos uma vez.
+    _lo_vivos=" "
+    for _lo_f in "$STATUS_DIR"/*.pid; do
+        [ -f "$_lo_f" ] || continue
+        _lo_x=""; { read -r _lo_x < "$_lo_f"; } 2>/dev/null
+        case "$_lo_x" in ''|*[!0-9]*) ;; *) _lo_vivos="$_lo_vivos$_lo_x " ;; esac
+    done
     _lo_n=0
     for _lo_p in /proc/[0-9]*; do
         _lo_pid=${_lo_p#/proc/}
@@ -208,19 +225,19 @@ limpa_orfaos() {
             *"$LIBDIR/worker.sh"*|*"$LIBDIR/sls.sh"*) ;;
             *) continue ;;
         esac
-        # Esta entre os PIDs que os arquivos de estado conhecem?
-        _lo_conhecido=0
-        for _lo_f in "$STATUS_DIR"/*.pid; do
-            [ -f "$_lo_f" ] || continue
-            [ "$(cat "$_lo_f" 2>/dev/null)" = "$_lo_pid" ] && _lo_conhecido=1 && break
-        done
-        [ "$_lo_conhecido" = 1 ] && continue
+        case "$_lo_vivos" in *" $_lo_pid "*) continue ;; esac
+        # /proc/PID/stat: "PID (nome) ESTADO PAI GRUPO ..."; o nome pode ter
+        # espaco e parentese, entao corta ate o ultimo ") ".
+        _lo_st=""; { read -r _lo_st < "$_lo_p/stat"; } 2>/dev/null
+        _lo_st=${_lo_st##*") "}
+        set -- $_lo_st
+        case "$_lo_vivos" in *" ${2:-x} "*|*" ${3:-x} "*) continue ;; esac
         kill -TERM "$_lo_pid" 2>/dev/null
         _lo_n=$((_lo_n + 1))
     done
     [ "$_lo_n" -gt 0 ] && \
         printf "${GOLD}%s processo(s) orfao(s) encerrado(s).${RESET}\n\n" "$_lo_n"
-    unset _lo_n _lo_p _lo_pid _lo_conhecido _lo_f
+    unset _lo_n _lo_p _lo_pid _lo_f _lo_x _lo_vivos _lo_st
 }
 limpa_orfaos
 

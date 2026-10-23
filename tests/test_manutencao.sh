@@ -5113,6 +5113,60 @@ check "troca: pendente de ontem nao conta; conferencia sem resposta nao decide" 
     "1 aberto `date +%Y%m%d` 10 100 1" "$_r"
 rm -rf "$_td62t"; unset _td62t _r; unset -f _tr62
 
+# =============================================================================
+printf "\n=== 63. processos: subshell de worker vivo, fd das credenciais, conta removida ===\n"
+# =============================================================================
+_td63=`mktemp -d`
+# --- limpa_orfaos (play.sh): o subshell de um worker conhecido fica; o
+# worker que nenhum .pid conhece (e o subshell dele) morre. Workers falsos
+# com o mesmo caminho lib/sls.sh; o subshell anota o proprio PID (o $PPID do
+# sh -c que ele roda).
+if [ -r "/proc/$$/stat" ] && [ -r "/proc/$$/cmdline" ]; then
+    mkdir -p "$_td63/lib" "$_td63/st" "$_td63/a" "$_td63/b"
+    printf '%s\n' '( sh -c "echo \$PPID" > "$1/sub"; sleep 30; : ) &' 'sleep 30' > "$_td63/lib/sls.sh"
+    sh "$_td63/lib/sls.sh" "$_td63/a" & _w63a=$!
+    sh "$_td63/lib/sls.sh" "$_td63/b" & _w63b=$!
+    echo "$_w63a" > "$_td63/st/BR_a.pid"
+    _n63=0; while { [ ! -s "$_td63/a/sub" ] || [ ! -s "$_td63/b/sub" ]; } && [ "$_n63" -lt 50 ]; do sleep 0.1; _n63=$((_n63 + 1)); done
+    read -r _s63a < "$_td63/a/sub"; read -r _s63b < "$_td63/b/sub"
+    _r=$( LIBDIR="$_td63/lib"; STATUS_DIR="$_td63/st"; GOLD=""; RESET=""
+          eval "`sed -n '/^limpa_orfaos() {/,/^}/p' "$ROOT/play.sh"`"
+          limpa_orfaos )
+    sleep 1
+    _vivo63() { kill -0 "$1" 2>/dev/null && printf V || printf M; }
+    check "limpa_orfaos: worker e subshell conhecidos ficam; orfao e o subshell dele morrem" \
+        "VV MM 2" "`_vivo63 $_w63a``_vivo63 $_s63a` `_vivo63 $_w63b``_vivo63 $_s63b` `printf '%s' "$_r" | grep -o '[0-9][0-9]*' | head -n1`"
+    kill "$_w63a" "$_s63a" "$_w63b" "$_s63b" 2>/dev/null
+    unset _w63a _w63b _s63a _s63b _n63; unset -f _vivo63
+else
+    ok "limpa_orfaos: sem /proc legivel neste aparelho (teste pulado)"
+fi
+check "launch_worker: o worker nao herda o fd 3 (accounts.conf)" 1 \
+    "`sed -n '/^launch_worker() {/,/^}/p' "$ROOT/play.sh" | grep -c '2>&1 3<&- &$'`"
+
+# --- Conta removida com o painel no ar: o painel que ainda le o accounts.conf
+# antigo NAO a relanca (status "stopped" antes de apagar o .pid).
+_r=$( _h="$_td63/rm"; mkdir -p "$_h/.sls/status" "$_h/.sls/BR_Ze"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"; cp "$_h/acc.conf" "$_h/acc.antigo"
+      echo 999999 > "$_h/.sls/status/BR_Ze.pid"; echo running > "$_h/.sls/status/BR_Ze.status"
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      eval "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh"`"
+      clear() { :; }; sleep() { :; }; escolher_conta() { srv=1; user=Ze; return 0; }
+      printf 'y\nn\n' | remove_account > /dev/null 2>&1
+      # O painel desta volta abriu o arquivo ANTES da remocao.
+      ACCOUNTS_FILE="$_h/acc.antigo"
+      launch_worker() { echo L >> "$_h/lancou"; }
+      PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS ACCOUNTS_FILE
+      . "$LIB/panel.sh" > /dev/null 2>&1; painel_loop > /dev/null 2>&1
+      printf 'lancou=%s conf=%s' "`cat "$_h/lancou" 2>/dev/null | wc -l | tr -d ' '`" "`grep -c Ze "$_h/acc.conf"`" )
+check "conta removida com o painel no ar: o painel nao a relanca" "lancou=0 conf=0" "$_r"
+check "setup: cadastrar conta apaga o 'stopped' que sobrou dela" 1 \
+    "`sed -n '/^add_account() {/,/^}/p' "$ROOT/setup.sh" | grep -c 'rm -f "\$HOME/.sls/status/\${tag}_\${user}.status"'`"
+rm -rf "$_td63"; unset _td63 _r
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
