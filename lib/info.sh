@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.109"
+versionNum="3.9.110"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -923,8 +923,48 @@ alvo_grey() {
         }' "$1" 2>/dev/null
 }
 
+# A CURA SAIU MESMO?   cura_relogio AGORA HP_ANTES HP_DEPOIS BOTAO(0|1) LA
+#
+# Pedido do dono (3.9.110). O relogio da cura (recarga de 90s) era gravado
+# sempre que o pedido saia, mesmo quando o jogo recusava a cura (acao colada
+# no ataque): a conta ficava 90s sem curar com o HP baixo. Devolve em
+# CURA_RELOGIO o instante a gravar:
+#   AGORA            a pagina confirma: o HP subiu, ou o botao da cura sumiu
+#                    da resposta; tambem quando nao da para conferir (HP
+#                    ilegivel), como antes;
+#   AGORA - 90 + LA  sem confirmacao: uma nova tentativa LA segundos depois
+#                    (so se a vida ainda estiver abaixo do limiar da luta).
+# A segunda tentativa conta de qualquer jeito: no maximo dois pedidos por
+# recarga. Se a primeira valeu (o HP so nao subiu pelo dano recebido), o
+# proprio jogo recusa a segunda: o elixir tem recarga de 90s. Limiares e a
+# recarga de 90s nao mudaram. So o primeiro numero do HP vale (o arquivo de
+# HP de alguns modulos traz uma linha por ocorrencia).
+#
+# SO COM A RESPOSTA DA CURA COMPLETA (curl 0). Tempo esgotado depois de
+# conectar, pagina cortada ou as tres tentativas sem conexao do
+# pedido_nao_saiu: nao da para saber se o elixir foi usado, e a regra
+# continua a de antes (a recarga conta, sem segundo elixir). O codigo e o
+# TE_RC do pedido da cura; quem faz outro pedido depois dela (a erva do
+# Torneio e do Duelo) o guarda antes em CURA_RC.
+cura_relogio() {
+    CURA_RELOGIO="$1"
+    _cr_a=${2#"${2%%[0-9]*}"}; _cr_a=${_cr_a%%[!0-9]*}
+    _cr_d=${3#"${3%%[0-9]*}"}; _cr_d=${_cr_d%%[!0-9]*}
+    if [ "$4" = 1 ] && [ "${CURA_RC:-${TE_RC:-0}}" = 0 ] && \
+       [ -n "$_cr_a" ] && [ -n "$_cr_d" ] && \
+       [ "$_cr_d" -le "$_cr_a" ] && [ "${_CURA_TENTOU:-0}" = 0 ]; then
+        _CURA_TENTOU=1
+        CURA_RELOGIO=$(( $1 - 90 + ${5:-4} ))
+        printf "Cura sem confirmacao (HP %s -> %s) - nova tentativa em %ss\n" "$_cr_a" "$_cr_d" "${5:-4}"
+    else
+        _CURA_TENTOU=0
+    fi
+    unset _cr_a _cr_d CURA_RC
+}
+
 # Zera a memoria da luta e anota a batalha. No INICIO de cada funcao de luta.
 luta_inicio() {
+    _CURA_TENTOU=0
     _lt_fora_desde=""
     _lt_relogin=0
     _lt_invalidas=0

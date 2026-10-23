@@ -194,6 +194,7 @@ coliseum_fight() {
             if [ -n "$HEAL" ] && \
                [ "$_cura" = 1 ] && \
                [ "$time_since_last_heal" -gt 90 ]; then
+                _hp_ant="$USH"
                 (
                     run_curl_exec "${URL}${HEAL}" > "$src_ram"
                 ) </dev/null > /dev/null 2>&1 &
@@ -201,7 +202,12 @@ coliseum_fight() {
                 cl_access
                 # full_ram nunca e trocado pelo HP atual pos-cura.
                 # Pedido que nao saiu (pedido_nao_saiu): a cura nao valeu.
-                [ "$_saiu" = 1 ] && last_heal=$now
+                # A pagina confirma a cura? Sem confirmacao, uma nova tentativa
+                # em LA segundos (cura_relogio, em info.sh).
+                if [ "$_saiu" = 1 ]; then
+                    cura_relogio "$now" "$_hp_ant" "$USH" "`[ -n "$HEAL" ] && echo 1 || echo 0`" "$LA"
+                    last_heal=$CURA_RELOGIO
+                fi
                 last_atk=$now
 
             elif [ -n "$DODGE" ] && [ "$_grey" = 0 ] && \

@@ -88,7 +88,7 @@ altars_fight() {
     if [ -s HEAL ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
-      _saiu=0
+      _saiu=0; _hp_ant="$_hp"
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$TMP/src.html"
       ) </dev/null > /dev/null 2>&1 &
@@ -98,7 +98,10 @@ altars_fight() {
       # Pedido que nao saiu (pedido_nao_saiu): a acao nao valeu.
       if [ "$_saiu" = 1 ]; then
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-        date +%s > last_heal
+        # A pagina confirma a cura? Sem confirmacao, uma nova tentativa em
+        # LA segundos (cura_relogio, em info.sh).
+        cura_relogio "`date +%s`" "$_hp_ant" "$_hp" "`[ -s HEAL ] && echo 1 || echo 0`" "$LA"
+        echo "$CURA_RELOGIO" > last_heal
       fi
 
     # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.

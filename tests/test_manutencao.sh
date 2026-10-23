@@ -4303,8 +4303,12 @@ _rec87() {
       date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
       sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
       RC=$1
+      # A cura que chega ao servidor sobe o HP (desde a 3.9.110 a recarga so
+      # conta com a pagina confirmando; com o HP igual sairia uma nova
+      # tentativa, que nao e o que este teste mede).
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" | sed 's/> 1000 /> 9000 /' > "$TMP/curada"
       run_curl_exec() { echo "$1" >> "$TMP/req"
-          case "$1" in */heal/*) [ -f "$TMP/falhou" ] || { : > "$TMP/falhou"; return "$RC"; } ;; esac
+          case "$1" in */heal/*) [ -f "$TMP/falhou" ] || { : > "$TMP/falhou"; return "$RC"; }; cp "$TMP/curada" "$TMP/pag" ;; esac
           cat "$TMP/pag"; }
       luta_teto() { echo $(( $(cat "$TMP/relogio") + 12 )); }; func_unset() { :; }
       cd "$TMP" && clanfight_fight > /dev/null 2>&1
@@ -5574,6 +5578,77 @@ for _m68 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
 done
 set --
 rm -rf "$_td68"; unset _td68 _m68 _v _a _rv _ra; unset -f _al68 _res68
+
+# =============================================================================
+printf "\n=== 69. cura so conta a recarga quando a pagina confirma ===\n"
+# =============================================================================
+# Pedido do dono (3.9.110). Mesmo roteiro de paginas para o codigo ANTIGO (o
+# modulo atual com o cura_relogio de antes: grava sempre a hora do pedido) e
+# o NOVO, em seis modulos: HP 30000 de 100000 (abaixo do limiar), botao da
+# cura sempre na tela, alvo inimigo fraco; relogio simulado, 1s por pedido,
+# 40s de luta. Cada clique na cura segue o roteiro: "ok" sobe o HP para
+# 70000, "recusa" deixa como esta (o jogo recusou). Saida: "segundos das
+# curas | HP no fim".
+_td69=`mktemp -d`
+#   _cu69 FUNCAO SECAO ARQUIVO_DO_MODULO ROTEIRO [antigo]
+_cu69() {
+    ( TMP="$_td69/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$3" > /dev/null 2>&1
+      [ "$5" = antigo ] && cura_relogio() { CURA_RELOGIO="$1"; _CURA_TENTOU=0; }
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo 30000 > "$TMP/hpv"; echo "$4" > "$TMP/rot"
+      for _f in FULL ccol_full flag_full col_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$2"; COLISEU_GRAFICO=1
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg69() {
+          read -r _h < "$TMP/hpv"
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a> <a href='/coliseum/?end_fight=true'>x</a>"
+          elif [ "$_S" = coliseum ]; then
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> $_h Inimigo <span class='nwr'>&nbsp;3000</span> <a href='/coliseum/atk/?r=$1'>a</a> <a href='/coliseum/atkrnd/?r=$1'>t</a> <a href='/coliseum/dodge/?r=$1'>d</a> <a href='/coliseum/heal/?r=$1'>h</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> $_h</span> <img src='/images/icon/race/0.png' alt=''/> Inimigo <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/attackrandom/?r=$1'>t</a> <a href='/$_S/dodge/?r=$1'>d</a> <a href='/$_S/heal/?r=$1'>h</a>"
+          fi; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in
+              */heal/*)
+                  echo "$(( _t - 1000 ))" >> "$TMP/req"
+                  read -r _r < "$TMP/rot"; set -- $_r; _c=$1; shift; echo "$*" > "$TMP/rot"
+                  [ "$_c" = ok ] && echo 70000 > "$TMP/hpv" ;;
+          esac
+          _pg69 "$_t"; }
+      for _f in src.html SRC ccol_src ccmd_src col_src; do _pg69 1000 > "$TMP/$_f"; done
+      "$1" > /dev/null 2>&1
+      printf '%s| %s' "`tr '\n' ' ' < "$TMP/req"`" "`cat "$TMP/hpv"`" )
+}
+for _m69 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "clancommand clancommand_fight clancommand" "coliseum coliseum_fight coliseum"; do
+    set -- $_m69
+    # Recusada a primeira: o antigo espera 90s com o HP baixo; o novo tenta
+    # de novo LA segundos depois e a conta cura.
+    _a=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa ok" antigo`; _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa ok"`
+    printf "  [INFO] %s, primeira recusada: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a" in *"| 30000") ;; *) bad "$1: o antigo nao reproduz os 90s sem cura ($_a)" ;; esac
+    case "$_v" in
+        [0-9]*" "[0-9]*" | 70000") ok "$1: cura recusada sai de novo e a conta cura ($_v)" ;;
+        *) bad "$1: cura recusada ($_v)" ;;
+    esac
+    # Cura que sobe o HP: antigo e novo iguais.
+    _a=`_cu69 "$2" "$3" "$LIB/$1.sh" "ok" antigo`; _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "ok"`
+    check "$1: cura confirmada, antigo e novo iguais" "$_a" "$_v"
+    # Nunca confirma: no maximo dois pedidos de cura por recarga (90s); se o
+    # primeiro valeu, o jogo recusa o segundo (o elixir tem recarga de 90s).
+    _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa recusa recusa recusa"`
+    case "$_v" in
+        [0-9]*" "[0-9]*" | 30000") ok "$1: sem confirmacao, so dois pedidos de cura por recarga ($_v)" ;;
+        *) bad "$1: sem confirmacao ($_v)" ;;
+    esac
+done
+set --
+rm -rf "$_td69"; unset _td69 _m69 _a _v; unset -f _cu69
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
