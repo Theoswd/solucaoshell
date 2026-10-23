@@ -2596,7 +2596,9 @@ _r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'if caverna_l
 check "varredura ociosa: caverna e campanha pelo relogio do jogo" 2 "$_r"
 _r=`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c '^    tarefas_livres$'`
 check "start(): usa a varredura do ocioso, com os mesmos portoes" 1 "$_r"
-sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'caverna_ler_menu "$TMP/REST"' \
+# Desde a 3.9.111 a Home e lida uma vez (descanso_ler) e o relogio sai dela.
+sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'descanso_ler "$TMP/REST"' && \
+sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q '^ *caverna_aplicar$' \
     && ok "descansar: le o relogio da caverna na pagina inicial que ja baixou" \
     || bad "descansar: nao le o relogio da caverna"
 
@@ -5649,6 +5651,70 @@ for _m69 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
 done
 set --
 rm -rf "$_td69"; unset _td69 _m69 _a _v; unset -f _cu69
+
+# =============================================================================
+printf "\n=== 70. descanso numa leitura so e log de combate guardado no painel ===\n"
+# =============================================================================
+_td70=`mktemp -d`
+
+# --- descanso_ler x a leitura de antes (o grep do out_gate, o grep do menu da
+# caverna com o relogio_seg_sh e o sessao_estado), pagina a pagina.
+_ant70() { # ARQUIVO -> "GATE CAVE SESSAO" do jeito da 3.9.110
+    if grep -q 'out_gate_confirm' "$1" 2>/dev/null; then _g=1; else _g=0; fi
+    _cv=`grep -o -m 1 -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null`
+    _cv=${_cv%%"
+"*}; _cv=${_cv##*\(}; _cv=${_cv%\)}
+    if [ -n "$_cv" ]; then _cv=`relogio_seg_sh "$_cv"`
+    elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then _cv=+
+    else _cv=-; fi
+    printf '%s %s %s' "$_g" "$_cv" "`sessao_estado "$1"`"
+}
+_v70="jsInterface.event(\"user=5;level=40\")"
+_menu70="<a href='/king/'>Rei <span class='grey'>(0:10:00)</span></a>"
+_i70=0
+for _p70 in \
+    "<a href='/cave/'><img src='/images/c.png'/>Caverna <span class='grey'>(1:02:03)</span></a> $_menu70 $_v70" \
+    "<a href='/cave/'>Caverna <span class='grey'>(07:09)</span></a> $_menu70 $_v70" \
+    "<a href='/cave/'>Caverna <span class='green'> (+)</span></a> $_menu70 $_v70" \
+    "$_menu70 jsInterface.event(\"user=0;level=0\")" \
+    "<form action='/?sign_in=1'><input name='pass'/></form>" \
+    "<img src='/images/icon/level.png'/> 40 pagina cortada" \
+    "Fuja da batalha? <a href='/?out_gate_confirm=true'>sim</a> $_v70" \
+    "<html>502 Bad Gateway</html>" \
+    ""; do
+    _i70=$((_i70 + 1))
+    printf '%s\n' "$_p70" > "$_td70/p$_i70"; [ -n "$_p70" ] || : > "$_td70/p$_i70"
+    _r=$( TMP="$_td70"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+          descanso_ler "$_td70/p$_i70"; printf '%s %s %s|' "$_DL_GATE" "$_DL_CAVE" "$_DL_SESSAO"
+          _ant70 "$_td70/p$_i70" )
+    check "descanso_ler = leitura de antes (pagina $_i70)" "${_r#*|}" "${_r%%|*}"
+done
+_r=$( TMP="$_td70"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      descanso_ler "$_td70/nao_existe"; printf '%s %s %s' "$_DL_GATE" "$_DL_CAVE" "$_DL_SESSAO" )
+check "descanso_ler: arquivo que nao existe = sem resposta, sem caverna" "0 - sem_resposta" "$_r"
+_r=`sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -v '^ *#' | grep -c 'grep \|sessao_estado'`
+check "descansar: nenhum grep nem sessao_estado (uma leitura so da Home)" 0 "$_r"
+
+# --- Painel: o log guardado sai igual ao do combate_log, e o awk so roda de
+# novo com a pagina nova ou a largura nova.
+mkdir -p "$_td70/conta"
+printf '%s\n' "<div>Bahamut acertou Voce por 2864</div><div>Voce usou Posicao defensiva</div><div>Fulano usou Pocao</div>" > "$_td70/conta/SRC"
+touch -t 202601010000 "$_td70/conta/SRC"
+_r=$( HOME=/nao/existe; SLS_EMOJI=0; export HOME SLS_EMOJI
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      _ref=`combate_log "$_td70/conta" 2 60`
+      combate_log_cache "$_td70/conta" 2 60 "$_td70/cache"; _a="$_LOG"
+      [ "$_a" = "$_ref" ] && printf 'igual ' || printf 'diferente '
+      combate_log() { echo RECALCULOU; }
+      combate_log_cache "$_td70/conta" 2 60 "$_td70/cache"
+      [ "$_LOG" = "$_ref" ] && printf 'guardado ' || printf '[%s] ' "$_LOG"
+      combate_log_cache "$_td70/conta" 2 50 "$_td70/cache"; printf '%s ' "$_LOG"
+      touch -t 203001010000 "$_td70/conta/SRC"
+      combate_log_cache "$_td70/conta" 2 50 "$_td70/cache"; printf '%s' "$_LOG" )
+check "painel: log guardado igual ao combate_log; recalcula so com largura ou pagina nova" \
+    "igual guardado RECALCULOU RECALCULOU" "$_r"
+check "painel: o log de combate passa pelo cache" 1 "`grep -c 'combate_log_cache \"\$acc_dir\"' "$LIB/panel.sh"`"
+rm -rf "$_td70"; unset _td70 _r _v70 _menu70 _i70 _p70; unset -f _ant70
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
