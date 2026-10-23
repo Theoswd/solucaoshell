@@ -5511,6 +5511,70 @@ case "$_r" in
 esac
 rm -rf "$_td67"; unset _td67 _r _m _re _a _b _c _pt67 _h
 
+# =============================================================================
+printf "\n=== 68. troca por aliado com 4s ou mais nos cinco modulos de cla ===\n"
+# =============================================================================
+# Pedido do dono (3.9.109). Mesmo roteiro de paginas para o codigo ANTIGO (o
+# modulo atual com a condicao da troca devolvida a "-ne") e o NOVO, nos cinco
+# modulos: alvo sempre aliado (na lista do cla) ou sempre inimigo; HP cheio
+# (sem cura nem esquiva); relogio simulado, 1s por pedido; aos 40s o jogo
+# encerra. Saida: "segundo:acao" dos golpes (attack e attackrandom).
+_td68=`mktemp -d`
+#   _al68 MODULO FUNCAO SECAO ARQUIVO_DO_MODULO NOME_DO_ALVO
+_al68() {
+    ( TMP="$_td68/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$4" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo Amigo > "$TMP/callies.txt"
+      for _f in FULL ccol_full flag_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$3"; _N="$5"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg68() {
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 50000</span> <img src='/images/icon/race/0.png' alt=''/> $_N <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/attackrandom/?r=$1'>t</a> <a href='/$_S/dodge/?r=$1'>d</a>"
+          fi; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in */attack/*|*/attackrandom/*) _v=${1#*/"$_S"/}; echo "$(( _t - 1000 )):${_v%%/*}" >> "$TMP/req" ;; esac
+          _pg68 "$_t"; }
+      for _f in src.html SRC ccol_src flag_src; do _pg68 1000 > "$TMP/$_f"; done
+      "$2" > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/req" )
+}
+# Resumo: golpes, trocas e menor intervalo entre duas acoes.
+_res68() { printf '%s\n' $1 | awk -F: '
+    { if ($2 == "attack") a++; else r++
+      if (NR > 1 && (min == "" || $1 - u < min)) min = $1 - u; u = $1 }
+    END { printf "atk=%d trocas=%d intervalo_min=%d", a, r, min }'; }
+for _m68 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "flagfight flagfight_fight flagfight"; do
+    set -- $_m68
+    sed 's/\[ "\$_latk" -ge "\$LA" \] && \[ "\$_grey" = 0 \]/[ "$_latk" -ne "$LA" ] \&\& [ "$_grey" = 0 ]/' \
+        "$LIB/$1.sh" > "$_td68/antigo_$1.sh"
+    _v=`_al68 "$1" "$2" "$3" "$LIB/$1.sh" Amigo`;            _rv=`_res68 "$_v"`
+    _a=`_al68 "$1" "$2" "$3" "$_td68/antigo_$1.sh" Amigo`;   _ra=`_res68 "$_a"`
+    printf "  [INFO] %s aliado: antigo %s | novo %s\n" "$1" "$_ra" "$_rv"
+    case "$_rv" in
+        *"trocas="[1-9]*" intervalo_min="[4-9]*) ok "$1: troca por aliado so com 4s ou mais ($_rv)" ;;
+        *) bad "$1: troca por aliado ($_rv; antigo $_ra)" ;;
+    esac
+    case "$_ra" in *" intervalo_min="[0-3]) ok "$1: o antigo trocava antes de 4s (roteiro reproduz o defeito)" ;;
+                   *) bad "$1: o antigo nao reproduz a troca colada ($_ra)" ;; esac
+    # Alvo inimigo: nenhuma troca, e antigo e novo fazem os mesmos pedidos.
+    _v=`_al68 "$1" "$2" "$3" "$LIB/$1.sh" Inimigo`
+    _a=`_al68 "$1" "$2" "$3" "$_td68/antigo_$1.sh" Inimigo`
+    case "$_v" in
+        *attack*) check "$1: alvo inimigo, antigo e novo iguais" "$_a" "$_v" ;;
+        *) bad "$1: alvo inimigo sem golpe no roteiro ($_v)" ;;
+    esac
+done
+set --
+rm -rf "$_td68"; unset _td68 _m68 _v _a _rv _ra; unset -f _al68 _res68
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -118,7 +118,9 @@ clancoliseum_fight() {
 
     # Aliado na frente: troca de alvo (troca_aliado, em allies.sh). So por
     # aliado (regra do dono), com fogo amigo para nao virar laco de trocas.
-    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+    # 4s (LA) ou mais desde a acao anterior, como no clancommand: com "-ne"
+    # a troca saia com 0 a 3s, colada no ataque, e o jogo a recusava (3.9.109).
+    elif [ -s ATKRND ] && [ "$_latk" -ge "$LA" ] && [ "$_grey" = 0 ] && \
          troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"
