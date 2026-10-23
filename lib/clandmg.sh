@@ -25,7 +25,9 @@ clandmgfight_fight() {
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; { [ -s HEAL ] || [ -s GRASS ]; } && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
+    # Vida das ultimas leituras (dano dos ultimos 15s, para a esquiva: ver
+    # esquiva_devida, em info.sh). So read e aritmetica.
+    dano_registrar "$_hp"
     if grep -q -o '/dodge/' "$TMP/SRC"; then
       # A pagina respondeu com a luta: sessao confirmada.
       _reconf=0
@@ -72,6 +74,7 @@ clandmgfight_fight() {
   # Limiar de cura uma vez por luta: depende so do HP maximo.
   awk -v ush="$(cat FULL)" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
+  _full_hp=""; { read -r _full_hp < FULL; } 2>/dev/null
   luta_inicio clandmgfight
   # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
   # o BREAK_LOOP nela.
@@ -124,10 +127,11 @@ clandmgfight_fight() {
         echo "$CURA_RELOGIO" > last_heal
       fi
 
-    # PRIORIDADE 2 — ESQUIVA: so quando a cura nao foi necessaria/possivel.
+    # PRIORIDADE 2 — ESQUIVA (regra do dono, 3.9.112): vida abaixo do limiar,
+    # sem elixir (sem botao ou na recarga) e 20% do HP perdidos em 15s.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         [ "$_caiu" = 1 ]; then
+         esquiva_devida "$_hp" "$_hlhp" "$_full_hp"; then
       _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$TMP/SRC"

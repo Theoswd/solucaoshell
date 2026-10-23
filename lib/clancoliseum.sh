@@ -20,7 +20,9 @@ clancoliseum_fight() {
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat USH`
     _cura=0; [ -s HEAL ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v ush="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(ush < oldhp) }' && _caiu=1
+    # Vida das ultimas leituras (dano dos ultimos 15s, para a esquiva: ver
+    # esquiva_devida, em info.sh). So read e aritmetica.
+    dano_registrar "$_hp"
 
     if grep -q -o '/dodge/' "$src_ram"; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -68,6 +70,7 @@ clancoliseum_fight() {
   # Limiar de cura uma vez por luta: depende so do HP maximo.
   awk -v ush="$(cat "$full_ram")" -v hper="$HPER" 'BEGIN { printf "%.0f", ush * hper / 100 }' > HLHP
   _hlhp=`cat HLHP`; _old_hp=""
+  _full_hp=""; { read -r _full_hp < "$full_ram"; } 2>/dev/null
   luta_inicio clancoliseum
   # Zerado ANTES da primeira leitura: uma luta ja encerrada (retomada) grava
   # o BREAK_LOOP nela.
@@ -104,9 +107,11 @@ clancoliseum_fight() {
         echo "$CURA_RELOGIO" > last_heal
       fi
 
+    # ESQUIVA (regra do dono, 3.9.112): vida abaixo do limiar, sem elixir
+    # (sem botao ou na recarga) e 20% do HP perdidos em 15s.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         [ "$_caiu" = 1 ]; then
+         esquiva_devida "$_hp" "$_hlhp" "$_full_hp"; then
       _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"

@@ -5716,6 +5716,93 @@ check "painel: log guardado igual ao combate_log; recalcula so com largura ou pa
 check "painel: o log de combate passa pelo cache" 1 "`grep -c 'combate_log_cache \"\$acc_dir\"' "$LIB/panel.sh"`"
 rm -rf "$_td70"; unset _td70 _r _v70 _menu70 _i70 _p70; unset -f _ant70
 
+# =============================================================================
+printf "\n=== 71. esquiva nos eventos de cla: vida baixa, sem elixir, 20%% em 15s ===\n"
+# =============================================================================
+# Regra do dono (3.9.112), nos cinco eventos de cla. Mesmo roteiro de
+# paginas para o codigo ANTIGO (o modulo atual com a esquiva de antes: saia
+# com QUALQUER perda de vida desde a leitura anterior) e o NOVO; relogio
+# simulado, 1s por pedido, 40s de luta, HP maximo 100000 (limiar da cura
+# 48000, dano alto 20000 em 15s). Cada pedido tira DANO de vida, ate o piso.
+# Saida: "esquivas=N curas=N primeira=acao".
+_td71=`mktemp -d`
+_ant71() { # MODULO -> o modulo atual com a esquiva de antes
+    sed -e 's/^    dano_registrar "\$_hp"$/    _caiu=0; [ -s DODGE ] \&\& awk -v ush="$_hp" -v oldhp="$_old_hp" '"'"'BEGIN { exit !(ush < oldhp) }'"'"' \&\& _caiu=1/' \
+        -e 's/^         esquiva_devida "\$_hp" "[^"]*" "\$_full_hp"; then$/         [ "$_caiu" = 1 ]; then/' \
+        "$LIB/$1.sh" > "$_td71/antigo_$1.sh"
+}
+#   _es71 FUNCAO SECAO ARQUIVO HP_INICIAL DANO PISO CURA(com|sem)
+_es71() {
+    ( TMP="$_td71/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$3" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo "$4" > "$TMP/hpv"
+      for _f in FULL ccol_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$2"; _D="$5"; _P="$6"; _C="$7"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg71() {
+          read -r _h < "$TMP/hpv"
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a>"
+              return
+          fi
+          _cl=""; [ "$_C" = com ] && _cl="<a href='/$_S/heal/?r=$1'>h</a>"
+          echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> $_h</span> <img src='/images/icon/race/0.png' alt=''/> Inimigo <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/dodge/?r=$1'>d</a> $_cl"; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          read -r _h < "$TMP/hpv"
+          case "$1" in
+              */heal/*)  echo cura >> "$TMP/req"; _h=90000 ;;
+              */dodge/*) echo esquiva >> "$TMP/req" ;;
+              *)         [ "$_t" -gt 1000 ] && _h=$(( _h - _D )) ;;
+          esac
+          [ "$_h" -lt "$_P" ] && _h=$_P
+          echo "$_h" > "$TMP/hpv"
+          _pg71 "$_t"; }
+      for _f in src.html SRC ccol_src ccmd_src; do _pg71 1000 > "$TMP/$_f"; done
+      "$1" > /dev/null 2>&1
+      printf 'esquivas=%s curas=%s primeira=%s' "`grep -c esquiva "$TMP/req"`" "`grep -c cura "$TMP/req"`" \
+          "`sed -n 1p "$TMP/req"`" )
+}
+for _m71 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "clancommand clancommand_fight clancommand"; do
+    set -- $_m71
+    _ant71 "$1"
+    # Vida baixa (45000), sem elixir, dano pequeno (500 por pedido): o antigo
+    # esquivava a toa; o novo so ataca.
+    _a=`_es71 "$2" "$3" "$_td71/antigo_$1.sh" 45000 500 1000 sem`; _v=`_es71 "$2" "$3" "$LIB/$1.sh" 45000 500 1000 sem`
+    printf "  [INFO] %s vida baixa, dano pequeno: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a/$_v" in "esquivas="[1-9]*"/esquivas=0 "*) ok "$1: dano pequeno nao esquiva (antes esquivava)" ;;
+                      *) bad "$1: dano pequeno ($_a | $_v)" ;; esac
+    # Vida alta (100000 caindo ate 60000, sempre acima de 48%), dano alto:
+    # o antigo esquivava; o novo nao (a vida nao esta baixa).
+    _a=`_es71 "$2" "$3" "$_td71/antigo_$1.sh" 100000 8000 60000 sem`; _v=`_es71 "$2" "$3" "$LIB/$1.sh" 100000 8000 60000 sem`
+    printf "  [INFO] %s vida alta, dano alto: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a/$_v" in "esquivas="[1-9]*"/esquivas=0 "*) ok "$1: vida acima de 48% nao esquiva (antes esquivava)" ;;
+                      *) bad "$1: vida alta ($_a | $_v)" ;; esac
+    # Vida baixa, sem elixir, dano alto (7000 por pedido): o novo esquiva.
+    _v=`_es71 "$2" "$3" "$LIB/$1.sh" 47000 7000 5000 sem`
+    case "$_v" in "esquivas="[1-9]*) ok "$1: vida baixa, sem elixir e dano alto esquiva ($_v)" ;;
+                  *) bad "$1: vida baixa, sem elixir, dano alto ($_v)" ;; esac
+    # Vida baixa e dano alto COM elixir: a primeira acao e a cura, nao a esquiva.
+    _v=`_es71 "$2" "$3" "$LIB/$1.sh" 47000 7000 5000 com`
+    case "$_v" in *" primeira=cura") ok "$1: com elixir, cura antes de esquivar ($_v)" ;;
+                  *) bad "$1: com elixir ($_v)" ;; esac
+done
+set --
+# dano_registrar: so a janela de 15s conta.
+_r=$( TMP="$_td71"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _DANO_HIST=""; date() { cat "$_td71/t0"; }
+      echo 100 > "$_td71/t0"; dano_registrar 90000
+      echo 105 > "$_td71/t0"; dano_registrar 80000; printf '%s ' "$DANO_15S"
+      echo 114 > "$_td71/t0"; dano_registrar 60000; printf '%s ' "$DANO_15S"
+      echo 121 > "$_td71/t0"; dano_registrar 55000; printf '%s' "$DANO_15S" )
+# (aos 121s as leituras de 100s e 105s ja sairam da janela: so a de 114s)
+check "dano_registrar: vida perdida so nos ultimos 15s" "10000 30000 5000" "$_r"
+rm -rf "$_td71"; unset _td71 _m71 _a _v _r; unset -f _ant71 _es71
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

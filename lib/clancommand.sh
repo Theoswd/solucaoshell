@@ -133,7 +133,9 @@ clancommand_fight() {
     # HP lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; [ -s HEAL ] && awk -v hp="$_hp" -v hlhp="$HLHP" 'BEGIN { exit !(hp < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v hp="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(hp < oldhp) }' && _caiu=1
+    # Vida das ultimas leituras (dano dos ultimos 15s, para a esquiva: ver
+    # esquiva_devida, em info.sh). So read e aritmetica.
+    dano_registrar "$_hp"
 
     if [ "$_emluta" = "1" ] || _cc_acao; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -179,6 +181,8 @@ clancommand_fight() {
   }
 
   luta_inicio clancommand
+  # HP maximo (FULL, do full_atualizar): a esquiva compara o dano com ele.
+  _full_hp=""; { read -r _full_hp < FULL; } 2>/dev/null
   cc_access
   > BREAK_LOOP
   cat HP > old_HP 2>/dev/null; _old_hp="$_hp"; _caiu=0
@@ -210,9 +214,11 @@ clancommand_fight() {
         echo "$CURA_RELOGIO" > last_heal
       fi
 
+    # ESQUIVA (regra do dono, 3.9.112): vida abaixo do limiar, sem elixir
+    # (sem botao ou na recarga) e 20% do HP perdidos em 15s.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         [ "$_caiu" = 1 ]; then
+         esquiva_devida "$_hp" "$HLHP" "$_full_hp"; then
       _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"

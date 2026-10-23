@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.111"
+versionNum="3.9.112"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -962,9 +962,54 @@ cura_relogio() {
     unset _cr_a _cr_d CURA_RC
 }
 
+# ESQUIVA NOS EVENTOS DE CLA (regra do dono, 3.9.112)
+#
+# Altares, Torneio dos Clas, Duelo, Coliseu do Cla e Torneio de Equipe. A
+# esquiva so sai com as tres coisas juntas:
+#   1. vida abaixo do limiar da cura (48% do HP maximo);
+#   2. sem elixir para usar: sem o botao, ou o elixir na recarga de 90s.
+#      Vem da ordem das acoes: a esquiva so e avaliada quando a cura nao
+#      saiu, e com a vida abaixo do limiar a cura so nao sai sem o botao ou
+#      na recarga;
+#   3. dano muito alto: 20% ou mais do HP maximo perdidos nos ultimos 15s.
+# A recarga da esquiva continua 20s. Antes ela saia com QUALQUER perda de
+# vida desde a leitura anterior, com ou sem elixir.
+
+# Vida perdida nos ultimos 15s.   dano_registrar HP   -> DANO_15S
+# Cada leitura da pagina da luta entra em _DANO_HIST ("epoch:hp ..."), que
+# fica so com os ultimos 15s; DANO_15S e o maior HP da janela menos o atual.
+# So read e aritmetica, nenhum processo. So o primeiro numero do HP vale.
+dano_registrar() {
+    _dr_h=${1#"${1%%[0-9]*}"}; _dr_h=${_dr_h%%[!0-9]*}
+    [ -n "$_dr_h" ] || return 0
+    agora_s
+    _dr_n=""; _dr_m=$_dr_h
+    for _dr_e in $_DANO_HIST; do
+        _dr_t=${_dr_e%%:*}; _dr_v=${_dr_e#*:}
+        [ $(( _AGORA - _dr_t )) -le 15 ] || continue
+        _dr_n="$_dr_n $_dr_e"
+        [ "$_dr_v" -gt "$_dr_m" ] && _dr_m=$_dr_v
+    done
+    _DANO_HIST="$_dr_n $_AGORA:$_dr_h"
+    DANO_15S=$(( _dr_m - _dr_h ))
+    unset _dr_h _dr_n _dr_m _dr_e _dr_t _dr_v
+}
+
+# Esquivar agora?   esquiva_devida HP LIMIAR_DA_CURA HP_MAXIMO   (0 = sim)
+# Itens 1 e 3 acima (o 2 e a ordem das acoes). Numero ilegivel: nao esquiva.
+esquiva_devida() {
+    _ev_h=${1#"${1%%[0-9]*}"}; _ev_h=${_ev_h%%[!0-9]*}
+    case "$_ev_h$2$3" in ''|*[!0-9]*) unset _ev_h; return 1 ;; esac
+    [ "$_ev_h" -lt "$2" ] && [ "${DANO_15S:-0}" -ge $(( $3 * 20 / 100 )) ]
+    _ev_r=$?
+    unset _ev_h
+    return $_ev_r
+}
+
 # Zera a memoria da luta e anota a batalha. No INICIO de cada funcao de luta.
 luta_inicio() {
     _CURA_TENTOU=0
+    _DANO_HIST=""; DANO_15S=0
     _lt_fora_desde=""
     _lt_relogin=0
     _lt_invalidas=0
