@@ -61,6 +61,22 @@ RESET='\033[00m'
 
 mkdir -p "$STATUS_DIR"
 
+# UM play.sh POR VEZ NO "LE O .pid, ENCERRA O ANTERIOR, GRAVA O SEU". Dois
+# ./play.sh juntos (toque duplo, Termux:Boot e um manual) liam o .pid antes
+# de qualquer um gravar: os dois seguiam, e cada um subia um worker por
+# conta. Trava mkdir; presa por mais de 10s (play.sh morto no meio), sai.
+_orq_lk="$STATUS_DIR/.orq.lock"
+_orq_n=0
+until mkdir "$_orq_lk" 2>/dev/null; do
+    _orq_n=$((_orq_n + 1))
+    if [ "$_orq_n" -ge 50 ]; then
+        rm -rf "$_orq_lk" 2>/dev/null
+        mkdir "$_orq_lk" 2>/dev/null
+        break
+    fi
+    sleep 0.2
+done
+
 # PID do orquestrador para o stop.sh (roda como "./play.sh", um pgrep por
 # caminho absoluto nao casa). Um painel so: o ./play.sh novo encerra o
 # anterior; os workers seguem rodando (o play.sh nao tem trap que derrube conta).
@@ -71,6 +87,9 @@ case "$_orq" in
 esac
 unset _orq
 echo "$$" > "$STATUS_DIR/orchestrator.pid"
+# Gravado o .pid, o proximo ./play.sh ja ve este e o encerra.
+rm -rf "$_orq_lk" 2>/dev/null
+unset _orq_lk _orq_n
 chmod 700 "$HOME/.sls" 2>/dev/null
 [ -f "$ACCOUNTS_FILE" ] && chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.105"
+versionNum="3.9.106"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -550,6 +550,37 @@ disjuntor_fechar() {   # MOTIVO
     return 0
 }
 
+# TRAVAS mkdir (login no sls.sh, sonda do disjuntor): O DONO AINDA VALE?
+#   trava_dono_vivo PID DIR   (0 = vale, espere)
+# - PID vazio: so vale com a trava NOVA (ate 1 min). O dono grava o PID logo
+#   depois do mkdir; morto entre os dois (SIGKILL do Android), a trava ficava
+#   para sempre: o login esperava 180s a cada vez e a sonda nunca saia.
+# - PID vivo mas de outro programa (o kernel recicla PIDs): nao vale. Sem
+#   /proc legivel, vale o kill -0 (como antes).
+trava_dono_vivo() {
+    case "$1" in
+        ''|*[!0-9]*) [ -z "`find "$2" -maxdepth 0 -mmin +1 2>/dev/null`" ]; return ;;
+    esac
+    kill -0 "$1" 2>/dev/null || return 1
+    [ -r "/proc/$1/cmdline" ] || return 0
+    case "`tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null`" in *sls.sh*) return 0 ;; esac
+    return 1
+}
+
+# Tira uma trava velha sem derrubar a de quem acabou de criar outra: move
+# (atomico), confere o dono do que foi movido e, se for uma trava viva
+# criada entre a leitura e o mv, devolve.   trava_tomar DIR
+trava_tomar() {
+    mv "$1" "$1.velha.$$" 2>/dev/null || return 0
+    _tt=""; { read -r _tt < "$1.velha.$$/pid"; } 2>/dev/null
+    if trava_dono_vivo "$_tt" "$1.velha.$$"; then
+        mv "$1.velha.$$" "$1" 2>/dev/null && { unset _tt; return 0; }
+    fi
+    rm -rf "$1.velha.$$" 2>/dev/null
+    unset _tt
+    return 0
+}
+
 # Uma sonda por vez no aparelho, no maximo a cada 20 s.
 disjuntor_sondar() {   # AGORA
     _dj_u=0; { read -r _dj_u < "$_DJ.sonda_ult"; } 2>/dev/null
@@ -558,12 +589,11 @@ disjuntor_sondar() {   # AGORA
     if [ "$_dj_i" -ge 0 ] && [ "$_dj_i" -lt 20 ]; then unset _dj_u _dj_i; return 0; fi
     if ! mkdir "$_DJ.sonda" 2>/dev/null; then
         _dj_p=""; { read -r _dj_p < "$_DJ.sonda/pid"; } 2>/dev/null
-        case "$_dj_p" in
-            ''|*[!0-9]*) unset _dj_u _dj_i _dj_p; return 0 ;;
-            *) kill -0 "$_dj_p" 2>/dev/null && { unset _dj_u _dj_i _dj_p; return 0; }
-               rm -rf "$_DJ.sonda" 2>/dev/null
-               mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; } ;;
-        esac
+        if trava_dono_vivo "$_dj_p" "$_DJ.sonda"; then
+            unset _dj_u _dj_i _dj_p; return 0
+        fi
+        trava_tomar "$_DJ.sonda"
+        mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; }
     fi
     echo $$ > "$_DJ.sonda/pid" 2>/dev/null
     echo "$1" > "$_DJ.sonda_ult" 2>/dev/null

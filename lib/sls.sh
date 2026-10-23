@@ -119,12 +119,12 @@ login_lock() {
             return 0
         fi
         _dono=; { read -r _dono < "$LOCKDIR/pid"; } 2>/dev/null
-        case "$_dono" in
-            # PID ainda nao gravado: o dono esta a caminho de escrever.
-            # Apagar aqui seria corrida (dois entrariam juntos). So espera.
-            ''|*[!0-9]*) : ;;
-            *) kill -0 "$_dono" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null ;;
-        esac
+        # Dono vivo (PID que responde, com cmdline de sls.sh), ou trava sem PID
+        # ainda nova (o dono esta a caminho de gravar): espera. Senao a trava
+        # e velha e sai por troca atomica (trava_dono_vivo e trava_tomar,
+        # em info.sh): um rm aqui podia apagar a trava viva de outra conta
+        # criada entre a leitura do PID e o rm.
+        trava_dono_vivo "$_dono" "$LOCKDIR" || trava_tomar "$LOCKDIR"
         sleep 3
         _n=$((_n + 1))
     done
@@ -141,6 +141,11 @@ login_unlock() {
     [ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null
     _lk_meu=0
 }
+
+# Encerrado no meio do login (stop.sh, painel relancando), a trava sai junto
+# em vez de esperar quem vier depois a julgar velha.
+trap '[ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null' EXIT
+trap 'exit 143' TERM INT
 
 do_login() {
     # REAPROVEITA A SESSAO EXISTENTE (PHPSESSID vale 30 dias): testar custa

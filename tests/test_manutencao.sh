@@ -412,7 +412,7 @@ for f in king.sh clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh 
 done
 # Login serializado por trava atomica (mkdir) com recuperacao de dono morto:
 # e o que segura o rate-limit de login por IP com 15-30 contas subindo juntas.
-if grep -q 'mkdir "\$LOCKDIR"' "$LIB/sls.sh" && grep -q 'kill -0 "\$_dono"' "$LIB/sls.sh"; then
+if grep -q 'mkdir "\$LOCKDIR"' "$LIB/sls.sh" && grep -q 'trava_dono_vivo "\$_dono" "\$LOCKDIR" || trava_tomar' "$LIB/sls.sh"; then
     ok "sls.sh: login serializado (trava atomica) com recuperacao de dono morto"
 else
     bad "sls.sh: serializacao de login ausente/fragil"
@@ -3377,21 +3377,40 @@ printf "\n=== 52. trava de login: so o dono apaga ===\n"
 # =============================================================================
 _td18=`mktemp -d`
 sed -n '/^login_lock() {/,/^}/p;/^login_unlock() {/,/^}/p' "$LIB/sls.sh" > "$_td18/trava.sh"
-_trava52() { # outra_conta_segura(s|n) -> "trava_ficou|trava_saiu espacou?"
+# Dono "de verdade": um processo vivo com sls.sh no cmdline (3.9.106: so o
+# kill -0 aceitava qualquer processo com o PID, inclusive um reciclado).
+mkdir -p "$_td18/lib"; printf 'sleep 60\n' > "$_td18/lib/sls.sh"
+sh "$_td18/lib/sls.sh" & _dono52=$!
+_trava52() { # cenario -> "trava_ficou|trava_saiu espacou?"
+    #   n  sem trava de outra conta
+    #   s  trava de um sls.sh vivo
+    #   r  trava com o PID reciclado (vivo, mas nao e sls.sh)
+    #   v  trava sem PID, velha (dono morto entre o mkdir e o pid)
+    #   f  trava sem PID, nova (dono a caminho de gravar)
     ( HOME="$_td18/h$1"; mkdir -p "$HOME/.sls"; LOCKDIR="$HOME/.sls/.login.lock"
+      . "$LIB/info.sh" > /dev/null 2>&1
       . "$_td18/trava.sh"
       sleep() { :; }
       login_espacar() { printf 'espacou ' >> "$HOME/log"; }
       login_espacar_marcar() { :; }
-      # Dono vivo (o proprio shell do teste): a espera estoura os 3 minutos.
-      [ "$1" = s ] && { mkdir "$LOCKDIR"; echo $$ > "$LOCKDIR/pid"; }
-      login_lock; login_unlock
-      [ -d "$LOCKDIR" ] && printf 'trava_ficou ' || printf 'trava_saiu '
+      case "$1" in
+          s) mkdir "$LOCKDIR"; echo "$_dono52" > "$LOCKDIR/pid" ;;
+          r) mkdir "$LOCKDIR"; echo $$ > "$LOCKDIR/pid" ;;
+          v) mkdir "$LOCKDIR"; touch -t 200001010000 "$LOCKDIR" ;;
+          f) mkdir "$LOCKDIR" ;;
+      esac
+      login_lock
+      # Sem login_unlock: o que interessa e de quem a trava ficou.
+      if [ "${_lk_meu:-0}" = 1 ]; then printf 'pegou '; else printf 'esperou '; fi
       cat "$HOME/log" 2>/dev/null )
 }
-check "sem trava de outra conta: pega e solta"                 "trava_saiu espacou " "`_trava52 n`"
-check "estourou a espera: nao apaga a trava do dono, espaca"   "trava_ficou espacou " "`_trava52 s`"
-rm -rf "$_td18"; unset _td18
+check "sem trava de outra conta: pega"                            "pegou espacou " "`_trava52 n`"
+check "trava de um sls.sh vivo: espera e nao a apaga"             "esperou espacou " "`_trava52 s`"
+check "trava com PID reciclado (nao e sls.sh): pega"              "pegou espacou " "`_trava52 r`"
+check "trava sem PID ha mais de 1 min (dono morreu antes): pega"  "pegou espacou " "`_trava52 v`"
+check "trava sem PID recem-criada: espera o dono gravar"          "esperou espacou " "`_trava52 f`"
+kill "$_dono52" 2>/dev/null; wait "$_dono52" 2>/dev/null
+rm -rf "$_td18"; unset _td18 _dono52
 unset -f _trava52
 
 printf "\n=== 53. sessao anonima na luta, chaves desligadas, FIXHP, config, inscricao ===\n"
@@ -5254,6 +5273,92 @@ _d164() { ( TMP="$_td64/d1"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" >
 check "dia 1 de madrugada: caverna e pulsos do Coliseu com 15s; resto 60s" "15 15 60" \
     "`_d164 1 17 1` `_d164 3 44 0` `_d164 6 17 0`"
 rm -rf "$_td64"; unset _td64 _r; unset -f _dm64 _cc64 _d164
+
+# =============================================================================
+printf "\n=== 65. travas, um play.sh por vez, stop.sh e uninstall ===\n"
+# =============================================================================
+_td65=`mktemp -d`
+
+# --- Sonda do disjuntor: trava sem PID e velha nao segura a sonda para sempre.
+_r=$( HOME="$_td65/h"; TMP="$_td65/t"; URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1
+      export HOME TMP URL SLS_TAG SLS_DISJUNTOR; mkdir -p "$HOME/.sls/net" "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl() { echo sonda >> "$_td65/req"; }
+      date +%s > "$HOME/.sls/net/BR.aberto"
+      mkdir "$HOME/.sls/net/BR.sonda"; touch -t 200001010000 "$HOME/.sls/net/BR.sonda"
+      disjuntor_segura > /dev/null 2>&1
+      printf '%s' "`cat "$_td65/req" 2>/dev/null | wc -l | tr -d ' '`" )
+check "sonda: trava sem PID ha mais de 1 min nao segura a sonda" 1 "$_r"
+check "sls.sh: encerrado no meio do login, a trava sai junto (trap EXIT)" 1 \
+    "`grep -c '^trap .*_lk_meu.*rm -rf .*LOCKDIR.* EXIT$' "$LIB/sls.sh"`"
+
+# --- play.sh: um por vez no le/encerra/grava do orchestrator.pid; trava
+# presa de um play.sh morto nao segura o proximo.
+_bl65=`sed -n '/^_orq_lk=/,/^unset _orq_lk/p' "$ROOT/play.sh"`
+_r=$( STATUS_DIR="$_td65/st"; mkdir -p "$STATUS_DIR/.orq.lock"
+      sleep() { :; }
+      eval "$_bl65"
+      printf '%s %s' "`cat "$STATUS_DIR/orchestrator.pid"`" "`[ -d "$STATUS_DIR/.orq.lock" ] && echo trava_ficou || echo trava_saiu`" )
+check "play.sh: trava presa nao segura; grava o pid e solta a trava" "$$ trava_saiu" "$_r"
+_l1=`printf '%s\n' "$_bl65" | grep -n 'until mkdir' | cut -d: -f1`
+_l2=`printf '%s\n' "$_bl65" | grep -n '^_orq=\$(cat' | cut -d: -f1`
+_l3=`printf '%s\n' "$_bl65" | grep -n 'orchestrator.pid"$' | tail -n1 | cut -d: -f1`
+_l4=`printf '%s\n' "$_bl65" | grep -n '^rm -rf "\$_orq_lk"' | cut -d: -f1`
+if [ -n "$_l1" ] && [ -n "$_l4" ] && [ "$_l1" -lt "$_l2" ] && [ "$_l3" -lt "$_l4" ]; then
+    ok "play.sh: a trava cobre ler o .pid, encerrar o anterior e gravar o novo"
+else
+    bad "play.sh: ordem da trava do orchestrator ($_l1 $_l2 $_l3 $_l4)"
+fi
+unset _bl65 _l1 _l2 _l3 _l4
+
+# --- stop.sh: script_do_bot reconhece o shell rodando o play.sh desta pasta,
+# de dentro dela ou de outra; nao um editor/visualizador nem o de outra pasta.
+mkdir -p "$_td65/bot" "$_td65/outro"
+printf 'sleep 30\n' > "$_td65/bot/play.sh"; printf 'sleep 30\n' > "$_td65/outro/play.sh"
+( cd "$_td65/bot" && exec sh ./play.sh ) & _p65a=$!
+( cd "$_td65" && exec sh "$_td65/bot/play.sh" ) & _p65b=$!
+( cd "$_td65/bot" && exec tail -f play.sh ) > /dev/null 2>&1 & _p65c=$!
+( cd "$_td65/outro" && exec sh ./play.sh ) & _p65d=$!
+sleep 1
+_r=$( SLSDIR=`cd "$_td65/bot" && pwd -P`
+      eval "`sed -n '/^script_do_bot() {/,/^}/p' "$ROOT/stop.sh"`"
+      for _p in $_p65a $_p65b $_p65c $_p65d; do script_do_bot "$_p" play.sh && printf S || printf N; done )
+if [ -r "/proc/$_p65a/cmdline" ]; then
+    check "stop.sh: play.sh do bot (de dentro e de fora) sim; tail -f play.sh e outro bot nao" "SSNN" "$_r"
+else
+    ok "stop.sh: sem /proc legivel neste aparelho (teste pulado)"
+fi
+kill $_p65a $_p65b $_p65c $_p65d 2>/dev/null; wait $_p65a $_p65b $_p65c $_p65d 2>/dev/null
+unset _p65a _p65b _p65c _p65d
+
+# --- stop.sh com 3 contas: TERM em todas e UMA espera (eram 2s por conta).
+mkdir -p "$_td65/sh/.sls/status" "$_td65/w/lib"; printf 'sleep 60\n' > "$_td65/w/lib/sls.sh"
+_ws65=""
+for _c in A B C; do
+    sh "$_td65/w/lib/sls.sh" & echo $! > "$_td65/sh/.sls/status/BR_$_c.pid"; _ws65="$_ws65 $!"
+done
+sleep 1
+_t0=`date +%s`; ( HOME="$_td65/sh" sh "$ROOT/stop.sh" ) > /dev/null 2>&1; _t1=`date +%s`
+_r=""; for _p in $_ws65; do kill -0 "$_p" 2>/dev/null && _r="${_r}V" || _r="${_r}M"; done
+check "stop.sh: tres contas paradas" "MMM" "$_r"
+[ $(( _t1 - _t0 )) -le 4 ] && ok "stop.sh: uma espera so ($(( _t1 - _t0 ))s para 3 contas; eram 1+2x3)" \
+                           || bad "stop.sh: lento ($(( _t1 - _t0 ))s para 3 contas)"
+kill $_ws65 2>/dev/null; wait $_ws65 2>/dev/null; unset _ws65 _t0 _t1 _c _p
+
+# --- uninstall.sh: bot clonado direto no HOME nao apaga o HOME.
+mkdir -p "$_td65/casa/lib" "$_td65/fake"
+for _f in uninstall.sh play.sh stop.sh setup.sh; do cp "$ROOT/$_f" "$_td65/casa/"; done
+cp "$LIB/sls.sh" "$LIB/info.sh" "$_td65/casa/lib/"
+for _b in rm pkill sleep du termux-wake-unlock; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$_b" "$_td65/apagou" > "$_td65/fake/$_b"
+    chmod +x "$_td65/fake/$_b"
+done
+echo REMOVER | ( HOME="$_td65/casa" PATH="$_td65/fake:$PATH" sh "$_td65/casa/uninstall.sh" ) > /dev/null 2>&1
+grep -q "rm -rf" "$_td65/apagou" 2>/dev/null && _r=apagaria || _r=recusou
+check "uninstall.sh: bot no proprio HOME nao apaga o HOME" recusou "$_r"
+check "uninstall.sh: so apaga em /tmp o que o bot cria" 0 \
+    "`grep -v '^ *#' "$ROOT/uninstall.sh" | grep -c '/tmp/sls_\*\|/tmp/diag_\*'`"
+rm -rf "$_td65"; unset _td65 _r _f _b
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
