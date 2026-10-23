@@ -155,9 +155,8 @@ func_sleep() {
                 coliseum_start
                 ativ_marcar missao11
             fi
-            i=60
-            func_cat
-            return 0
+            # Segue para a espera de sempre: com "i=60; return" aqui, no dia 1
+            # a caverna da madrugada e os pulsos do Coliseu perdiam os 15s.
         fi
     fi
 

@@ -187,9 +187,26 @@ clandmgfight_fight() {
 }
 
 # Rodadas em laco, uma inscricao por rodada.
+#
+# LIMITES DAS RODADAS (a luta em si nao muda):
+#   - so com cla: o duelo e de cla, como os outros eventos de cla (run.sh);
+#   - nenhuma rodada nova a partir de :45: a rodada leva ate ~3 min e o Vale
+#     inscreve as :55 (09:55 e 21:55);
+#   - duas rodadas seguidas sem luta encerram: sem adversario, cada rodada
+#     eram ~50 pedidos (espera e confirmacao do fim) e o laco seguia ate :49.
 clandmgfight_start() {
   cd "$TMP" || return 1
+  if [ -z "$CLD" ]; then
+    printf "Clan duel: conta sem cla - pulando\n"
+    return 1
+  fi
+  _dm_vazias=0
   while :; do
+  # Rodada anterior sem luta na tela (luta_hp/luta_acabou nao viram luta).
+  if [ "$_dm_vazias" -ge 2 ]; then
+    printf "Clan duel: duas rodadas seguidas sem luta - encerrando\n"
+    break
+  fi
   case `date +%H:%M` in
   09:2[5-9]|21:2[5-9])
     full_atualizar "$TMP/FULL"
@@ -226,9 +243,10 @@ clandmgfight_start() {
       sleep 3
     done
     clandmgfight_fight
+    if [ "${_lt_lutou:-0}" = 1 ]; then _dm_vazias=0; else _dm_vazias=$(( _dm_vazias + 1 )); fi
     sleep 10s
     ;;
-  09:[3-4][0-9]|21:[3-4][0-9])
+  09:3[0-9]|09:4[0-4]|21:3[0-9]|21:4[0-4])
     printf "The clan duel will be started...\n"
     batalha_marcar clandmgfight
     (
@@ -249,9 +267,11 @@ clandmgfight_start() {
       sleep 3
     done
     clandmgfight_fight
+    if [ "${_lt_lutou:-0}" = 1 ]; then _dm_vazias=0; else _dm_vazias=$(( _dm_vazias + 1 )); fi
     sleep 10s
     ;;
   *) break ;;
   esac
   done
+  unset _dm_vazias
 }

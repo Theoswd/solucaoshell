@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.104"
+versionNum="3.9.105"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -1297,7 +1297,11 @@ fetch_train_stats() {
     # o last_train quando o nivel muda. Sem HP maximo conhecido, le sempre.
     _ft_min="${1:-60}"
     case "$_ft_min" in ''|*[!0-9]*) _ft_min=60 ;; esac
-    if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train "$_ft_min"; then
+    # Energia que a ultima leitura do /train nao achou (_FT_SEM_ENE) tambem
+    # espera o intervalo: sem isso, um rotulo que o grep nao casa fazia todo
+    # login_logoff e todo painel pedirem o /train de novo.
+    if [ -n "$FIXHP" ] && { [ -n "$ACC_ENE" ] || [ "${_FT_SEM_ENE:-0}" = 1 ]; } && \
+       ! ativ_liberada train "$_ft_min"; then
         unset _ft_min
         return 0
     fi
@@ -1309,14 +1313,18 @@ fetch_train_stats() {
     # Pagina de erro ou de login nao traz o HP maximo: mantem o ultimo lido
     # (vazio zeraria o limiar de cura). So a leitura com o HP maximo carimba.
     _fx=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
-    [ -n "$_fx" ] && FIXHP=$_fx && date +%s > "$TMP/last_train" 2>/dev/null
+    _ft_hp=0
+    [ -n "$_fx" ] && FIXHP=$_fx && _ft_hp=1 && date +%s > "$TMP/last_train" 2>/dev/null
     _fx=`printf '%s' "$_t" | grep -o -E ': [0-9]+' | sed -n '5s/: //p'`
     [ -n "$_fx" ] && FIXMP=$_fx
     unset _fx
     # Teto de energia, com o sufixo K/M. Mesma regra do status_ler: entre o
     # rotulo e o numero vem "</span> <span class='white'>".
     ACC_ENE=`printf '%s' "$_t" | grep -o -E "Energia:?[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
-    unset _t
+    # Pagina com o HP maximo e sem a energia: a falta e da pagina, nao da rede.
+    _FT_SEM_ENE=0
+    [ -z "$ACC_ENE" ] && [ "$_ft_hp" = 1 ] && _FT_SEM_ENE=1
+    unset _t _ft_hp
 }
 
 # Linha de status no log da conta. Imprime so o que existe.

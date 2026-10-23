@@ -297,6 +297,8 @@ clancommand_start() {
   _cc_link=`_cc_inscricao "$src_ram"`
   _cc_seg=`_cc_restam "$src_ram"`
   case "$_cc_seg" in *[!0-9]*) _cc_seg= ;; esac
+  # Instante da leitura do contador (a espera abaixo desconta o que passou).
+  _cc_t0=`date +%s`; _cc_cont="$_cc_seg"
 
   # Sem link de inscricao nao quer dizer sem torneio: so o LIDER tem
   # "Aplicar". "Sem torneio" exige a falta de link, de contador e da sala de
@@ -347,6 +349,18 @@ clancommand_start() {
   BREAK=$(($(date +%s) + _cc_lim))
   ACCESS=`link_acao "$src_ram" clancommand`
 
+  # CONTADOR LIDO: DORME ATE 15s ANTES DO INICIO. Reler a pagina a cada ~4s
+  # durante ate 10 min eram 75-150 pedidos por conta antes da luta; a luta
+  # nao abre antes do contador. Dali em diante o laco de baixo rele como
+  # sempre. Sem contador na pagina, nada muda.
+  if [ -n "$_cc_cont" ] && [ "`estado_luta "$src_ram" clancommand`" != luta ]; then
+    _cc_dorme=$(( _cc_cont - 15 - ( $(date +%s) - _cc_t0 ) ))
+    if [ "$_cc_dorme" -gt 0 ]; then
+      printf " inicio em %ss - aguardando sem reler a pagina\n" "$_cc_cont"
+      sleep "$_cc_dorme"
+    fi
+  fi
+
   until [ "`estado_luta "$src_ram" clancommand`" = luta ] || \
         [ "$(date +%s)" -gt "$BREAK" ]; do
     printf " aguardando o inicio...\n"
@@ -372,5 +386,5 @@ clancommand_start() {
     rm -f "$src_ram"
     unset src_ram ACCESS
   fi
-  unset _cc_link _cc_seg _cc_lim
+  unset _cc_link _cc_seg _cc_lim _cc_t0 _cc_cont _cc_dorme
 }

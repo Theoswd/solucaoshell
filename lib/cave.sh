@@ -82,6 +82,9 @@ cave_start() {
         if [ -n "$MONSTER_RUNAWAY" ]; then
             printf "Monster found - running away (no gold spent)\n"
             fetch_page "$MONSTER_RUNAWAY"
+            # O link de acao (e o nonce ?r=) e o da pagina de ANTES da fuga:
+            # o servidor recusa. A volta seguinte o tira da pagina nova.
+            continue
         fi
 
         read_speedup_silver_cost
@@ -99,7 +102,9 @@ cave_start() {
                 ;;
         esac
 
-        if [ "$SPEEDUP_SILVER_COST" -gt 0 ]; then
+        # So o acelerar gasta prata: o preco lido na pagina nao conta quando
+        # a acao foi pesquisa ou mineracao (encerrava a caverna antes da hora).
+        if [ "$RESULT" = speedUp ] && [ "$SPEEDUP_SILVER_COST" -gt 0 ]; then
             SILVER_SPENT_TOTAL=$((SILVER_SPENT_TOTAL + SPEEDUP_SILVER_COST))
         fi
 

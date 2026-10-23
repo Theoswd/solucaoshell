@@ -5167,6 +5167,94 @@ check "setup: cadastrar conta apaga o 'stopped' que sobrou dela" 1 \
     "`sed -n '/^add_account() {/,/^}/p' "$ROOT/setup.sh" | grep -c 'rm -f "\$HOME/.sls/status/\${tag}_\${user}.status"'`"
 rm -rf "$_td63"; unset _td63 _r
 
+# =============================================================================
+printf "\n=== 64. menos pedidos: duelo, torneio de equipe, caverna -cv, /train, dia 1 ===\n"
+# =============================================================================
+_td64=`mktemp -d`
+
+# --- Duelo do Cla: rodadas com o relogio andando um minuto por rodada.
+#   _dm64 CLD LUTA HORA_INICIAL -> "rodadas=N" (LUTA 1 = toda rodada tem luta)
+_dm64() {
+    ( TMP="$_td64/dm"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clandmg.sh" > /dev/null 2>&1
+      CLD="$1"; _LUTA="$2"; echo "$3" > "$TMP/min"
+      date() { case "$1" in
+          +%H:%M) read -r _m < "$TMP/min"; echo $(( _m + 1 )) > "$TMP/min"; printf '09:%02d' "$_m" ;;
+          +%s) echo 100000 ;; *) command date "$@" ;; esac; }
+      run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      batalha_marcar() { :; }; link_acao() { :; }; estado_luta() { echo luta; }; full_atualizar() { :; }
+      clandmgfight_fight() { echo r >> "$TMP/rodadas"; _lt_lutou="$_LUTA"; }
+      clandmgfight_start > /dev/null 2>&1
+      printf 'rodadas=%s' "`cat "$TMP/rodadas" 2>/dev/null | wc -l | tr -d ' '`" )
+}
+check "duelo do cla: conta sem cla nao entra" "rodadas=0" "`_dm64 '' 1 30`"
+check "duelo do cla: duas rodadas seguidas sem luta encerram (antes: ate :49)" "rodadas=2" "`_dm64 999 0 30`"
+check "duelo do cla: com luta, nenhuma rodada nova a partir de :45" "rodadas=5" "`_dm64 999 1 40`"
+
+# --- Torneio de Equipe: contador de 300s na pagina (membro). Relogio em
+# $TMP/t, que o sleep anda. A luta abre aos 300s.
+#   -> "leituras=N luta_aos=S"
+_cc64() {
+    ( TMP="$_td64/cc"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      echo 100000 > "$TMP/t"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      run_curl_exec() {
+          echo "$1" >> "$TMP/req"; read -r _t < "$TMP/t"
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          if [ "$_t" -ge 100300 ]; then echo "$_p <a href='/clancommand/attack/?r=1'>Atacar</a>"
+          else echo "$_p <span id='time_$(( (100300 - _t) * 1000 ))'>min</span> Lider nao se inscreveu <a href='/clancommand/'>Atualizar</a>"; fi; }
+      full_atualizar() { :; }; batalha_marcar() { :; }; batalha_limpar() { :; }; evento_cancelar() { :; }
+      clancommand_fight() { read -r _t < "$TMP/t"; echo "$(( _t - 100000 ))" > "$TMP/luta"; }; clancommand_inscrever() { :; }
+      clancommand_start > /dev/null 2>&1
+      printf 'leituras=%s luta_aos=%s' "`grep -c '/clancommand/$' "$TMP/req"`" "`cat "$TMP/luta" 2>/dev/null`" )
+}
+_r=`_cc64`
+case "$_r" in
+    "leituras="[1-8]" luta_aos=30"[0-5]) ok "torneio de equipe: dorme ate perto do inicio e entra na hora ($_r)" ;;
+    *) bad "torneio de equipe: espera antes da luta ($_r)" ;;
+esac
+
+# --- Caverna -cv: depois da fuga do monstro o link vem da pagina NOVA; o
+# preco do acelerar so conta quando a acao foi acelerar.
+_r=$( TMP="$_td64/cv"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; RUN=-cv; export TMP URL RUN
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      clan_id() { :; }; get_config() { :; }; espera_interrompivel() { :; }; sleep() { :; }; bottom_info() { :; }
+      _viva="<script>jsInterface.event(\"user=5;level=40\")</script>"
+      echo 0 > "$TMP/passo"
+      fetch_page() {
+          case "$1" in /cave/) : ;; *) echo "$1" >> "$TMP/req" ;; esac
+          read -r _p < "$TMP/passo"; echo $(( _p + 1 )) > "$TMP/passo"
+          case "$_p" in
+              0) echo "Monstro! <a href='/cave/runaway/?r=1'>Fugir</a> <a href='/cave/gather/?r=1'>Minerar</a> $_viva" ;;
+              1) echo "<a href='/cave/gather/?r=2'>Minerar</a> <a href='/cave/speedUp/?r=2'>Acelerar <img src='/images/icon/silver.png' alt=''/> 500</a> $_viva" ;;
+              *) echo "espera $_viva" ;;
+          esac > "$TMP/SRC"; }
+      cave_start > /dev/null 2>&1
+      printf '%s| gasto=%s' "`tr '\n' ' ' < "$TMP/req"`" "$SILVER_SPENT_TOTAL" )
+check "caverna -cv: link relido depois da fuga e preco so no acelerar" \
+    "/cave/runaway/?r=1 /cave/gather/?r=2 | gasto=0" "$_r"
+
+# --- /train sem energia na pagina: a segunda chamada espera o intervalo.
+_r=$( TMP="$_td64/tr"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo x >> "$TMP/req"; echo "Vida (5000) : 1 : 2 : 3 : 4 : 5"; }
+      FIXHP=5000; ACC_ENE=""
+      fetch_train_stats; fetch_train_stats; fetch_train_stats
+      printf '%s %s' "`wc -l < "$TMP/req" | tr -d ' '`" "$FIXHP" )
+check "/train sem a energia na pagina: um pedido, nao um por chamada" "1 5000" "$_r"
+
+# --- Dia 1 antes das 9h: a missao 11 nao tira a espera curta da madrugada.
+_d164() { ( TMP="$_td64/d1"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+            _M=$2; _A=$3; dia_atual() { _DIA=01; }; minuto_atual() { _MIN=$_M; }; func_cat() { printf '%s' "$i"; }
+            caverna_noite_ativa() { [ "$_A" = 1 ]; }; coliseum_start() { :; }
+            HOUR=$1; func_sleep 2>/dev/null ) ; }
+check "dia 1 de madrugada: caverna e pulsos do Coliseu com 15s; resto 60s" "15 15 60" \
+    "`_d164 1 17 1` `_d164 3 44 0` `_d164 6 17 0`"
+rm -rf "$_td64"; unset _td64 _r; unset -f _dm64 _cc64 _d164
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
