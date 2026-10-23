@@ -210,7 +210,9 @@ printf "\n=== 6. Uma requisicao por ciclo: recarga espera sem requisitar ===\n"
 # O ramo ocioso (else) so faz requisicao quando o alvo esta grey; fora disso
 # espera o restante da recarga com 'sleep \$_resta', sem recarregar a pagina.
 for f in clanfight.sh clandmg.sh altars.sh coliseum.sh clancoliseum.sh flagfight.sh clancommand.sh; do
-    if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk' "$LIB/$f"; then
+    # O Coliseu (3.9.107) acorda no minimo da troca quando ela e a proxima
+    # acao: _col_alvo e o LA ou o COL_TROCA_MIN.
+    if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk\|_col_alvo - time_since_last_atk' "$LIB/$f"; then
         ok "$f: espera o restante da recarga (sleep do cooldown, sem request)"
     else
         bad "$f: nao encontrou a espera de recarga sem requisicao"
@@ -5359,6 +5361,69 @@ check "uninstall.sh: bot no proprio HOME nao apaga o HOME" recusou "$_r"
 check "uninstall.sh: so apaga em /tmp o que o bot cria" 0 \
     "`grep -v '^ *#' "$ROOT/uninstall.sh" | grep -c '/tmp/sls_\*\|/tmp/diag_\*'`"
 rm -rf "$_td65"; unset _td65 _r _f _b
+
+# =============================================================================
+printf "\n=== 66. Coliseu: troca por inimigo forte com 4s e no maximo 2 seguidas ===\n"
+# =============================================================================
+# Pedido do dono (3.9.107). Mesmo roteiro de paginas para o codigo ANTIGO
+# (o coliseum.sh atual com as tres linhas da troca devolvidas ao que eram) e o
+# NOVO: sala so com inimigo mais forte (HP 9000 x 5000 meu), sem cura nem
+# esquiva devidas; relogio simulado, 1s por pedido; aos 40s o jogo encerra.
+_td66=`mktemp -d`
+sed -e 's/\[ "\$time_since_last_atk" -ge "\$COL_TROCA_MIN" \]/[ "$time_since_last_atk" -ne "$LA" ]/' \
+    -e 's/\[ "\$_col_trocas" -lt "\$COL_TROCAS_MAX" \] && \\$/[ 1 = 1 ] \&\& \\/' \
+    -e 's/_col_alvo=\$COL_TROCA_MIN$/_col_alvo=$LA/' \
+    "$LIB/coliseum.sh" > "$_td66/coliseum_antigo.sh"
+#   _col66 ARQUIVO_DO_MODULO [HP_DO_INIMIGO] -> "segundo:acao ..." das acoes de luta
+_col66() {
+    _en66="${2:-9000}"
+    ( TMP="$_td66/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$1" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; echo 10000 > "$TMP/col_full"; : > "$TMP/req"; COLISEU_GRAFICO=1
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in */coliseum/atk/*|*/coliseum/atkrnd/*) _v=${1#*/coliseum/}; echo "$(( _t - 1000 )):${_v%%/*}" >> "$TMP/req" ;; esac
+          if [ "$_t" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/coliseum/?end_fight=true'>Fim</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 5000 Inimigo <span class='nwr'>&nbsp;$_en66</span>
+                    <a href='/coliseum/atk/?r=$_t'>a</a> <a href='/coliseum/atkrnd/?r=$_t'>t</a> <a href='/coliseum/dodge/?r=$_t'>d</a> <a href='/coliseum/heal/?r=$_t'>h</a>"
+          fi; }
+      coliseum_fight > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/req" )
+}
+_v66=`_col66 "$LIB/coliseum.sh"`
+_a66=`_col66 "$_td66/coliseum_antigo.sh"`
+printf "  [INFO] antigo: %s\n  [INFO] novo:   %s\n" "$_a66" "$_v66"
+# Resumo: ataques, trocas, maior sequencia de trocas e menor intervalo entre acoes.
+_res66() { printf '%s\n' $1 | awk -F: '
+    { if ($2 == "atk") { a++; s = 0 } else { r++; s++; if (s > m) m = s }
+      if (NR > 1 && (min == "" || $1 - u < min)) min = $1 - u; u = $1 }
+    END { printf "atk=%d trocas=%d seguidas=%d intervalo_min=%d", a, r, m, min }'; }
+_rv66=`_res66 "$_v66"`; _ra66=`_res66 "$_a66"`
+printf "  [INFO] antigo: %s | novo: %s\n" "$_ra66" "$_rv66"
+case "$_ra66" in "atk=0 "*) ok "Coliseu ANTIGO no roteiro: so trocava, nenhum ataque ($_ra66)" ;;
+                 *) bad "Coliseu antigo nao reproduz o defeito ($_ra66)" ;; esac
+case "$_rv66" in
+    "atk="[1-9]*" seguidas=2 intervalo_min="[4-9]*) ok "Coliseu NOVO: ataca, no maximo 2 trocas seguidas, acoes com 4s ou mais ($_rv66)" ;;
+    *) bad "Coliseu novo ($_rv66)" ;;
+esac
+# A ordem do novo: troca, troca, ataque, de novo.
+case "$_v66" in
+    *":atkrnd "*":atkrnd "*":atk "*":atkrnd "*":atkrnd "*":atk "*) ok "Coliseu NOVO: troca, troca, ataque (e repete)" ;;
+    *) bad "Coliseu novo fora da ordem troca, troca, ataque ($_v66)" ;;
+esac
+# Inimigo mais fraco (3000 x 5000 meu): a troca nao entra, e o antigo e o
+# novo fazem exatamente os mesmos pedidos (so ataques, a cada 6s).
+_v66f=`_col66 "$LIB/coliseum.sh" 3000`; _a66f=`_col66 "$_td66/coliseum_antigo.sh" 3000`
+case "$_v66f" in
+    *atk*) check "Coliseu com inimigo fraco: antigo e novo iguais" "$_a66f" "$_v66f" ;;
+    *)     bad "Coliseu com inimigo fraco: nenhum ataque no roteiro ($_v66f)" ;;
+esac
+rm -rf "$_td66"; unset _td66 _v66 _a66 _rv66 _ra66 _v66f _a66f _en66; unset -f _col66 _res66
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
