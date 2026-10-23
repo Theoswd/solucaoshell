@@ -108,9 +108,11 @@ coliseum_fight() {
             # Os relogios de cura/esquiva/ataque sao iniciados uma vez, antes
             # do laco, nunca aqui (a recarga de 90s nunca valeria).
 
-            # Mesmo padrao dos outros modulos: 1 a 6 digitos, primeira ocorrencia.
-            USH=`grep -o -E '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}' "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
-            ENH=`grep -o -E '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,6}' "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p'`
+            # Mesmo padrao dos outros modulos: 1 a 9 digitos (como o
+            # parse_status; com 6, HP de 1.000.000 virava 100000), primeira
+            # ocorrencia.
+            USH=`grep -o -E '(hp)[^A-Za-z0-9]{1,4}[0-9]{1,9}' "$src_ram" | head -n 1 | grep -o -E '[0-9]+$'`
+            ENH=`grep -o -E '(nbsp)[^A-Za-z0-9]{1,2}[0-9]{1,9}' "$src_ram" | sed -n 's,nbsp[;],,;s,\ ,,;1p'`
 
             ATK=`grep -o -E '/coliseum/atk/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
             ATKRND=`grep -o -E '/coliseum/atkrnd/[?]r[=][0-9]+' "$src_ram" | sed -n 1p`
@@ -280,8 +282,11 @@ coliseum_start() {
         return
     fi
 
+    # Minutos que antecedem as inscricoes do run.sh: uma luta de Coliseu
+    # comecada ali cobriria a janela. 11:2x e 17:5x sao do Torneio de Equipe
+    # (faltavam: uma luta das 11:24 ou 17:54 tomava a inscricao dele).
     if (case `date +%H:%M` in
-        (09:2[4-9]|09:5[4-9]|10:1[0-4]|10:2[4-9]|10:5[4-9]|12:2[4-9]|13:5[4-9]|14:5[4-9]|15:5[4-9]|16:1[0-4]|16:2[4-9]|18:5[4-9]|20:5[4-9]|21:2[4-9]|21:5[4-9]|22:2[4-9])
+        (09:2[4-9]|09:5[4-9]|10:1[0-4]|10:2[4-9]|10:5[4-9]|11:2[4-9]|12:2[4-9]|13:5[4-9]|14:5[4-9]|15:5[4-9]|16:1[0-4]|16:2[4-9]|17:5[4-9]|18:5[4-9]|20:5[4-9]|21:2[4-9]|21:5[4-9]|22:2[4-9])
             exit 1
             ;;
         esac)

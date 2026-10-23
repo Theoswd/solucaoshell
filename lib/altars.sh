@@ -14,7 +14,7 @@ altars_fight() {
     grep -o -E '(/altars/heal/[?]r[=][0-9]+)' "$TMP/src.html" | sed -n 1p > HEAL 2>/dev/null
     alvo_nome "$TMP/src.html" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/src.html" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
+    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,9}" "$TMP/src.html" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; [ -s HEAL ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1

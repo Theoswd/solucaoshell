@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.107"
+versionNum="3.9.108"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -508,8 +508,9 @@ servidor_mudo_marcar() {
 # de 30 min fecha sozinho (estado velho depois de um stop). SLS_DISJUNTOR=0
 # desliga.
 #
-# Arquivos em ~/.sls/net/TAG.*: falhas (epoch<TAB>pasta da conta), aberto e fechou
-# (epoch), sonda (trava mkdir com o PID), sonda_ult (epoch da ultima sonda).
+# Arquivos em ~/.sls/net/TAG.*: falha.CONTA (epoch da ultima falha daquela
+# conta, um arquivo por conta), aberto e fechou (epoch), sonda (trava mkdir
+# com o PID), sonda_ult (epoch da ultima sonda).
 disjuntor_base() { _DJ="$HOME/.sls/net/${SLS_TAG:-BR}"; }
 
 disjuntor_falha() {
@@ -517,14 +518,22 @@ disjuntor_falha() {
     disjuntor_base
     mkdir -p "$HOME/.sls/net" 2>/dev/null
     _dj_t=`date +%s`
-    printf '%s\t%s\n' "$_dj_t" "${TMP:-$$}" >> "$_DJ.falhas" 2>/dev/null
+    # UM ARQUIVO POR CONTA, cada uma escreve so o seu: antes as contas
+    # anexavam num arquivo comum e cada uma o regravava (awk + mv); uma
+    # falha anexada entre o awk e o mv de outra se perdia, e o disjuntor
+    # abria tarde justamente com todas falhando juntas.
+    _dj_c=${TMP:-$$}; _dj_c=${_dj_c##*/}
+    echo "$_dj_t" > "$_DJ.falha.$_dj_c" 2>/dev/null
     if [ ! -f "$_DJ.aberto" ]; then
-        # Um awk: conta as contas distintas na janela e ja apara o arquivo.
-        _dj_n=`awk -F '\t' -v agora="$_dj_t" -v jan="${SLS_DISJ_JANELA:-30}" -v sai="$_DJ.falhas.$$" '
-            $1 + 0 >= agora - jan { print > sai; if (!($2 in v)) { v[$2] = 1; n++ } }
-            END { print n + 0 }' "$_DJ.falhas" 2>/dev/null`
-        mv -f "$_DJ.falhas.$$" "$_DJ.falhas" 2>/dev/null
-        case "$_dj_n" in ''|*[!0-9]*) _dj_n=0 ;; esac
+        # Contas com falha na janela, so com read (nenhum processo).
+        _dj_n=0
+        for _dj_f in "$_DJ".falha.*; do
+            [ -f "$_dj_f" ] || continue
+            _dj_x=""; { read -r _dj_x < "$_dj_f"; } 2>/dev/null
+            case "$_dj_x" in ''|*[!0-9]*) continue ;; esac
+            [ "$_dj_x" -ge $(( _dj_t - ${SLS_DISJ_JANELA:-30} )) ] && _dj_n=$(( _dj_n + 1 ))
+        done
+        unset _dj_f _dj_x
         if [ "$_dj_n" -ge "${SLS_DISJ_CONTAS:-3}" ]; then
             echo "$_dj_t" > "$_DJ.aberto" 2>/dev/null
             rm -f "$_DJ.fechou" 2>/dev/null
@@ -532,7 +541,7 @@ disjuntor_falha() {
                 "${SLS_TAG:-BR}" "$_dj_n" "${SLS_DISJ_JANELA:-30}"
         fi
     fi
-    unset _dj_t _dj_n
+    unset _dj_t _dj_n _dj_c
     return 0
 }
 
@@ -541,7 +550,7 @@ disjuntor_fechar() {   # MOTIVO
     [ -f "$_DJ.aberto" ] || return 0
     _dj_a=""; { read -r _dj_a < "$_DJ.aberto"; } 2>/dev/null
     _dj_t=`date +%s`
-    rm -f "$_DJ.aberto" "$_DJ.falhas" 2>/dev/null
+    rm -f "$_DJ.aberto" "$_DJ".falha.* 2>/dev/null
     echo "$_dj_t" > "$_DJ.fechou" 2>/dev/null
     case "$_dj_a" in ''|*[!0-9]*) _dj_a=$_dj_t ;; esac
     printf "[disjuntor] %s de volta (%s) depois de %ss — contas voltam em ate 20s\n" \

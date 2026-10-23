@@ -57,6 +57,9 @@ cave_start() {
     set_cave_limits
 
     while echo "$RUN" | grep -q -E '[-]cv'; do
+        # Com acao na caverna este laco nao volta ao do sls.sh, que e quem
+        # confere o tamanho dos logs: confere aqui tambem.
+        type rotate_log > /dev/null 2>&1 && rotate_log
         CAVE=`grep -o -E '/cave/(gather|down|speedUp)/[?]r[=][0-9]+' "$TMP/SRC" | sed -n '1p'`
         RESULT=`echo "$CAVE" | cut -d'/' -f3`
 

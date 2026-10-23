@@ -258,6 +258,11 @@ remove_account() {
                 kill -TERM "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
             fi
             unset _pf _pid
+            # A credencial (cript_file) e a sessao do jogo (cookie.txt) da
+            # conta removida saem SEMPRE; antes so com o "y" abaixo, e a senha
+            # ficava em ~/.sls depois de a conta sair do accounts.conf. Logs
+            # e marcadores ficam a criterio da pergunta.
+            rm -f "$acc_dir/cript_file" "$acc_dir/cookie.txt" 2>/dev/null
             printf "${GREEN}Removida.${RESET}\n"
             if [ -d "$acc_dir" ]; then
                 printf "Remover dados em %s? (y/n): " "$acc_dir"

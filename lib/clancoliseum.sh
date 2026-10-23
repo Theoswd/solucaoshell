@@ -16,7 +16,7 @@ clancoliseum_fight() {
     grep -o -E '(/clancoliseum/heal/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > HEAL 2>/dev/null
     alvo_nome "$src_ram" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
+    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,9}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat USH`
     _cura=0; [ -s HEAL ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1

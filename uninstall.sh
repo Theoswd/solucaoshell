@@ -77,9 +77,9 @@ termux-wake-unlock 2>/dev/null
 printf "Removendo arquivos...\n"
 rm -rf "$HOME/.sls"
 # So o que o bot cria: o cookie do teste de login do setup.sh
-# (sls_test_PID.txt). "/tmp/sls_*" e "/tmp/diag_*" pegavam arquivos de
-# outros programas.
-rm -f /tmp/play_out.log "${TMPDIR:-/tmp}"/sls_test_*.txt /tmp/sls_test_*.txt 2>/dev/null
+# (sls_test_XXXXXX do mktemp, ou sls_test_PID.txt sem ele). "/tmp/sls_*" e
+# "/tmp/diag_*" pegavam arquivos de outros programas.
+rm -f /tmp/play_out.log "${TMPDIR:-/tmp}"/sls_test_* /tmp/sls_test_* 2>/dev/null
 printf "  ${G}dados removidos${N}\n"
 
 # 4. o proprio diretorio, por ultimo

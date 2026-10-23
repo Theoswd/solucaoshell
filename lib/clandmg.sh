@@ -21,7 +21,7 @@ clandmgfight_fight() {
     erva_gratis clandmgfight "$TMP/SRC" > GRASS
     alvo_nome "$TMP/SRC" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
+    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,9}" "$TMP/SRC" | sed "s,hp[']\\/[>],,;s,\ ,," > HP 2>/dev/null
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; { [ -s HEAL ] || [ -s GRASS ]; } && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1

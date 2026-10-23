@@ -320,11 +320,22 @@ _rl_voltas=0
 rotate_log() {
     _rl_voltas=$(( _rl_voltas + 1 ))
     [ $(( _rl_voltas % 10 )) -eq 1 ] || return 0
-    for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG"; do
+    # O blessing_blocked.log (bloqueios da Bencao) nao tinha limite nenhum.
+    for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG" "$TMP/blessing_blocked.log"; do
         _sz=$(wc -c < "$_lg" 2>/dev/null)
         case "$_sz" in ''|*[!0-9]*) continue ;; esac
         [ "$_sz" -gt 5242880 ] && tail -c 1048576 "$_lg" > "$_lg.1" && : > "$_lg"
     done
+    # TELEMETRIA: o tele_registrar corta o req.stat a cada 300 registros DO
+    # MESMO PROCESSO; um worker relancado antes disso (SIGKILL do Android)
+    # recomecava a conta e o arquivo crescia sem limite. Aqui o corte vale
+    # pelo tamanho (64 KB, ~2000 linhas), na primeira volta de cada worker.
+    _sz=$(wc -c < "$TMP/req.stat" 2>/dev/null)
+    case "$_sz" in
+        ''|*[!0-9]*) ;;
+        *) [ "$_sz" -gt 65536 ] && tail -n 200 "$TMP/req.stat" > "$TMP/req.stat.t" 2>/dev/null \
+               && mv -f "$TMP/req.stat.t" "$TMP/req.stat" ;;
+    esac
     unset _lg _sz
 }
 

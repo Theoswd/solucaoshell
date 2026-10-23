@@ -1860,9 +1860,9 @@ _r=$(
     && ok "king.sh: unrip no maximo uma vez por morte" \
     || bad "trava do unrip: $_r"
 unset _r
-# Coliseu: o USH aceita 1 a 6 digitos, a primeira ocorrencia (HP entre 1 e 9
-# e vida, nao morte; 123456 nao vira 12345).
-grep -q '\[0-9\]{1,6}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
+# Coliseu: o USH aceita 1 a 9 digitos (3.9.108; eram 6), a primeira
+# ocorrencia (HP entre 1 e 9 e vida, nao morte; 123456 nao vira 12345).
+grep -q '\[0-9\]{1,9}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: HP de 1 digito nao passa por morte" \
     || bad "coliseum.sh: HP entre 1 e 9 seria lido como morte"
 # Espera sem luta nas Bandeiras / Coliseu do Cla: sem batalha a retomar.
@@ -2603,6 +2603,9 @@ sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'caverna_ler_menu "$TM
 # --- uma varredura completa por minuto
 _r=`( TMP="$_td10/s"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
       load_config() { printf 'VARREDURA'; exit 0; }; espera_interrompivel() { printf 'espera '; }
+      # Relogio parado: com o date de verdade o minuto podia virar entre
+      # gravar o last_start e o start() ler (falhou assim as 01:3x de 23/10).
+      date() { case "$1" in +%Y%m%d%H%M) echo 202610230130 ;; +%S) echo 30 ;; *) command date "$@" ;; esac; }
       date +%Y%m%d%H%M > "$TMP/last_start"; start; printf '| '
       echo 190001010000 > "$TMP/last_start"; start )`
 check "start(): segunda chamada no mesmo minuto so espera; minuto novo varre" "espera | VARREDURA" "$_r"
@@ -4703,7 +4706,7 @@ _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
 _r=`_dj56 'disjuntor_segura > /dev/null && printf S || printf L'`
 check "disjuntor: aberto ha 30 min fecha sozinho" "L" "$_r"
 _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
-_r=`_dj56 'SLS_DISJUNTOR=0; disjuntor_segura && printf S || printf L; disjuntor_falha; printf " %s" "$(ls "$HOME/.sls/net" | grep -c falhas)"'`
+_r=`_dj56 'SLS_DISJUNTOR=0; disjuntor_segura && printf S || printf L; disjuntor_falha; printf " %s" "$(ls "$HOME/.sls/net" | grep -c falha)"'`
 check "disjuntor: SLS_DISJUNTOR=0 nao segura nem registra" "L 0" "$_r"
 # Os portoes: com o disjuntor aberto, tarefas_livres e start nao pedem nada.
 _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
@@ -5424,6 +5427,89 @@ case "$_v66f" in
     *)     bad "Coliseu com inimigo fraco: nenhum ataque no roteiro ($_v66f)" ;;
 esac
 rm -rf "$_td66"; unset _td66 _v66 _a66 _rv66 _ra66 _v66f _a66f _en66; unset -f _col66 _res66
+
+# =============================================================================
+printf "\n=== 67. HP de 7 digitos, disjuntor sem perda, logs, -cl, credencial e cookie ===\n"
+# =============================================================================
+_td67=`mktemp -d`
+
+# --- HP: a mesma expressao de cada modulo, tirada do arquivo, numa pagina
+# com 1.234.567 de HP (eram 6 digitos: 123456) e numa com 123456 (igual).
+printf "%s\n" "<img src='/images/icon/health.png' alt='hp'/> 1234567 x" > "$_td67/hp7"
+printf "%s\n" "<img src='/images/icon/health.png' alt='hp'/> 123456 x" > "$_td67/hp6"
+_r=""
+for _m in altars clanfight clandmg clancoliseum flagfight coliseum; do
+    _re=`sed -n 's/.*\((hp)\[^A-Za-z0-9\]{1,4}\[0-9\]{1,[0-9]}\).*/\1/p' "$LIB/$_m.sh" | head -n1`
+    _a=`grep -o -E "$_re" "$_td67/hp7" | grep -o -E '[0-9]+$'`
+    _b=`grep -o -E "$_re" "$_td67/hp6" | grep -o -E '[0-9]+$'`
+    _r="$_r$_m=$_a/$_b "
+done
+check "HP das lutas: 1234567 inteiro (e 123456 como antes) nos seis modulos" \
+    "altars=1234567/123456 clanfight=1234567/123456 clandmg=1234567/123456 clancoliseum=1234567/123456 flagfight=1234567/123456 coliseum=1234567/123456 " "$_r"
+_r=`sed -n 's/.*\((nbsp)\[^A-Za-z0-9\]{1,2}\[0-9\]{1,[0-9]}\).*/\1/p' "$LIB/coliseum.sh" | head -n1`
+check "Coliseu: HP do inimigo com ate 9 digitos" "1234567" \
+    "`printf '%s\n' '<span>&nbsp;1234567</span>' | grep -o -E "$_r" | grep -o -E '[0-9]+$'`"
+
+# --- Disjuntor: tres contas falhando AO MESMO TEMPO abrem (cada uma grava o
+# seu arquivo; antes o awk+mv de uma podia apagar a linha de outra).
+_r=$( HOME="$_td67/h"; URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1; export HOME URL SLS_TAG SLS_DISJUNTOR
+      mkdir -p "$HOME/.sls"; . "$LIB/info.sh" > /dev/null 2>&1
+      for _c in BR_A BR_B BR_C; do ( TMP="$_td67/$_c"; disjuntor_falha > /dev/null 2>&1 ) & done; wait
+      printf '%s %s' "`[ -f "$HOME/.sls/net/BR.aberto" ] && echo aberto || echo fechado`" \
+          "`ls "$HOME/.sls/net" | grep -c '^BR\.falha\.BR_'`" )
+check "disjuntor: tres contas ao mesmo tempo abrem; um arquivo de falha por conta" "aberto 3" "$_r"
+check "disjuntor: sem regravar arquivo comum (awk + mv)" 0 "`grep -c 'mv -f "\$_DJ.falhas' "$LIB/info.sh"`"
+
+# --- Logs: req.stat grande (worker que morre antes dos 300 registros) e o
+# blessing_blocked.log entram no rotate_log; o modo -cv passa por ele.
+_r=$( TMP="$_td67/lg"; mkdir -p "$TMP"; eval "$(sed -n '/^_rl_voltas=0/,/^}/p' "$LIB/sls.sh")"
+      _i=0; while [ "$_i" -lt 4000 ]; do echo "1700000000 200 300 0"; _i=$((_i + 1)); done > "$TMP/req.stat"
+      head -c 5242881 /dev/zero > "$TMP/blessing_blocked.log"
+      rotate_log
+      printf '%s %s %s' "`grep -c . "$TMP/req.stat"`" "`wc -c < "$TMP/blessing_blocked.log" | tr -d ' '`" \
+          "`wc -c < "$TMP/blessing_blocked.log.1" | tr -d ' '`" )
+check "rotate_log: req.stat grande vira 200 linhas; blessing_blocked.log roda" "200 0 1048576" "$_r"
+check "caverna -cv: o laco confere os logs" 1 "`sed -n '/^cave_start() {/,/^}/p' "$LIB/cave.sh" | grep -c 'rotate_log'`"
+
+# --- Modo -cl: o Coliseu nao comeca nos minutos antes do Torneio de Equipe.
+_pt67=`sed -n 's/^ *(\(09:2\[4-9\]|.*\))$/\1/p' "$LIB/coliseum.sh" | head -n1`
+_r=""
+for _h in 11:24 11:29 17:54 17:59 11:20 17:50; do
+    eval "case $_h in $_pt67) _r=\"\${_r}B\" ;; *) _r=\"\${_r}L\" ;; esac"
+done
+check "modo -cl: bloqueia 11:24-11:29 e 17:54-17:59 (Torneio de Equipe), libera 11:20 e 17:50" "BBBBLL" "$_r"
+
+# --- Conta removida respondendo "n" para os dados: credencial e cookie saem.
+_r=$( _h="$_td67/rm"; mkdir -p "$_h/.sls/status" "$_h/.sls/BR_Ze"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"
+      echo cred > "$_h/.sls/BR_Ze/cript_file"; echo ck > "$_h/.sls/BR_Ze/cookie.txt"; echo log > "$_h/.sls/BR_Ze/sls.log"
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      eval "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh"`"
+      clear() { :; }; sleep() { :; }; escolher_conta() { srv=1; user=Ze; return 0; }
+      printf 'y\nn\n' | remove_account > /dev/null 2>&1
+      ls "$_h/.sls/BR_Ze" | tr '\n' ' ' )
+check "conta removida (dados mantidos): cript_file e cookie saem, o log fica" "sls.log " "$_r"
+
+# --- test_login: cookie num arquivo do mktemp, apagado no fim; o trap de
+# quem chama fica como estava (uma versao com trap proprio o apagava).
+_r=$( TMPDIR="$_td67/tmp"; mkdir -p "$TMPDIR"; export TMPDIR
+      . "$LIB/session_check.sh" > /dev/null 2>&1
+      curl() { while [ "$#" -gt 0 ]; do [ "$1" = -c ] && { echo "$2" >> "$TMPDIR/../ck"; shift; }; shift; done
+               [ -f "$TMPDIR/../ck" ] && cat > /dev/null; echo "<title>x</title>"; }
+      test_login https://jogo a b > /dev/null 2>&1
+      _c=`head -n1 "$TMPDIR/../ck"`
+      case "${_c##*/}" in sls_test_$$.txt) printf 'nome_fixo ' ;; sls_test_*) printf 'mktemp ' ;; *) printf '%s ' "$_c" ;; esac
+      [ -e "$_c" ] && printf 'ficou ' || printf 'apagado '
+      grep -q 'test_login() {' "$LIB/session_check.sh" && \
+          sed -n '/^test_login() {/,/^}/p' "$LIB/session_check.sh" | grep -q '^ *trap' && printf 1 || printf 0 )
+case "$_r" in
+    "mktemp apagado 0") ok "test_login: cookie do mktemp, apagado no fim, sem trap sobrando" ;;
+    "nome_fixo apagado 0") ok "test_login: sem mktemp neste aparelho, nome com o PID (apagado no fim)" ;;
+    *) bad "test_login: cookie ($_r)" ;;
+esac
+rm -rf "$_td67"; unset _td67 _r _m _re _a _b _c _pt67 _h
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
