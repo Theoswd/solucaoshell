@@ -11,6 +11,11 @@ campaign_func() {
         while [ -n "$CAMPAIGN" ] && [ "$(date +%s)" -lt "$BREAK" ]; do
             case $CAMPAIGN in
                 *go*|*fight*|*attack*|*end*)
+                    # Regra do dono: nunca gasta ouro (ver botao_pago).
+                    if botao_pago "$TMP/SRC" "$CAMPAIGN"; then
+                        printf "Campaign: botao cobra ouro - para aqui\n"
+                        break
+                    fi
                     fetch_page "$CAMPAIGN"
                     RESULT=`echo "$CAMPAIGN" | cut -d'/' -f3`
                     printf "Campaign -> %s\n" "$RESULT"

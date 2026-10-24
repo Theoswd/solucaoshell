@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.100"
+versionNum="3.9.112"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -508,8 +508,9 @@ servidor_mudo_marcar() {
 # de 30 min fecha sozinho (estado velho depois de um stop). SLS_DISJUNTOR=0
 # desliga.
 #
-# Arquivos em ~/.sls/net/TAG.*: falhas (epoch<TAB>pasta da conta), aberto e fechou
-# (epoch), sonda (trava mkdir com o PID), sonda_ult (epoch da ultima sonda).
+# Arquivos em ~/.sls/net/TAG.*: falha.CONTA (epoch da ultima falha daquela
+# conta, um arquivo por conta), aberto e fechou (epoch), sonda (trava mkdir
+# com o PID), sonda_ult (epoch da ultima sonda).
 disjuntor_base() { _DJ="$HOME/.sls/net/${SLS_TAG:-BR}"; }
 
 disjuntor_falha() {
@@ -517,14 +518,22 @@ disjuntor_falha() {
     disjuntor_base
     mkdir -p "$HOME/.sls/net" 2>/dev/null
     _dj_t=`date +%s`
-    printf '%s\t%s\n' "$_dj_t" "${TMP:-$$}" >> "$_DJ.falhas" 2>/dev/null
+    # UM ARQUIVO POR CONTA, cada uma escreve so o seu: antes as contas
+    # anexavam num arquivo comum e cada uma o regravava (awk + mv); uma
+    # falha anexada entre o awk e o mv de outra se perdia, e o disjuntor
+    # abria tarde justamente com todas falhando juntas.
+    _dj_c=${TMP:-$$}; _dj_c=${_dj_c##*/}
+    echo "$_dj_t" > "$_DJ.falha.$_dj_c" 2>/dev/null
     if [ ! -f "$_DJ.aberto" ]; then
-        # Um awk: conta as contas distintas na janela e ja apara o arquivo.
-        _dj_n=`awk -F '\t' -v agora="$_dj_t" -v jan="${SLS_DISJ_JANELA:-30}" -v sai="$_DJ.falhas.$$" '
-            $1 + 0 >= agora - jan { print > sai; if (!($2 in v)) { v[$2] = 1; n++ } }
-            END { print n + 0 }' "$_DJ.falhas" 2>/dev/null`
-        mv -f "$_DJ.falhas.$$" "$_DJ.falhas" 2>/dev/null
-        case "$_dj_n" in ''|*[!0-9]*) _dj_n=0 ;; esac
+        # Contas com falha na janela, so com read (nenhum processo).
+        _dj_n=0
+        for _dj_f in "$_DJ".falha.*; do
+            [ -f "$_dj_f" ] || continue
+            _dj_x=""; { read -r _dj_x < "$_dj_f"; } 2>/dev/null
+            case "$_dj_x" in ''|*[!0-9]*) continue ;; esac
+            [ "$_dj_x" -ge $(( _dj_t - ${SLS_DISJ_JANELA:-30} )) ] && _dj_n=$(( _dj_n + 1 ))
+        done
+        unset _dj_f _dj_x
         if [ "$_dj_n" -ge "${SLS_DISJ_CONTAS:-3}" ]; then
             echo "$_dj_t" > "$_DJ.aberto" 2>/dev/null
             rm -f "$_DJ.fechou" 2>/dev/null
@@ -532,7 +541,7 @@ disjuntor_falha() {
                 "${SLS_TAG:-BR}" "$_dj_n" "${SLS_DISJ_JANELA:-30}"
         fi
     fi
-    unset _dj_t _dj_n
+    unset _dj_t _dj_n _dj_c
     return 0
 }
 
@@ -541,12 +550,43 @@ disjuntor_fechar() {   # MOTIVO
     [ -f "$_DJ.aberto" ] || return 0
     _dj_a=""; { read -r _dj_a < "$_DJ.aberto"; } 2>/dev/null
     _dj_t=`date +%s`
-    rm -f "$_DJ.aberto" "$_DJ.falhas" 2>/dev/null
+    rm -f "$_DJ.aberto" "$_DJ".falha.* 2>/dev/null
     echo "$_dj_t" > "$_DJ.fechou" 2>/dev/null
     case "$_dj_a" in ''|*[!0-9]*) _dj_a=$_dj_t ;; esac
     printf "[disjuntor] %s de volta (%s) depois de %ss — contas voltam em ate 20s\n" \
         "${SLS_TAG:-BR}" "$1" $(( _dj_t - _dj_a ))
     unset _dj_a _dj_t
+    return 0
+}
+
+# TRAVAS mkdir (login no sls.sh, sonda do disjuntor): O DONO AINDA VALE?
+#   trava_dono_vivo PID DIR   (0 = vale, espere)
+# - PID vazio: so vale com a trava NOVA (ate 1 min). O dono grava o PID logo
+#   depois do mkdir; morto entre os dois (SIGKILL do Android), a trava ficava
+#   para sempre: o login esperava 180s a cada vez e a sonda nunca saia.
+# - PID vivo mas de outro programa (o kernel recicla PIDs): nao vale. Sem
+#   /proc legivel, vale o kill -0 (como antes).
+trava_dono_vivo() {
+    case "$1" in
+        ''|*[!0-9]*) [ -z "`find "$2" -maxdepth 0 -mmin +1 2>/dev/null`" ]; return ;;
+    esac
+    kill -0 "$1" 2>/dev/null || return 1
+    [ -r "/proc/$1/cmdline" ] || return 0
+    case "`tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null`" in *sls.sh*) return 0 ;; esac
+    return 1
+}
+
+# Tira uma trava velha sem derrubar a de quem acabou de criar outra: move
+# (atomico), confere o dono do que foi movido e, se for uma trava viva
+# criada entre a leitura e o mv, devolve.   trava_tomar DIR
+trava_tomar() {
+    mv "$1" "$1.velha.$$" 2>/dev/null || return 0
+    _tt=""; { read -r _tt < "$1.velha.$$/pid"; } 2>/dev/null
+    if trava_dono_vivo "$_tt" "$1.velha.$$"; then
+        mv "$1.velha.$$" "$1" 2>/dev/null && { unset _tt; return 0; }
+    fi
+    rm -rf "$1.velha.$$" 2>/dev/null
+    unset _tt
     return 0
 }
 
@@ -558,12 +598,11 @@ disjuntor_sondar() {   # AGORA
     if [ "$_dj_i" -ge 0 ] && [ "$_dj_i" -lt 20 ]; then unset _dj_u _dj_i; return 0; fi
     if ! mkdir "$_DJ.sonda" 2>/dev/null; then
         _dj_p=""; { read -r _dj_p < "$_DJ.sonda/pid"; } 2>/dev/null
-        case "$_dj_p" in
-            ''|*[!0-9]*) unset _dj_u _dj_i _dj_p; return 0 ;;
-            *) kill -0 "$_dj_p" 2>/dev/null && { unset _dj_u _dj_i _dj_p; return 0; }
-               rm -rf "$_DJ.sonda" 2>/dev/null
-               mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; } ;;
-        esac
+        if trava_dono_vivo "$_dj_p" "$_DJ.sonda"; then
+            unset _dj_u _dj_i _dj_p; return 0
+        fi
+        trava_tomar "$_DJ.sonda"
+        mkdir "$_DJ.sonda" 2>/dev/null || { unset _dj_u _dj_i _dj_p; return 0; }
     fi
     echo $$ > "$_DJ.sonda/pid" 2>/dev/null
     echo "$1" > "$_DJ.sonda_ult" 2>/dev/null
@@ -884,8 +923,93 @@ alvo_grey() {
         }' "$1" 2>/dev/null
 }
 
+# A CURA SAIU MESMO?   cura_relogio AGORA HP_ANTES HP_DEPOIS BOTAO(0|1) LA
+#
+# Pedido do dono (3.9.110). O relogio da cura (recarga de 90s) era gravado
+# sempre que o pedido saia, mesmo quando o jogo recusava a cura (acao colada
+# no ataque): a conta ficava 90s sem curar com o HP baixo. Devolve em
+# CURA_RELOGIO o instante a gravar:
+#   AGORA            a pagina confirma: o HP subiu, ou o botao da cura sumiu
+#                    da resposta; tambem quando nao da para conferir (HP
+#                    ilegivel), como antes;
+#   AGORA - 90 + LA  sem confirmacao: uma nova tentativa LA segundos depois
+#                    (so se a vida ainda estiver abaixo do limiar da luta).
+# A segunda tentativa conta de qualquer jeito: no maximo dois pedidos por
+# recarga. Se a primeira valeu (o HP so nao subiu pelo dano recebido), o
+# proprio jogo recusa a segunda: o elixir tem recarga de 90s. Limiares e a
+# recarga de 90s nao mudaram. So o primeiro numero do HP vale (o arquivo de
+# HP de alguns modulos traz uma linha por ocorrencia).
+#
+# SO COM A RESPOSTA DA CURA COMPLETA (curl 0). Tempo esgotado depois de
+# conectar, pagina cortada ou as tres tentativas sem conexao do
+# pedido_nao_saiu: nao da para saber se o elixir foi usado, e a regra
+# continua a de antes (a recarga conta, sem segundo elixir). O codigo e o
+# TE_RC do pedido da cura; quem faz outro pedido depois dela (a erva do
+# Torneio e do Duelo) o guarda antes em CURA_RC.
+cura_relogio() {
+    CURA_RELOGIO="$1"
+    _cr_a=${2#"${2%%[0-9]*}"}; _cr_a=${_cr_a%%[!0-9]*}
+    _cr_d=${3#"${3%%[0-9]*}"}; _cr_d=${_cr_d%%[!0-9]*}
+    if [ "$4" = 1 ] && [ "${CURA_RC:-${TE_RC:-0}}" = 0 ] && \
+       [ -n "$_cr_a" ] && [ -n "$_cr_d" ] && \
+       [ "$_cr_d" -le "$_cr_a" ] && [ "${_CURA_TENTOU:-0}" = 0 ]; then
+        _CURA_TENTOU=1
+        CURA_RELOGIO=$(( $1 - 90 + ${5:-4} ))
+        printf "Cura sem confirmacao (HP %s -> %s) - nova tentativa em %ss\n" "$_cr_a" "$_cr_d" "${5:-4}"
+    else
+        _CURA_TENTOU=0
+    fi
+    unset _cr_a _cr_d CURA_RC
+}
+
+# ESQUIVA NOS EVENTOS DE CLA (regra do dono, 3.9.112)
+#
+# Altares, Torneio dos Clas, Duelo, Coliseu do Cla e Torneio de Equipe. A
+# esquiva so sai com as tres coisas juntas:
+#   1. vida abaixo do limiar da cura (48% do HP maximo);
+#   2. sem elixir para usar: sem o botao, ou o elixir na recarga de 90s.
+#      Vem da ordem das acoes: a esquiva so e avaliada quando a cura nao
+#      saiu, e com a vida abaixo do limiar a cura so nao sai sem o botao ou
+#      na recarga;
+#   3. dano muito alto: 20% ou mais do HP maximo perdidos nos ultimos 15s.
+# A recarga da esquiva continua 20s. Antes ela saia com QUALQUER perda de
+# vida desde a leitura anterior, com ou sem elixir.
+
+# Vida perdida nos ultimos 15s.   dano_registrar HP   -> DANO_15S
+# Cada leitura da pagina da luta entra em _DANO_HIST ("epoch:hp ..."), que
+# fica so com os ultimos 15s; DANO_15S e o maior HP da janela menos o atual.
+# So read e aritmetica, nenhum processo. So o primeiro numero do HP vale.
+dano_registrar() {
+    _dr_h=${1#"${1%%[0-9]*}"}; _dr_h=${_dr_h%%[!0-9]*}
+    [ -n "$_dr_h" ] || return 0
+    agora_s
+    _dr_n=""; _dr_m=$_dr_h
+    for _dr_e in $_DANO_HIST; do
+        _dr_t=${_dr_e%%:*}; _dr_v=${_dr_e#*:}
+        [ $(( _AGORA - _dr_t )) -le 15 ] || continue
+        _dr_n="$_dr_n $_dr_e"
+        [ "$_dr_v" -gt "$_dr_m" ] && _dr_m=$_dr_v
+    done
+    _DANO_HIST="$_dr_n $_AGORA:$_dr_h"
+    DANO_15S=$(( _dr_m - _dr_h ))
+    unset _dr_h _dr_n _dr_m _dr_e _dr_t _dr_v
+}
+
+# Esquivar agora?   esquiva_devida HP LIMIAR_DA_CURA HP_MAXIMO   (0 = sim)
+# Itens 1 e 3 acima (o 2 e a ordem das acoes). Numero ilegivel: nao esquiva.
+esquiva_devida() {
+    _ev_h=${1#"${1%%[0-9]*}"}; _ev_h=${_ev_h%%[!0-9]*}
+    case "$_ev_h$2$3" in ''|*[!0-9]*) unset _ev_h; return 1 ;; esac
+    [ "$_ev_h" -lt "$2" ] && [ "${DANO_15S:-0}" -ge $(( $3 * 20 / 100 )) ]
+    _ev_r=$?
+    unset _ev_h
+    return $_ev_r
+}
+
 # Zera a memoria da luta e anota a batalha. No INICIO de cada funcao de luta.
 luta_inicio() {
+    _CURA_TENTOU=0
+    _DANO_HIST=""; DANO_15S=0
     _lt_fora_desde=""
     _lt_relogin=0
     _lt_invalidas=0
@@ -980,7 +1104,9 @@ luta_acabou() {
                 _lt_relogin=$(( ${_lt_relogin:-0} + 1 ))
                 date +%s > "$TMP/last_reconn" 2>/dev/null
                 printf "Sessao caiu na batalha - reconectando (a conta continua na luta)\n"
-                type login_logoff > /dev/null 2>&1 && login_logoff
+                # "luta": a reconexao da batalha nao espera o portao de
+                # reconexao da rotina (relogin_liberado, em loginlogoff.sh).
+                type login_logoff > /dev/null 2>&1 && login_logoff luta
                 unset _lz_e; return 1
             fi
             # SEM SESSAO E SEM TENTATIVA AGORA: SAI DO LACO, NAO DA BATALHA.
@@ -1295,7 +1421,11 @@ fetch_train_stats() {
     # o last_train quando o nivel muda. Sem HP maximo conhecido, le sempre.
     _ft_min="${1:-60}"
     case "$_ft_min" in ''|*[!0-9]*) _ft_min=60 ;; esac
-    if [ -n "$FIXHP" ] && [ -n "$ACC_ENE" ] && ! ativ_liberada train "$_ft_min"; then
+    # Energia que a ultima leitura do /train nao achou (_FT_SEM_ENE) tambem
+    # espera o intervalo: sem isso, um rotulo que o grep nao casa fazia todo
+    # login_logoff e todo painel pedirem o /train de novo.
+    if [ -n "$FIXHP" ] && { [ -n "$ACC_ENE" ] || [ "${_FT_SEM_ENE:-0}" = 1 ]; } && \
+       ! ativ_liberada train "$_ft_min"; then
         unset _ft_min
         return 0
     fi
@@ -1307,14 +1437,18 @@ fetch_train_stats() {
     # Pagina de erro ou de login nao traz o HP maximo: mantem o ultimo lido
     # (vazio zeraria o limiar de cura). So a leitura com o HP maximo carimba.
     _fx=`printf '%s' "$_t" | grep -o -E '\([0-9]{1,9}\)' | head -n1 | tr -d '()'`
-    [ -n "$_fx" ] && FIXHP=$_fx && date +%s > "$TMP/last_train" 2>/dev/null
+    _ft_hp=0
+    [ -n "$_fx" ] && FIXHP=$_fx && _ft_hp=1 && date +%s > "$TMP/last_train" 2>/dev/null
     _fx=`printf '%s' "$_t" | grep -o -E ': [0-9]+' | sed -n '5s/: //p'`
     [ -n "$_fx" ] && FIXMP=$_fx
     unset _fx
     # Teto de energia, com o sufixo K/M. Mesma regra do status_ler: entre o
     # rotulo e o numero vem "</span> <span class='white'>".
     ACC_ENE=`printf '%s' "$_t" | grep -o -E "Energia:?[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
-    unset _t
+    # Pagina com o HP maximo e sem a energia: a falta e da pagina, nao da rede.
+    _FT_SEM_ENE=0
+    [ -z "$ACC_ENE" ] && [ "$_ft_hp" = 1 ] && _FT_SEM_ENE=1
+    unset _t _ft_hp
 }
 
 # Linha de status no log da conta. Imprime so o que existe.

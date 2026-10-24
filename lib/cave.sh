@@ -57,6 +57,9 @@ cave_start() {
     set_cave_limits
 
     while echo "$RUN" | grep -q -E '[-]cv'; do
+        # Com acao na caverna este laco nao volta ao do sls.sh, que e quem
+        # confere o tamanho dos logs: confere aqui tambem.
+        type rotate_log > /dev/null 2>&1 && rotate_log
         CAVE=`grep -o -E '/cave/(gather|down|speedUp)/[?]r[=][0-9]+' "$TMP/SRC" | sed -n '1p'`
         RESULT=`echo "$CAVE" | cut -d'/' -f3`
 
@@ -67,6 +70,14 @@ cave_start() {
             espera_interrompivel 60
             break
         fi
+        # CAVERNA SEM OURO tambem no modo -cv (o cave_routine e o
+        # caverna_noite ja conferiam). A espera e a mesma do "sem acao": o
+        # laco principal chama o cave_start de novo na hora.
+        if botao_pago "$TMP/SRC" "$CAVE"; then
+            printf "Caverna: %s cobra ouro - para aqui\n" "$RESULT"
+            espera_interrompivel 60
+            break
+        fi
 
         MONSTER_RUNAWAY=`grep -o -E '/cave/runaway/[?]r=[0-9]+' "$TMP/SRC" | head -n1`
 
@@ -74,6 +85,9 @@ cave_start() {
         if [ -n "$MONSTER_RUNAWAY" ]; then
             printf "Monster found - running away (no gold spent)\n"
             fetch_page "$MONSTER_RUNAWAY"
+            # O link de acao (e o nonce ?r=) e o da pagina de ANTES da fuga:
+            # o servidor recusa. A volta seguinte o tira da pagina nova.
+            continue
         fi
 
         read_speedup_silver_cost
@@ -91,7 +105,9 @@ cave_start() {
                 ;;
         esac
 
-        if [ "$SPEEDUP_SILVER_COST" -gt 0 ]; then
+        # So o acelerar gasta prata: o preco lido na pagina nao conta quando
+        # a acao foi pesquisa ou mineracao (encerrava a caverna antes da hora).
+        if [ "$RESULT" = speedUp ] && [ "$SPEEDUP_SILVER_COST" -gt 0 ]; then
             SILVER_SPENT_TOTAL=$((SILVER_SPENT_TOTAL + SPEEDUP_SILVER_COST))
         fi
 

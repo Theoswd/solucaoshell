@@ -9,6 +9,23 @@ SLSDIR=$(cd "$_dir" && pwd)
 # Chamado por um atalho (ex.: $PREFIX/bin), o SLSDIR seria a pasta do atalho
 # e o "rm -rf" do fim a apagaria inteira.
 [ -f "$SLSDIR/lib/sls.sh" ] || { printf "Rode o uninstall.sh de dentro da pasta do bot.\n"; exit 1; }
+# O "rm -rf" do fim apaga o SLSDIR inteiro. Bot clonado direto no HOME (ou
+# na raiz, ou numa pasta que contem o HOME) levaria tudo junto: so apaga uma
+# pasta que e so do bot, com os comandos dele.
+_home=$(cd "$HOME" 2>/dev/null && pwd -P)
+case "$SLSDIR" in
+    /|"$HOME"|"$_home") _recusa=1 ;;
+    *) case "$_home/" in "$SLSDIR"/*) _recusa=1 ;; *) _recusa=0 ;; esac ;;
+esac
+for _f in play.sh stop.sh setup.sh lib/info.sh; do
+    [ -f "$SLSDIR/$_f" ] || _recusa=1
+done
+if [ "$_recusa" = 1 ]; then
+    printf "A pasta %s nao e so do bot (HOME, raiz ou sem os comandos dele).\n" "$SLSDIR"
+    printf "Nada foi apagado. Remova a mao o que for do bot.\n"
+    exit 1
+fi
+unset _home _recusa _f
 
 LIBDIR="$SLSDIR/lib"
 export LIBDIR
@@ -59,7 +76,10 @@ termux-wake-unlock 2>/dev/null
 # 3. dados
 printf "Removendo arquivos...\n"
 rm -rf "$HOME/.sls"
-rm -f /tmp/play_out.log /tmp/sls_* /tmp/diag_* 2>/dev/null
+# So o que o bot cria: o cookie do teste de login do setup.sh
+# (sls_test_XXXXXX do mktemp, ou sls_test_PID.txt sem ele). "/tmp/sls_*" e
+# "/tmp/diag_*" pegavam arquivos de outros programas.
+rm -f /tmp/play_out.log "${TMPDIR:-/tmp}"/sls_test_* /tmp/sls_test_* 2>/dev/null
 printf "  ${G}dados removidos${N}\n"
 
 # 4. o proprio diretorio, por ultimo

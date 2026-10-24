@@ -19,7 +19,7 @@ flagfight_fight() {
     grep -o -E '(/[a-z]+/shield/[?]r[=][0-9]+)' "$src_ram" | sed -n 1p > SHIELD 2>/dev/null
     alvo_nome "$src_ram" > USER 2>/dev/null
     aliado_ler cla
-    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,6}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
+    grep -o -E "(hp)[^A-Za-z0-9]{1,4}[0-9]{1,9}" "$src_ram" | sed "s,hp[']\\/[>],,;s,\ ,," > USH 2>/dev/null
     # HP da pagina lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat USH`
     _cura=0; [ -s SHIELD ] && awk -v ush="$_hp" -v hlhp="$_hlhp" 'BEGIN { exit !(ush < hlhp) }' && _cura=1
@@ -122,7 +122,9 @@ flagfight_fight() {
 
     # Aliado na frente: troca de alvo (troca_aliado, em allies.sh). So por
     # aliado (regra do dono), com fogo amigo para nao virar laco de trocas.
-    elif [ -s ATKRND ] && [ "$_latk" -ne "$LA" ] && [ "$_grey" = 0 ] && \
+    # 4s (LA) ou mais desde a acao anterior, como no clancommand: com "-ne"
+    # a troca saia com 0 a 3s, colada no ataque, e o jogo a recusava (3.9.109).
+    elif [ -s ATKRND ] && [ "$_latk" -ge "$LA" ] && [ "$_grey" = 0 ] && \
          troca_aliado "$_atk0"; then
       (
         read -r _l < ATKRND; run_curl_exec "${URL}$_l" > "$src_ram"

@@ -96,7 +96,7 @@ painel_icones_carregar() {
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
         A_CLANCOL="🏅  Coliseu do Clã"
         A_ARENA="💥  Arena"
-        A_TORNEQ="⚔️  Torneio de Equipe"
+        A_TORNEQ="🤺  Torneio de Equipe"
     else
         # Em texto puro byte e coluna sao a mesma coisa.
         S_COL=5
@@ -867,14 +867,56 @@ combate_de_v() {
 # Arquivo da pagina de luta mais recente desta conta: cada modulo usa um nome
 # (SRC, src.html, ccol_src...), e o mais novo e o da luta em andamento.
 pagina_batalha() {
-    _pb_f=""
+    pagina_batalha_v "$1"
+    printf '%s' "$PAGINA_BATALHA"
+}
+
+# O mesmo, sem processo: deixa o caminho em PAGINA_BATALHA (a captura com
+# `...` do pagina_batalha era um subshell por conta em combate e desenho).
+pagina_batalha_v() {
+    PAGINA_BATALHA=""
     for _pb_c in "$1/SRC" "$1/src.html" "$1/ccol_src" "$1/col_src" \
                  "$1/flag_src" "$1/ARENA"; do
         [ -s "$_pb_c" ] || continue
-        if [ -z "$_pb_f" ] || [ "$_pb_c" -nt "$_pb_f" ]; then _pb_f="$_pb_c"; fi
+        if [ -z "$PAGINA_BATALHA" ] || [ "$_pb_c" -nt "$PAGINA_BATALHA" ]; then PAGINA_BATALHA="$_pb_c"; fi
     done
-    printf '%s' "$_pb_f"
-    unset _pb_c _pb_f
+    unset _pb_c
+}
+
+# LOG DE COMBATE GUARDADO POR CONTA.   combate_log_cache PASTA LINHAS LARG ARQ
+#
+# O combate_log e um awk com varios gsub sobre o HTML inteiro da luta, por
+# conta e por desenho, dentro de um $( ) (mais um subshell). Agora a saida
+# fica em ARQ (1a linha: "LINHAS LARG PAGINA"), e o awk so roda de novo
+# quando a pagina da luta mudou (ARQ nao e mais novo que ela) ou a tela
+# mudou de largura. Lido de volta com read, sem processo. Deixa em _LOG.
+# Na luta a pagina muda a cada acao (~5s): o ganho certo e o dos dois
+# subshells; o do awk vem quando o desenho e mais rapido que as acoes.
+combate_log_cache() {
+    _LOG=""
+    pagina_batalha_v "$1"
+    [ -n "$PAGINA_BATALHA" ] || return 0
+    _clc_k="$2 $3 $PAGINA_BATALHA"
+    _clc_l=""
+    if [ -s "$4" ] && [ "$4" -nt "$PAGINA_BATALHA" ]; then
+        { IFS= read -r _clc_l < "$4"; } 2>/dev/null
+    fi
+    if [ "$_clc_l" != "$_clc_k" ]; then
+        { printf '%s\n' "$_clc_k"; combate_log "$1" "$2" "$3"; } > "$4" 2>/dev/null
+    fi
+    if [ -s "$4" ]; then
+        _clc_n=0
+        while IFS= read -r _clc_l; do
+            _clc_n=$((_clc_n + 1))
+            [ "$_clc_n" = 1 ] && continue
+            _LOG="${_LOG}${_LOG:+
+}${_clc_l}"
+        done < "$4"
+    else
+        # Sem onde gravar (pasta so de leitura): como antes, direto.
+        _LOG=`combate_log "$1" "$2" "$3"`
+    fi
+    unset _clc_k _clc_l _clc_n
 }
 
 # As ultimas linhas do combate que dizem respeito A ESTA CONTA:
@@ -887,7 +929,8 @@ pagina_batalha() {
 # O log do jogo vem do mais novo para o mais antigo.
 # $1 pasta da conta, $2 linhas (padrao 2), $3 largura (padrao 60, minimo 24).
 combate_log() {
-    _cl_f=`pagina_batalha "$1"`
+    pagina_batalha_v "$1"
+    _cl_f="$PAGINA_BATALHA"
     [ -n "$_cl_f" ] || return 0
     _cl_n="${2:-2}"
     _cl_w="${3:-60}"
@@ -1208,7 +1251,10 @@ while true; do
             # Registro da luta, logo abaixo do nome, a partir da margem esquerda.
             if [ "$PANEL_LOG_LINHAS" -gt 0 ]; then
                 # 6 colunas de recuo + o texto tem de caber na tela.
-                _log=$(combate_log "$acc_dir" "$PANEL_LOG_LINHAS" $((LARG - 7)))
+                # Guardado por conta: o awk so roda com a pagina nova.
+                combate_log_cache "$acc_dir" "$PANEL_LOG_LINHAS" $((LARG - 7)) \
+                    "$STATUS_DIR/${acc_id}.log_painel"
+                _log="$_LOG"
                 # %s, e nao %b: o texto vem da pagina do jogo.
                 [ -n "$_log" ] && BATALHAS="${BATALHAS}$(printf '%s' "$_log")
 "

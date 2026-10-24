@@ -155,9 +155,8 @@ func_sleep() {
                 coliseum_start
                 ativ_marcar missao11
             fi
-            i=60
-            func_cat
-            return 0
+            # Segue para a espera de sempre: com "i=60; return" aqui, no dia 1
+            # a caverna da madrugada e os pulsos do Coliseu perdiam os 15s.
         fi
     fi
 
@@ -245,10 +244,18 @@ atualiza_stats() {
     # jogo e servidor mudo (ver sessao_estado).
     if ! is_logged_in "$_pg"; then
         if [ "`printf '%s' "$_pg" | sessao_estado -`" = deslogado ]; then
-            printf "Sessao caiu no ocio - reconectando\n"
-            if type login_logoff > /dev/null 2>&1 && login_logoff; then
-                _pg=`run_curl "${URL}/user" 2>/dev/null`
+            if type relogin_liberado > /dev/null 2>&1 && ! relogin_liberado; then
+                printf "Sessao caiu no ocio - login recusado ha pouco, nova tentativa em %ss\n" "$RELOGIN_RESTA"
+            else
+                printf "Sessao caiu no ocio - reconectando\n"
+                if type login_logoff > /dev/null 2>&1 && login_logoff; then
+                    _pg=`run_curl "${URL}/user" 2>/dev/null`
+                fi
             fi
+            # Sessao morta e sem reconexao agora: o /user so volta no proximo
+            # intervalo do painel. Quem reconecta e o descanso, no degrau do
+            # portao; antes, cada volta pedia o /user e um login de novo.
+            is_logged_in "$_pg" || ativ_marcar stats
         else
             servidor_mudo_marcar
         fi
@@ -384,20 +391,65 @@ relogio_anotar() { # nome segundos
     echo $(( _AGORA + $2 )) > "$TMP/next_$1" 2>/dev/null
 }
 
-# Le o relogio da caverna no menu da pagina inicial ($1). Sem menu (pagina
-# de luta, erro do servidor), nao mexe no que ja estava anotado. O padrao nao
-# sai do link da caverna: o item seguinte do menu (Rei dos Imortais) tambem
-# tem relogio entre parenteses.
+# A PAGINA INICIAL DO DESCANSO NUMA LEITURA SO.   descanso_ler ARQUIVO
+#
+# Eram um grep (out_gate_confirm), um ou dois greps e um subshell (relogio da
+# caverna) e um subshell com awk (sessao_estado), por volta e por conta.
+# Agora um awk, que deixa:
+#   _DL_GATE    1 = o jogo pede a confirmacao da fuga (out_gate_confirm)
+#   _DL_CAVE    segundos do relogio cinza da caverna, "+" (verde: livre) ou
+#               "-" (sem menu: pagina de luta, erro do servidor)
+#   _DL_SESSAO  viva | deslogado | sem_resposta, com as regras do
+#               sessao_estado (info.sh)
+# O relogio e o do link da caverna, na primeira linha que casa, como o
+# "grep -o -m 1" de antes: o item seguinte do menu (Rei dos Imortais) tambem
+# tem relogio entre parenteses. Sem {n,m}: o mawk nao volta atras neles (ver
+# o combate_ler).
+descanso_ler() {
+    set -- `awk -v q="'" '
+        { t = t $0 "\n" }
+        cave == "" {
+            re = "href=" q "/cave/" q ">(<img[^>]*>)?[^<()]*<span class=" q "grey" q ">[(]([0-9][0-9]?:)?[0-9][0-9]?:[0-9][0-9][)]"
+            if (match($0, re)) {
+                s = substr($0, RSTART, RLENGTH)
+                sub(/^.*[(]/, "", s); sub(/[)]$/, "", s)
+                n = split(s, p, ":")
+                cave = (n == 3) ? p[1] * 3600 + p[2] * 60 + p[3] : p[1] * 60 + p[2]
+            }
+        }
+        verde == "" && $0 ~ ("href=" q "/cave/" q ">(<img[^>]*>)?[^<()]*<span class=" q "green" q "> ?[(][+][)]") { verde = "+" }
+        END {
+            if (match(t, /jsInterface\.event\("user=[0-9]+/)) {
+                u = substr(t, RSTART + 24, RLENGTH - 24) + 0
+                ses = (u > 0 ? "viva" : "deslogado")
+            } else if (t ~ ("name=[" q "\"]?pass|action=[^>]*sign_in|[?&]sign_in=1")) {
+                ses = "deslogado"
+            } else if (index(t, "icon/level.png")) {
+                ses = "viva"
+            } else {
+                ses = "sem_resposta"
+            }
+            if (cave == "") cave = (verde == "+") ? "+" : "-"
+            print (index(t, "out_gate_confirm") ? 1 : 0), cave, ses
+        }' "$1" 2>/dev/null`
+    _DL_GATE=${1:-0}; _DL_CAVE=${2:--}; _DL_SESSAO=${3:-sem_resposta}
+}
+
+# Anota o relogio da caverna lido pelo descanso_ler (_DL_CAVE). Sem menu, nao
+# mexe no que ja estava anotado.
+caverna_aplicar() {
+    case "$_DL_CAVE" in
+        +)           relogio_anotar caverna 0 ;;
+        ''|-|*[!0-9]*) : ;;
+        *)           relogio_anotar caverna $(( _DL_CAVE + 30 )) ;;
+    esac
+}
+
+# Le o relogio da caverna no menu de uma pagina ($1). Mesma leitura do
+# descanso (descanso_ler).
 caverna_ler_menu() {
-    _cv=`grep -o -m 1 -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null`
-    _cv=${_cv%%"
-"*}; _cv=${_cv##*\(}; _cv=${_cv%\)}
-    if [ -n "$_cv" ]; then
-        relogio_anotar caverna $(( `relogio_seg_sh "$_cv"` + 30 ))
-    elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then
-        relogio_anotar caverna 0
-    fi
-    unset _cv
+    descanso_ler "$1"
+    caverna_aplicar
 }
 
 caverna_liberada() {
@@ -772,6 +824,11 @@ descansar() {
     # Com batalha pendente, a conta volta para ela em vez de ir para a Home.
     batalha_retomar
 
+    # DISJUNTOR ABERTO: fora de batalha so a sonda pede (ver disjuntor_falha,
+    # em info.sh). Sem isto cada conta seguia pedindo a Home a cada volta com
+    # o servidor fora do ar. A batalha pendente ja foi retomada acima.
+    disjuntor_segura && return 1
+
     # HOME REPETIDA NAO E PEDIDA DE NOVO.
     #
     # Se a ultima pagina pedida ja foi a Home e ESTE descanso a confirmou com
@@ -800,13 +857,16 @@ descansar() {
     # pagina oferece o out_gate_confirm) E nao houver batalha pendente (o jogo
     # ja declarou a morte ou o fim, ou a pagina do evento passou LUTA_FORA_MAX
     # segundos sem luta, LUTA_FORA_LUTOU se ja lutou) a saida e confirmada.
-    if grep -q 'out_gate_confirm' "$TMP/REST" 2>/dev/null; then
+    # A pagina e lida uma vez so (descanso_ler): fuga, caverna e sessao.
+    descanso_ler "$TMP/REST"
+    if [ "$_DL_GATE" = 1 ]; then
         if batalha_pendente; then
             printf "Ainda em batalha (%s) - a conta nao foge\n" "$_bp_sec"
             return 0
         fi
         fetch_page "/?out_gate_confirm=true" "$TMP/REST" 2>/dev/null
         fetch_page "/" "$TMP/REST" 2>/dev/null
+        descanso_ler "$TMP/REST"
     fi
     # A conta voltou para casa: registra a pagina inicial e encerra o
     # "ao vivo" da luta que acabou.
@@ -814,15 +874,16 @@ descansar() {
     limpar_combate
 
     # O menu desta pagina traz o relogio da caverna: de graca, sem requisicao.
-    caverna_ler_menu "$TMP/REST"
+    caverna_aplicar
 
     # SESSAO CONFERIDA AQUI, DE GRACA: com cookie morto a conta nao aparece
     # online para os outros jogadores, embora o worker esteja vivo.
     #
     # SERVIDOR MUDO NAO E SESSAO CAIDA. Pagina vazia, cortada ou que nao e
     # do jogo nao prova que a conta saiu: tratar como queda apagava o cookie
-    # e refazia o login no pior momento (ver sessao_estado, em info.sh).
-    case "`sessao_estado "$TMP/REST"`" in
+    # e refazia o login no pior momento (ver sessao_estado, em info.sh; o
+    # descanso_ler segue as mesmas regras).
+    case "$_DL_SESSAO" in
         viva)
             agora_s; _ds_ok="$_AGORA"
             echo "$_ds_ok" > "$TMP/last_ok" 2>/dev/null
@@ -842,6 +903,11 @@ descansar() {
     # quem estava bem. O portao (luta_pode_reconectar, em info.sh) tem
     # deslocamento por conta derivado do PID e e o mesmo da luta, entao as
     # duas nao somam tentativas.
+    # Login recusado ha pouco (relogin_liberado, em loginlogoff.sh): espera o
+    # degrau sem pedir nem o /user.
+    if type relogin_liberado > /dev/null 2>&1 && ! relogin_liberado; then
+        return 1
+    fi
     luta_pode_reconectar || return 1
     date +%s > "$TMP/last_reconn" 2>/dev/null
 

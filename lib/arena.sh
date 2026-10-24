@@ -26,6 +26,11 @@ arena_duel() {
             printf "  Arena: sem ataque disponivel agora\n"
             break
         fi
+        # Regra do dono: nunca gasta ouro (ver botao_pago).
+        if botao_pago "$TMP/SRC" "$ACCESS"; then
+            printf "  Arena: ataque cobra ouro - para aqui\n"
+            break
+        fi
         fetch_page "$ACCESS"
         count=$((count + 1))
         printf "  Attack %s\n" "$count"

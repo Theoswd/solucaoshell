@@ -133,7 +133,9 @@ clancommand_fight() {
     # HP lido uma vez; cura e esquiva comparadas uma vez por pagina.
     _hp=`cat HP`
     _cura=0; [ -s HEAL ] && awk -v hp="$_hp" -v hlhp="$HLHP" 'BEGIN { exit !(hp < hlhp) }' && _cura=1
-    _caiu=0; [ -s DODGE ] && awk -v hp="$_hp" -v oldhp="$_old_hp" 'BEGIN { exit !(hp < oldhp) }' && _caiu=1
+    # Vida das ultimas leituras (dano dos ultimos 15s, para a esquiva: ver
+    # esquiva_devida, em info.sh). So read e aritmetica.
+    dano_registrar "$_hp"
 
     if [ "$_emluta" = "1" ] || _cc_acao; then
       # A pagina respondeu com a luta: sessao confirmada.
@@ -179,6 +181,8 @@ clancommand_fight() {
   }
 
   luta_inicio clancommand
+  # HP maximo (FULL, do full_atualizar): a esquiva compara o dano com ele.
+  _full_hp=""; { read -r _full_hp < FULL; } 2>/dev/null
   cc_access
   > BREAK_LOOP
   cat HP > old_HP 2>/dev/null; _old_hp="$_hp"; _caiu=0
@@ -195,7 +199,7 @@ clancommand_fight() {
     if [ -s HEAL ] && \
        [ "$_cura" = 1 ] && \
        { read -r _lrec < last_heal; [ $(( _atk0 - _lrec )) -gt 90 ]; }; then
-      _saiu=0
+      _saiu=0; _hp_ant="$_hp"
       (
         read -r _l < HEAL; run_curl_exec "${URL}$_l" > "$src_ram"
       ) </dev/null > /dev/null 2>&1 &
@@ -204,12 +208,17 @@ clancommand_fight() {
       # Pedido que nao saiu (pedido_nao_saiu): a acao nao valeu.
       if [ "$_saiu" = 1 ]; then
         cat HP > old_HP; _old_hp="$_hp"; _caiu=0
-        date +%s > last_heal
+        # A pagina confirma a cura? Sem confirmacao, uma nova tentativa em
+        # LA segundos (cura_relogio, em info.sh).
+        cura_relogio "`date +%s`" "$_hp_ant" "$_hp" "`[ -s HEAL ] && echo 1 || echo 0`" "$LA"
+        echo "$CURA_RELOGIO" > last_heal
       fi
 
+    # ESQUIVA (regra do dono, 3.9.112): vida abaixo do limiar, sem elixir
+    # (sem botao ou na recarga) e 20% do HP perdidos em 15s.
     elif [ -s DODGE ] && [ "$_grey" = 0 ] && \
          { read -r _lrec < last_dodge; [ $(( _atk0 - _lrec )) -gt 20 ]; } && \
-         [ "$_caiu" = 1 ]; then
+         esquiva_devida "$_hp" "$HLHP" "$_full_hp"; then
       _saiu=0
       (
         read -r _l < DODGE; run_curl_exec "${URL}$_l" > "$src_ram"
@@ -297,6 +306,8 @@ clancommand_start() {
   _cc_link=`_cc_inscricao "$src_ram"`
   _cc_seg=`_cc_restam "$src_ram"`
   case "$_cc_seg" in *[!0-9]*) _cc_seg= ;; esac
+  # Instante da leitura do contador (a espera abaixo desconta o que passou).
+  _cc_t0=`date +%s`; _cc_cont="$_cc_seg"
 
   # Sem link de inscricao nao quer dizer sem torneio: so o LIDER tem
   # "Aplicar". "Sem torneio" exige a falta de link, de contador e da sala de
@@ -347,6 +358,18 @@ clancommand_start() {
   BREAK=$(($(date +%s) + _cc_lim))
   ACCESS=`link_acao "$src_ram" clancommand`
 
+  # CONTADOR LIDO: DORME ATE 15s ANTES DO INICIO. Reler a pagina a cada ~4s
+  # durante ate 10 min eram 75-150 pedidos por conta antes da luta; a luta
+  # nao abre antes do contador. Dali em diante o laco de baixo rele como
+  # sempre. Sem contador na pagina, nada muda.
+  if [ -n "$_cc_cont" ] && [ "`estado_luta "$src_ram" clancommand`" != luta ]; then
+    _cc_dorme=$(( _cc_cont - 15 - ( $(date +%s) - _cc_t0 ) ))
+    if [ "$_cc_dorme" -gt 0 ]; then
+      printf " inicio em %ss - aguardando sem reler a pagina\n" "$_cc_cont"
+      sleep "$_cc_dorme"
+    fi
+  fi
+
   until [ "`estado_luta "$src_ram" clancommand`" = luta ] || \
         [ "$(date +%s)" -gt "$BREAK" ]; do
     printf " aguardando o inicio...\n"
@@ -372,5 +395,5 @@ clancommand_start() {
     rm -f "$src_ram"
     unset src_ram ACCESS
   fi
-  unset _cc_link _cc_seg _cc_lim
+  unset _cc_link _cc_seg _cc_lim _cc_t0 _cc_cont _cc_dorme
 }

@@ -120,6 +120,11 @@ use_elixir() {
             printf "No more URLs to process.\n"
             break
         fi
+        # Regra do dono: nunca gasta ouro (ver botao_pago).
+        if botao_pago "$TMP/SRC" "$click"; then
+            printf "Elixir: botao cobra ouro - para aqui\n"
+            break
+        fi
         fetch_page "$click"
         _ck_i=$((_ck_i + 1))
     done

@@ -76,7 +76,17 @@ test_login() {
     _pass="$3"
 
     # O Termux NAO tem /tmp (usa $PREFIX/tmp, em $TMPDIR).
-    _cookie="${4:-${TMPDIR:-/tmp}/sls_test_$$.txt}"
+    # Cookie num arquivo NOVO do mktemp (nome imprevisivel, modo 600): com o
+    # nome fixo sls_test_PID.txt num /tmp compartilhado (WSL, iSH) outro
+    # usuario podia deixar ali um link simbolico. Sem trap aqui: ele
+    # apagaria o trap de quem chama (o setup.sh); o que sobrar de um Ctrl+C
+    # no meio, o uninstall.sh apaga (sls_test_*).
+    if [ -n "$4" ]; then
+        _cookie="$4"
+    else
+        _cookie=`mktemp "${TMPDIR:-/tmp}/sls_test_XXXXXX" 2>/dev/null` || \
+            _cookie="${TMPDIR:-/tmp}/sls_test_$$.txt"
+    fi
 
     # A sessao precisa passar pela pagina de login antes do POST: vindo
     # direto, o servidor recusa a credencial correta.

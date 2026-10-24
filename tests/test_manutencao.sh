@@ -210,7 +210,9 @@ printf "\n=== 6. Uma requisicao por ciclo: recarga espera sem requisitar ===\n"
 # O ramo ocioso (else) so faz requisicao quando o alvo esta grey; fora disso
 # espera o restante da recarga com 'sleep \$_resta', sem recarregar a pagina.
 for f in clanfight.sh clandmg.sh altars.sh coliseum.sh clancoliseum.sh flagfight.sh clancommand.sh; do
-    if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk' "$LIB/$f"; then
+    # O Coliseu (3.9.107) acorda no minimo da troca quando ela e a proxima
+    # acao: _col_alvo e o LA ou o COL_TROCA_MIN.
+    if grep -q 'LA - _latk\|LA - .*last_atk\|LA - time_since_last_atk\|_col_alvo - time_since_last_atk' "$LIB/$f"; then
         ok "$f: espera o restante da recarga (sleep do cooldown, sem request)"
     else
         bad "$f: nao encontrou a espera de recarga sem requisicao"
@@ -412,7 +414,7 @@ for f in king.sh clanfight.sh clandmg.sh altars.sh clancoliseum.sh flagfight.sh 
 done
 # Login serializado por trava atomica (mkdir) com recuperacao de dono morto:
 # e o que segura o rate-limit de login por IP com 15-30 contas subindo juntas.
-if grep -q 'mkdir "\$LOCKDIR"' "$LIB/sls.sh" && grep -q 'kill -0 "\$_dono"' "$LIB/sls.sh"; then
+if grep -q 'mkdir "\$LOCKDIR"' "$LIB/sls.sh" && grep -q 'trava_dono_vivo "\$_dono" "\$LOCKDIR" || trava_tomar' "$LIB/sls.sh"; then
     ok "sls.sh: login serializado (trava atomica) com recuperacao de dono morto"
 else
     bad "sls.sh: serializacao de login ausente/fragil"
@@ -1628,8 +1630,19 @@ printf "\n=== 29. icones do painel sem seletor de variacao ===\n"
 # caixa enquanto 🧡 🔷 🪙 🥈, todos de codepoint unico, desenhavam certo.
 #
 # Dai a regra: nenhum icone do painel usa seletor de variacao.
-if LC_ALL=C grep -q $'\xef\xb8\x8f' "$ROOT/lib/panel.sh"; then
-    _vs=`LC_ALL=C grep -n $'\xef\xb8\x8f' "$ROOT/lib/panel.sh" | grep -vE '^[0-9]+:[[:space:]]*#' | head -n3`
+#
+# Os bytes do seletor (EF B8 8F) saem do printf em OCTAL: o $'\xef...' e do
+# bash, e no dash virava outro texto — o teste passava sem testar nada, e o
+# "⚔️" do Torneio de Equipe chegou a main assim (3.9.67 a 3.9.100).
+_fe0f=`printf '\357\270\217'`
+# A busca acha o seletor NESTE shell? Sem isso o teste volta a passar vazio.
+if printf 'x%sy\n' "$_fe0f" | LC_ALL=C grep -q "$_fe0f"; then
+    ok "painel: a busca do seletor funciona neste shell"
+else
+    bad "painel: a busca do seletor nao acha nem o proprio seletor"
+fi
+if LC_ALL=C grep -q "$_fe0f" "$ROOT/lib/panel.sh"; then
+    _vs=`LC_ALL=C grep -n "$_fe0f" "$ROOT/lib/panel.sh" | grep -vE '^[0-9]+:[[:space:]]*#' | head -n3`
     if [ -n "$_vs" ]; then
         bad "painel: ha icone com seletor de variacao ($_vs)"
     else
@@ -1639,6 +1652,7 @@ if LC_ALL=C grep -q $'\xef\xb8\x8f' "$ROOT/lib/panel.sh"; then
 else
     ok "painel: nenhum seletor de variacao"
 fi
+unset _fe0f
 
 # Os simbolos de estado de cada modo tem os mesmos bytes: e o que deixa o
 # nome da conta na mesma coluna em qualquer estado.
@@ -1846,9 +1860,9 @@ _r=$(
     && ok "king.sh: unrip no maximo uma vez por morte" \
     || bad "trava do unrip: $_r"
 unset _r
-# Coliseu: o USH aceita 1 a 6 digitos, a primeira ocorrencia (HP entre 1 e 9
-# e vida, nao morte; 123456 nao vira 12345).
-grep -q '\[0-9\]{1,6}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
+# Coliseu: o USH aceita 1 a 9 digitos (3.9.108; eram 6), a primeira
+# ocorrencia (HP entre 1 e 9 e vida, nao morte; 123456 nao vira 12345).
+grep -q '\[0-9\]{1,9}. "\$src_ram" | head -n 1' "$LIB/coliseum.sh" \
     && ok "coliseum.sh: HP de 1 digito nao passa por morte" \
     || bad "coliseum.sh: HP entre 1 e 9 seria lido como morte"
 # Espera sem luta nas Bandeiras / Coliseu do Cla: sem batalha a retomar.
@@ -2582,13 +2596,18 @@ _r=`sed -n '/^tarefas_livres() {/,/^}/p' "$LIB/crono.sh" | grep -c 'if caverna_l
 check "varredura ociosa: caverna e campanha pelo relogio do jogo" 2 "$_r"
 _r=`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c '^    tarefas_livres$'`
 check "start(): usa a varredura do ocioso, com os mesmos portoes" 1 "$_r"
-sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'caverna_ler_menu "$TMP/REST"' \
+# Desde a 3.9.111 a Home e lida uma vez (descanso_ler) e o relogio sai dela.
+sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q 'descanso_ler "$TMP/REST"' && \
+sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -q '^ *caverna_aplicar$' \
     && ok "descansar: le o relogio da caverna na pagina inicial que ja baixou" \
     || bad "descansar: nao le o relogio da caverna"
 
 # --- uma varredura completa por minuto
 _r=`( TMP="$_td10/s"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
       load_config() { printf 'VARREDURA'; exit 0; }; espera_interrompivel() { printf 'espera '; }
+      # Relogio parado: com o date de verdade o minuto podia virar entre
+      # gravar o last_start e o start() ler (falhou assim as 01:3x de 23/10).
+      date() { case "$1" in +%Y%m%d%H%M) echo 202610230130 ;; +%S) echo 30 ;; *) command date "$@" ;; esac; }
       date +%Y%m%d%H%M > "$TMP/last_start"; start; printf '| '
       echo 190001010000 > "$TMP/last_start"; start )`
 check "start(): segunda chamada no mesmo minuto so espera; minuto novo varre" "espera | VARREDURA" "$_r"
@@ -3300,7 +3319,10 @@ _td15=`mktemp -d`
 _esp50() { # segundos_desde_o_ultimo_login [gap] -> segundos dormidos
     ( HOME="$_td15/h$1$2"; mkdir -p "$HOME/.sls"
       . "$LIB/info.sh" > /dev/null 2>&1
-      [ "$1" != nunca ] && echo $(( `date +%s` - $1 )) > "$HOME/.sls/.login.ultimo"
+      # Relogio parado: com o date de verdade, o segundo podia virar entre
+      # gravar o carimbo e o login_espacar ler (dava 9, nao 10, as vezes).
+      date() { echo 1000000; }
+      [ "$1" != nunca ] && echo $(( 1000000 - $1 )) > "$HOME/.sls/.login.ultimo"
       [ -n "$2" ] && SLS_LOGIN_GAP="$2"
       sleep() { printf '%s' "$1"; }
       login_espacar )
@@ -3362,21 +3384,40 @@ printf "\n=== 52. trava de login: so o dono apaga ===\n"
 # =============================================================================
 _td18=`mktemp -d`
 sed -n '/^login_lock() {/,/^}/p;/^login_unlock() {/,/^}/p' "$LIB/sls.sh" > "$_td18/trava.sh"
-_trava52() { # outra_conta_segura(s|n) -> "trava_ficou|trava_saiu espacou?"
+# Dono "de verdade": um processo vivo com sls.sh no cmdline (3.9.106: so o
+# kill -0 aceitava qualquer processo com o PID, inclusive um reciclado).
+mkdir -p "$_td18/lib"; printf 'sleep 60\n' > "$_td18/lib/sls.sh"
+sh "$_td18/lib/sls.sh" & _dono52=$!
+_trava52() { # cenario -> "trava_ficou|trava_saiu espacou?"
+    #   n  sem trava de outra conta
+    #   s  trava de um sls.sh vivo
+    #   r  trava com o PID reciclado (vivo, mas nao e sls.sh)
+    #   v  trava sem PID, velha (dono morto entre o mkdir e o pid)
+    #   f  trava sem PID, nova (dono a caminho de gravar)
     ( HOME="$_td18/h$1"; mkdir -p "$HOME/.sls"; LOCKDIR="$HOME/.sls/.login.lock"
+      . "$LIB/info.sh" > /dev/null 2>&1
       . "$_td18/trava.sh"
       sleep() { :; }
       login_espacar() { printf 'espacou ' >> "$HOME/log"; }
       login_espacar_marcar() { :; }
-      # Dono vivo (o proprio shell do teste): a espera estoura os 3 minutos.
-      [ "$1" = s ] && { mkdir "$LOCKDIR"; echo $$ > "$LOCKDIR/pid"; }
-      login_lock; login_unlock
-      [ -d "$LOCKDIR" ] && printf 'trava_ficou ' || printf 'trava_saiu '
+      case "$1" in
+          s) mkdir "$LOCKDIR"; echo "$_dono52" > "$LOCKDIR/pid" ;;
+          r) mkdir "$LOCKDIR"; echo $$ > "$LOCKDIR/pid" ;;
+          v) mkdir "$LOCKDIR"; touch -t 200001010000 "$LOCKDIR" ;;
+          f) mkdir "$LOCKDIR" ;;
+      esac
+      login_lock
+      # Sem login_unlock: o que interessa e de quem a trava ficou.
+      if [ "${_lk_meu:-0}" = 1 ]; then printf 'pegou '; else printf 'esperou '; fi
       cat "$HOME/log" 2>/dev/null )
 }
-check "sem trava de outra conta: pega e solta"                 "trava_saiu espacou " "`_trava52 n`"
-check "estourou a espera: nao apaga a trava do dono, espaca"   "trava_ficou espacou " "`_trava52 s`"
-rm -rf "$_td18"; unset _td18
+check "sem trava de outra conta: pega"                            "pegou espacou " "`_trava52 n`"
+check "trava de um sls.sh vivo: espera e nao a apaga"             "esperou espacou " "`_trava52 s`"
+check "trava com PID reciclado (nao e sls.sh): pega"              "pegou espacou " "`_trava52 r`"
+check "trava sem PID ha mais de 1 min (dono morreu antes): pega"  "pegou espacou " "`_trava52 v`"
+check "trava sem PID recem-criada: espera o dono gravar"          "esperou espacou " "`_trava52 f`"
+kill "$_dono52" 2>/dev/null; wait "$_dono52" 2>/dev/null
+rm -rf "$_td18"; unset _td18 _dono52
 unset -f _trava52
 
 printf "\n=== 53. sessao anonima na luta, chaves desligadas, FIXHP, config, inscricao ===\n"
@@ -4264,8 +4305,12 @@ _rec87() {
       date() { case "$1" in +%s) cat "$TMP/relogio" ;; *) command date "$@" ;; esac; }
       sleep() { _s=${1%s}; _s=${_s%%.*}; read -r _c < "$TMP/relogio"; echo $(( _c + ${_s:-0} )) > "$TMP/relogio"; }
       RC=$1
+      # A cura que chega ao servidor sobe o HP (desde a 3.9.110 a recarga so
+      # conta com a pagina confirmando; com o HP igual sairia uma nova
+      # tentativa, que nao e o que este teste mede).
+      printf '%s' "$_cab<a href='/clanfight/attack/?r=1'>a</a><a href='/clanfight/heal/?r=3'>c</a>" | sed 's/> 1000 /> 9000 /' > "$TMP/curada"
       run_curl_exec() { echo "$1" >> "$TMP/req"
-          case "$1" in */heal/*) [ -f "$TMP/falhou" ] || { : > "$TMP/falhou"; return "$RC"; } ;; esac
+          case "$1" in */heal/*) [ -f "$TMP/falhou" ] || { : > "$TMP/falhou"; return "$RC"; }; cp "$TMP/curada" "$TMP/pag" ;; esac
           cat "$TMP/pag"; }
       luta_teto() { echo $(( $(cat "$TMP/relogio") + 12 )); }; func_unset() { :; }
       cd "$TMP" && clanfight_fight > /dev/null 2>&1
@@ -4319,7 +4364,7 @@ check "painel: Home com outro numero, 3 conferencias e fica no /user" "4|0" "`_s
 check "painel: Home sem os icones do cabecalho, sempre /user" "4|-" "`_st87 sem`"
 check "painel: Home de mais de 2 min, sempre /user" "4|-" "`_st87 velha`"
 check "login: uma autenticacao so (login_autenticar) no login e na reconexao" "1 1 0" \
-    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
+    "`sed -n '/^do_login() {/,/^}/p' "$LIB/sls.sh" | grep -c '^ *login_autenticar || return 1$'` `sed -n '/^login_logoff() {/,/^}/p' "$LIB/loginlogoff.sh" | grep -c '^ *login_autenticar || { relogin_falhou credencial; return 1; }$'` `sed -n '/^do_login() {/,/^}/p;/^login_logoff() {/,/^}/p' "$LIB/sls.sh" "$LIB/loginlogoff.sh" | grep -c 'pass@-'`"
 _r=`( TMP="$_td20/la87"; mkdir -p "$TMP"; export TMP; URL=http://jogo
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/loginlogoff.sh" > /dev/null 2>&1
       printf '%s' 'login=Ze&pass=a b' | base64 > "$TMP/cript_file"
@@ -4667,7 +4712,7 @@ _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
 _r=`_dj56 'disjuntor_segura > /dev/null && printf S || printf L'`
 check "disjuntor: aberto ha 30 min fecha sozinho" "L" "$_r"
 _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
-_r=`_dj56 'SLS_DISJUNTOR=0; disjuntor_segura && printf S || printf L; disjuntor_falha; printf " %s" "$(ls "$HOME/.sls/net" | grep -c falhas)"'`
+_r=`_dj56 'SLS_DISJUNTOR=0; disjuntor_segura && printf S || printf L; disjuntor_falha; printf " %s" "$(ls "$HOME/.sls/net" | grep -c falha)"'`
 check "disjuntor: SLS_DISJUNTOR=0 nao segura nem registra" "L 0" "$_r"
 # Os portoes: com o disjuntor aberto, tarefas_livres e start nao pedem nada.
 _nova56; mkdir -p "$_td56/h/.sls/net"; echo 1000 > "$_td56/h/.sls/net/BR.aberto"
@@ -4866,6 +4911,897 @@ _fs100() { ( TMP="$_td62/fs"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&
 check "func_sleep: caverna 15s; :x4 antes dos pulsos (02:44-04:24) 15s; resto 60s" "15 15 15 15 60 60 60 60" \
     "`_fs100 1 17 1` `_fs100 2 44 0` `_fs100 3 34 0` `_fs100 4 4 0` `_fs100 2 34 0` `_fs100 1 17 0` `_fs100 0 44 0` `_fs100 13 34 0`"
 rm -rf "$_td62"; unset _td62 _r; unset -f _cn100 _fs100
+
+# =============================================================================
+printf "\n=== 60. sem ouro nos lacos de clique, estatua e descanso sob o disjuntor ===\n"
+# =============================================================================
+_td60=`mktemp -d`
+_ok60="<html>x jsInterface.event(\"user=7;level=9\")</html>"
+
+# --- botao_pago nos lacos de clique (carreira, campanha, arena, elixir,
+# evento "fault" e caverna -cv). Pagina com UM link de acao; o rotulo diz se
+# cobra ouro. Clicar devolve a pagina sem link (fim). Saida: quantos cliques
+# (pedidos com ?r=) sairam.
+#   _clk60 FUNCAO LINK pago|gratis
+_clk60() {
+    ( TMP="$_td60/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; RUN=-cv
+      export TMP URL RUN
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      for _m in career campaign arena check specialevent cave; do . "$LIB/$_m.sh" > /dev/null 2>&1; done
+      cq_antes() { :; }; checkQuest() { :; }; clan_id() { :; }; get_config() { :; }
+      espera_interrompivel() { :; }; sleep() { :; }; CLD=""
+      case "$3" in pago) _rot="Atacar <img src='/images/icon/gold.png' alt=''/> 5" ;; *) _rot="Atacar" ;; esac
+      printf "%s <a class='btn' href='%s'>%s</a> %s" "$_ok60" "$2" "$_rot" "$_ok60" > "$TMP/acao"
+      # Home com o banner do evento (specialEvent), pagina do evento e o resto.
+      printf "%s<div class='shb_text'><a href='/fault/'>Evento</a></div>" "$_ok60" > "$TMP/home"
+      fetch_page() {
+          case "$1" in *'?r='*) echo "$1" >> "$TMP/cliques"; : > "$TMP/clicou"; echo "fim" > "${2:-$TMP/SRC}"; return 0 ;; esac
+          [ -f "$TMP/clicou" ] && { echo "fim" > "${2:-$TMP/SRC}"; return 0; }
+          case "$1" in /) cp "$TMP/home" "${2:-$TMP/SRC}" ;; *) cp "$TMP/acao" "${2:-$TMP/SRC}" ;; esac
+          return 0; }
+      "$1" > /dev/null 2>&1
+      [ -s "$TMP/cliques" ] && wc -l < "$TMP/cliques" | tr -d ' ' || printf 0 )
+}
+for _c60 in "career_func /career/attack/?r=11" "campaign_func /campaign/fight/?r=12" \
+            "arena_duel /arena/attack/1/?r=13" "use_elixir /inv/chest/use/4/1/?r=14" \
+            "specialEvent /fault/attack/?r=15" "cave_start /cave/speedUp/?r=16"; do
+    set -- $_c60
+    check "sem ouro: $1 nao clica botao pago" 0 "`_clk60 "$1" "$2" pago`"
+    # O mesmo botao de graca: o laco segue clicando (o portao novo nao trava o normal).
+    _r=`_clk60 "$1" "$2" gratis`
+    case "$_r" in [1-9]*) ok "sem ouro: $1 ainda clica o botao gratis ($_r)" ;; *) bad "sem ouro: $1 parou de clicar o botao gratis ($_r)" ;; esac
+done
+set --
+
+# --- Estatua: portao de 6h ANTES do cargo; conta sem cargo nao pede a pagina
+# do cla a cada varredura.  _est60 CENARIO -> "pedidos marca"
+_est60() {
+    ( TMP="$_td60/e"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; CLD=999; FUNC_clan_statue=y
+      export TMP URL CLD
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      case "$1" in
+          recente)   date +%s > "$TMP/last_estatua"; _pg="$_ok60" ;;
+          sem_cargo) _pg="$_ok60" ;;
+          mudo)      _pg="" ;;
+      esac
+      fetch_page() { echo "$1" >> "$TMP/req"; printf '%s' "$_pg" > "${2:-$TMP/SRC}"; return 0; }
+      clan_statue > /dev/null 2>&1
+      # Segunda varredura, ja sem o cache de 45s da pagina do cla.
+      _CLAN_TS=0; clan_statue > /dev/null 2>&1
+      _n=0; [ -s "$TMP/req" ] && _n=`wc -l < "$TMP/req" | tr -d ' '`
+      printf '%s %s' "$_n" "`[ -f "$TMP/last_estatua" ] && echo marcou || echo sem_marca`" )
+}
+check "estatua: portao de 6h fechado nao pede a pagina do cla" "0 marcou" "`_est60 recente`"
+check "estatua: conta sem cargo pede a pagina uma vez e espera o intervalo" "1 marcou" "`_est60 sem_cargo`"
+check "estatua: pagina do cla sem resposta nao marca (tenta na proxima)" "2 sem_marca" "`_est60 mudo`"
+
+# --- Descanso com o disjuntor aberto: so a sonda pede (no maximo 1 a cada
+# 20s por aparelho); a Home nao sai. Fechado, o descanso pede a Home.
+#   _ds60 aberto|fechado -> "home=N sonda=N"
+_ds60() {
+    ( HOME="$_td60/h"; TMP="$_td60/d"; rm -rf "$HOME" "$TMP"; mkdir -p "$HOME/.sls/net" "$TMP"
+      URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1; export HOME TMP URL SLS_TAG SLS_DISJUNTOR
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      [ "$1" = aberto ] && date +%s > "$HOME/.sls/net/BR.aberto"
+      batalha_retomar() { return 1; }; caverna_ler_menu() { :; }
+      run_curl() { echo sonda >> "$TMP/req"; }
+      fetch_page() { echo "$1" >> "$TMP/req"; printf %s "$1" > "$TMP/.ult_req"
+                     printf '%s' "$_ok60" > "${2:-$TMP/SRC}"; return 0; }
+      descansar > /dev/null 2>&1; descansar > /dev/null 2>&1
+      printf 'home=%s sonda=%s' "`grep -c '^/$' "$TMP/req"`" "`grep -c '^sonda$' "$TMP/req"`" )
+}
+check "disjuntor aberto: o descanso nao pede a Home (so a sonda, uma vez)" "home=0 sonda=1" "`_ds60 aberto`"
+check "disjuntor fechado: o descanso pede a Home (a segunda volta reaproveita)" "home=1 sonda=0" "`_ds60 fechado`"
+rm -rf "$_td60"; unset _td60 _r _c60 _ok60; unset -f _clk60 _est60 _ds60
+
+# =============================================================================
+printf "\n=== 61. reconexao com espera crescente (portao unico) ===\n"
+# =============================================================================
+# Senha recusada na reconexao: 60s, 120s, 300s, 900s (+ PID % 10); sem
+# resposta: 30s sem escalar; sucesso zera. Relogio em $_td61/t.
+_td61=`mktemp -d`
+_anon61="<html><title>Error 404</title> jsInterface.event(\"user=0;level=0\")</html>"
+_logada61="<html><title>Conta</title> jsInterface.event(\"user=7;level=9\")</html>"
+#   _rl61 'COMANDOS' -> o que os comandos imprimem; pedidos em $_td61/req
+#   O /user devolve $_td61/user; o POST devolve nada se $_td61/post_mudo existe.
+_rl61() {
+    ( TMP="$_td61/c"; mkdir -p "$TMP"; URL=http://jogo; TMP_COOKIE="$TMP/ck"
+      export TMP URL TMP_COOKIE
+      printf 'login=a&pass=b' | base64 > "$TMP/cript_file"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1
+      . "$LIB/loginlogoff.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      date() { case "$1" in +%s) cat "$_td61/t" ;; *) command date "$@" ;; esac; }
+      run_curl() {
+          case "$*" in
+              *data-urlencode*) echo POST >> "$_td61/req"; [ -f "$_td61/post_mudo" ] && return 28; cat /dev/null ;;
+              *sign_in*)        echo SIGNIN >> "$_td61/req" ;;
+              */user*)          echo USER >> "$_td61/req"; [ -f "$_td61/post_mudo" ] && [ -f "$_td61/ja_postou" ] && return 28
+                                cat "$_td61/user" ;;
+          esac
+          case "$*" in *data-urlencode*) : > "$_td61/ja_postou" ;; esac; }
+      fetch_train_stats() { :; }; clan_id() { :; }; messages_info() { :; }; parse_status() { :; }
+      eval "$1" )
+}
+_nova61() { rm -rf "$_td61/c" "$_td61/post_mudo" "$_td61/ja_postou"; : > "$_td61/req"
+            printf '%s' "$_anon61" > "$_td61/user"; echo 100000 > "$_td61/t"; }
+_posts61() { grep -c '^POST$' "$_td61/req"; }
+
+# Recusa em serie: so sai POST quando o degrau vence.
+_nova61
+_r=""
+for _t61 in 100000 100000 100030 100070 100100 100200 100400 100510 100600 101500 101600 100000; do
+    echo "$_t61" > "$_td61/t"; _rl61 'login_logoff > /dev/null 2>&1'
+    _r="$_r`_posts61` "
+done
+# (j = PID % 10, de 0 a 9)
+# 100000 POST 1 (proxima 100060+j) | 100000 e 100030 seguram
+# 100070 POST 2 (100190+j)        | 100100 segura
+# 100200 POST 3 (100500+j)        | 100400 segura
+# 100510 POST 4 (101410+j)        | 100600 segura
+# 101500 POST 5 (102400+j)        | 101600 segura
+# 100000 relogio voltou: a marca ficou mais de 30 min no futuro, POST 6
+check "reconexao: senha recusada espera 60s, 120s, 300s e 900s; relogio voltando nao prende" \
+    "1 1 1 2 2 3 3 4 4 5 5 6 " "$_r"
+check "reconexao: a marca guarda as recusas" 6 "`cut -d' ' -f2 "$_td61/c/relogin" 2>/dev/null`"
+# A segurada nao apaga o cookie (a sessao ja caiu, mas nada novo saiu) e diz quando volta.
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+echo ck > "$_td61/c/ck"
+_r=`_rl61 'login_logoff 2>&1; printf " rc=%s" $?'`
+case "$_r" in *"nova tentativa de login em 500s"*" rc=1") ok "reconexao segurada: rc=1 e diz quando volta" ;; *) bad "reconexao segurada ($_r)" ;; esac
+check "reconexao segurada: so o /user, cookie mantido" "0 1 S" \
+    "`_posts61` `grep -c '^USER$' "$_td61/req"` `[ -s "$_td61/c/ck" ] && echo S || echo N`"
+# Sem resposta no POST: 30s, sem escalar.
+_nova61; : > "$_td61/post_mudo"
+_rl61 'login_logoff > /dev/null 2>&1'
+check "reconexao sem resposta: espera 30s e nao conta como recusa" "100030 0" "`cat "$_td61/c/relogin" 2>/dev/null`"
+# Sessao de volta zera a marca.
+_nova61; mkdir -p "$_td61/c"; echo "99000 3" > "$_td61/c/relogin"; printf '%s' "$_logada61" > "$_td61/user"
+_rl61 'login_logoff > /dev/null 2>&1'
+check "reconexao: sessao viva zera a marca" "zerou" "`[ -f "$_td61/c/relogin" ] && echo ficou || echo zerou`"
+# A luta nao espera o portao (tem o proprio limite), mas a recusa conta.
+_nova61; mkdir -p "$_td61/c"; echo "100500 1" > "$_td61/c/relogin"
+_rl61 'login_logoff luta > /dev/null 2>&1'
+check "reconexao na luta: nao espera o portao e a recusa conta" "1 2" "`_posts61` `cut -d' ' -f2 "$_td61/c/relogin"`"
+check "luta_acabou: a reconexao da batalha passa 'luta'" 1 "`grep -c 'login_logoff luta$' "$LIB/info.sh"`"
+# Descanso e painel com o portao fechado: nenhum login, nem o /user do login.
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+_rl61 'batalha_retomar() { return 1; }; disjuntor_segura() { return 1; }; caverna_ler_menu() { :; }
+       fetch_page() { echo HOME >> "$_td61/req"; cat "$_td61/user" > "${2:-$TMP/SRC}"; return 0; }
+       descansar > /dev/null 2>&1'
+check "descanso com login recusado ha pouco: so a Home, sem /user nem POST" "1 0 0" \
+    "`grep -c '^HOME$' "$_td61/req"` `grep -c '^USER$' "$_td61/req"` `_posts61`"
+_nova61; mkdir -p "$_td61/c"; echo "100500 2" > "$_td61/c/relogin"
+# Duas voltas do tarefas_livres: o painel so roda com o intervalo dele vencido.
+_rl61 'for _v in 1 2; do stats_liberado && atualiza_stats > /dev/null 2>&1; done'
+check "painel com login recusado ha pouco: um /user, sem POST, e espera o intervalo" "1 0" \
+    "`grep -c '^USER$' "$_td61/req"` `_posts61`"
+grep -q '^relogin_zerar$' "$LIB/sls.sh" && ok "login de entrada zera o portao da reconexao" || bad "sls.sh nao zera o portao"
+rm -rf "$_td61"; unset _td61 _r _t61 _anon61 _logada61; unset -f _rl61 _nova61 _posts61
+
+# =============================================================================
+printf "\n=== 62. troca prata -> ouro: clique sem resposta nao vira segunda troca ===\n"
+# =============================================================================
+# Passagens seguidas do func_trade na mesma conta. O clique de cada passagem
+# segue a lista _CLIQUES ("ok", "corta" = o servidor trocou mas a resposta
+# nao veio, "mudo" = nao trocou e nao respondeu). O ouro da conta fica em
+# $TMP/ouro (o clique que troca soma 100). Saida: "cliques=N dia=feito|aberto
+# pendente=sim|nao ouro=N".
+_td62t=`mktemp -d`
+_tr62() { # _tr62 "CLIQUES" [PASSAGENS] [ouro_inicial] [pagina_viva=1]
+    ( TMP="$_td62t/c"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP; URL=http://jogo
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+      FUNC_trade_dias=1; echo "${3:-50}" > "$TMP/ouro"; echo "$1" > "$TMP/cliques_roteiro"; : > "$TMP/cliques"
+      _viva="<script>jsInterface.event(\"user=5;level=40\")</script>"
+      fetch_page() { case "$1" in
+          /trade/exchange)
+              read -r _o < "$TMP/ouro"
+              [ -f "$TMP/sem_pagina" ] && { : > "$TMP/SRC"; return 1; }
+              echo "<img src='/images/icon/gold.png' alt='g'/> $_o <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a>$_viva" > "$TMP/SRC" ;;
+          /trade/exchange/gold/*)
+              # A marca ja tem de estar em disco quando o pedido sai.
+              cat "$TMP/trade_pendente" >> "$TMP/marca_no_clique" 2>/dev/null
+              read -r _r < "$TMP/cliques_roteiro"; set -- $_r; _c=$1; shift; echo "$*" > "$TMP/cliques_roteiro"
+              echo x >> "$TMP/cliques"
+              case "$_c" in ok|corta) read -r _o < "$TMP/ouro"; echo $(( _o + 100 )) > "$TMP/ouro" ;; esac
+              case "$_c" in ok) echo "trocou $_viva" > "$TMP/SRC"; return 0 ;; *) : > "$TMP/SRC"; return 1 ;; esac ;;
+          esac; }
+      _p=0; while [ "$_p" -lt "${2:-3}" ]; do func_trade > /dev/null 2>&1; _p=$((_p + 1)); done
+      printf 'cliques=%s dia=%s pendente=%s ouro=%s' "`wc -l < "$TMP/cliques" | tr -d ' '`" \
+          "`[ "\`cat "$TMP/last_trade" 2>/dev/null\`" = "\`date +%Y%m%d\`" ] && echo feito || echo aberto`" \
+          "`[ -f "$TMP/trade_pendente" ] && echo sim || echo nao`" "`cat "$TMP/ouro"`" )
+}
+check "troca: resposta normal, uma troca e o dia feito" "cliques=1 dia=feito pendente=nao ouro=150" "`_tr62 ok`"
+check "troca: o servidor trocou mas a resposta nao veio -> o ouro confirma, sem segunda troca" \
+    "cliques=1 dia=feito pendente=nao ouro=150" "`_tr62 corta`"
+check "troca: nao trocou e nao respondeu -> tenta de novo e a segunda sai" \
+    "cliques=2 dia=feito pendente=nao ouro=150" "`_tr62 'mudo ok'`"
+check "troca: duas tentativas sem confirmacao -> nao tenta a terceira no dia" \
+    "cliques=2 dia=feito pendente=nao ouro=50" "`_tr62 'mudo mudo mudo' 4`"
+check "troca: ouro abreviado (1,2K) nao enxerga o lote -> nao repete" \
+    "cliques=1 dia=feito pendente=nao ouro=1,2K" "`_tr62 mudo 3 1,2K`"
+_r=$( TMP="$_td62t/m"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 77 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          *) cat "$TMP/trade_pendente" > "$TMP/marca"; : > "$TMP/SRC"; return 1 ;; esac; }
+      func_trade > /dev/null 2>&1; cat "$TMP/marca" )
+check "troca: a marca pendente vai para o disco ANTES do clique (worker morto no meio)" \
+    "`date +%Y%m%d` 77 100 1" "$_r"
+# Pendente de outro dia nao vale; pagina de conferencia que nao veio nao decide.
+_r=$( TMP="$_td62t/o"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
+      echo "19990101 10 100 2" > "$TMP/trade_pendente"; : > "$TMP/cl"
+      fetch_page() { case "$1" in
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 10 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          *) echo x >> "$TMP/cl"; echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;; esac; }
+      func_trade > /dev/null 2>&1; printf '%s ' "`wc -l < "$TMP/cl" | tr -d ' '`"
+      echo "`date +%Y%m%d` 10 100 1" > "$TMP/trade_pendente"; rm -f "$TMP/last_trade"; : > "$TMP/cl"
+      fetch_page() { : > "$TMP/SRC"; return 1; }
+      func_trade > /dev/null 2>&1
+      printf '%s %s' "`[ -f "$TMP/last_trade" ] && echo feito || echo aberto`" "`cat "$TMP/trade_pendente"`" )
+check "troca: pendente de ontem nao conta; conferencia sem resposta nao decide" \
+    "1 aberto `date +%Y%m%d` 10 100 1" "$_r"
+rm -rf "$_td62t"; unset _td62t _r; unset -f _tr62
+
+# =============================================================================
+printf "\n=== 63. processos: subshell de worker vivo, fd das credenciais, conta removida ===\n"
+# =============================================================================
+_td63=`mktemp -d`
+# --- limpa_orfaos (play.sh): o subshell de um worker conhecido fica; o
+# worker que nenhum .pid conhece (e o subshell dele) morre. Workers falsos
+# com o mesmo caminho lib/sls.sh; o subshell anota o proprio PID (o $PPID do
+# sh -c que ele roda).
+if [ -r "/proc/$$/stat" ] && [ -r "/proc/$$/cmdline" ]; then
+    mkdir -p "$_td63/lib" "$_td63/st" "$_td63/a" "$_td63/b"
+    printf '%s\n' '( sh -c "echo \$PPID" > "$1/sub"; sleep 30; : ) &' 'sleep 30' > "$_td63/lib/sls.sh"
+    sh "$_td63/lib/sls.sh" "$_td63/a" & _w63a=$!
+    sh "$_td63/lib/sls.sh" "$_td63/b" & _w63b=$!
+    echo "$_w63a" > "$_td63/st/BR_a.pid"
+    _n63=0; while { [ ! -s "$_td63/a/sub" ] || [ ! -s "$_td63/b/sub" ]; } && [ "$_n63" -lt 50 ]; do sleep 0.1; _n63=$((_n63 + 1)); done
+    read -r _s63a < "$_td63/a/sub"; read -r _s63b < "$_td63/b/sub"
+    _r=$( LIBDIR="$_td63/lib"; STATUS_DIR="$_td63/st"; GOLD=""; RESET=""
+          eval "`sed -n '/^limpa_orfaos() {/,/^}/p' "$ROOT/play.sh"`"
+          limpa_orfaos )
+    sleep 1
+    _vivo63() { kill -0 "$1" 2>/dev/null && printf V || printf M; }
+    check "limpa_orfaos: worker e subshell conhecidos ficam; orfao e o subshell dele morrem" \
+        "VV MM 2" "`_vivo63 $_w63a``_vivo63 $_s63a` `_vivo63 $_w63b``_vivo63 $_s63b` `printf '%s' "$_r" | grep -o '[0-9][0-9]*' | head -n1`"
+    kill "$_w63a" "$_s63a" "$_w63b" "$_s63b" 2>/dev/null
+    unset _w63a _w63b _s63a _s63b _n63; unset -f _vivo63
+else
+    ok "limpa_orfaos: sem /proc legivel neste aparelho (teste pulado)"
+fi
+check "launch_worker: o worker nao herda o fd 3 (accounts.conf)" 1 \
+    "`sed -n '/^launch_worker() {/,/^}/p' "$ROOT/play.sh" | grep -c '2>&1 3<&- &$'`"
+
+# --- Conta removida com o painel no ar: o painel que ainda le o accounts.conf
+# antigo NAO a relanca (status "stopped" antes de apagar o .pid).
+_r=$( _h="$_td63/rm"; mkdir -p "$_h/.sls/status" "$_h/.sls/BR_Ze"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"; cp "$_h/acc.conf" "$_h/acc.antigo"
+      echo 999999 > "$_h/.sls/status/BR_Ze.pid"; echo running > "$_h/.sls/status/BR_Ze.status"
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      eval "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh"`"
+      clear() { :; }; sleep() { :; }; escolher_conta() { srv=1; user=Ze; return 0; }
+      printf 'y\nn\n' | remove_account > /dev/null 2>&1
+      # O painel desta volta abriu o arquivo ANTES da remocao.
+      ACCOUNTS_FILE="$_h/acc.antigo"
+      launch_worker() { echo L >> "$_h/lancou"; }
+      PANEL_SUPERVISE=1; PANEL_ONCE=1; PANEL_DRAW=0; SLS_EMOJI=0; SLS_COLS=60
+      export PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS ACCOUNTS_FILE
+      . "$LIB/panel.sh" > /dev/null 2>&1; painel_loop > /dev/null 2>&1
+      printf 'lancou=%s conf=%s' "`cat "$_h/lancou" 2>/dev/null | wc -l | tr -d ' '`" "`grep -c Ze "$_h/acc.conf"`" )
+check "conta removida com o painel no ar: o painel nao a relanca" "lancou=0 conf=0" "$_r"
+check "setup: cadastrar conta apaga o 'stopped' que sobrou dela" 1 \
+    "`sed -n '/^add_account() {/,/^}/p' "$ROOT/setup.sh" | grep -c 'rm -f "\$HOME/.sls/status/\${tag}_\${user}.status"'`"
+rm -rf "$_td63"; unset _td63 _r
+
+# =============================================================================
+printf "\n=== 64. menos pedidos: duelo, torneio de equipe, caverna -cv, /train, dia 1 ===\n"
+# =============================================================================
+_td64=`mktemp -d`
+
+# --- Duelo do Cla: rodadas com o relogio andando um minuto por rodada.
+#   _dm64 CLD LUTA HORA_INICIAL -> "rodadas=N" (LUTA 1 = toda rodada tem luta)
+_dm64() {
+    ( TMP="$_td64/dm"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clandmg.sh" > /dev/null 2>&1
+      CLD="$1"; _LUTA="$2"; echo "$3" > "$TMP/min"
+      date() { case "$1" in
+          +%H:%M) read -r _m < "$TMP/min"; echo $(( _m + 1 )) > "$TMP/min"; printf '09:%02d' "$_m" ;;
+          +%s) echo 100000 ;; *) command date "$@" ;; esac; }
+      run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; }; sleep() { :; }
+      batalha_marcar() { :; }; link_acao() { :; }; estado_luta() { echo luta; }; full_atualizar() { :; }
+      clandmgfight_fight() { echo r >> "$TMP/rodadas"; _lt_lutou="$_LUTA"; }
+      clandmgfight_start > /dev/null 2>&1
+      printf 'rodadas=%s' "`cat "$TMP/rodadas" 2>/dev/null | wc -l | tr -d ' '`" )
+}
+check "duelo do cla: conta sem cla nao entra" "rodadas=0" "`_dm64 '' 1 30`"
+check "duelo do cla: duas rodadas seguidas sem luta encerram (antes: ate :49)" "rodadas=2" "`_dm64 999 0 30`"
+check "duelo do cla: com luta, nenhuma rodada nova a partir de :45" "rodadas=5" "`_dm64 999 1 40`"
+
+# --- Torneio de Equipe: contador de 300s na pagina (membro). Relogio em
+# $TMP/t, que o sleep anda. A luta abre aos 300s.
+#   -> "leituras=N luta_aos=S"
+_cc64() {
+    ( TMP="$_td64/cc"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clancommand.sh" > /dev/null 2>&1
+      echo 100000 > "$TMP/t"; : > "$TMP/req"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      time_exit() { wait "$!" 2>/dev/null; }
+      run_curl_exec() {
+          echo "$1" >> "$TMP/req"; read -r _t < "$TMP/t"
+          _p="<img src='/images/icon/level.png'/> <a href='/clancommand/myteam/'>Equipe</a>"
+          if [ "$_t" -ge 100300 ]; then echo "$_p <a href='/clancommand/attack/?r=1'>Atacar</a>"
+          else echo "$_p <span id='time_$(( (100300 - _t) * 1000 ))'>min</span> Lider nao se inscreveu <a href='/clancommand/'>Atualizar</a>"; fi; }
+      full_atualizar() { :; }; batalha_marcar() { :; }; batalha_limpar() { :; }; evento_cancelar() { :; }
+      clancommand_fight() { read -r _t < "$TMP/t"; echo "$(( _t - 100000 ))" > "$TMP/luta"; }; clancommand_inscrever() { :; }
+      clancommand_start > /dev/null 2>&1
+      printf 'leituras=%s luta_aos=%s' "`grep -c '/clancommand/$' "$TMP/req"`" "`cat "$TMP/luta" 2>/dev/null`" )
+}
+_r=`_cc64`
+case "$_r" in
+    "leituras="[1-8]" luta_aos=30"[0-5]) ok "torneio de equipe: dorme ate perto do inicio e entra na hora ($_r)" ;;
+    *) bad "torneio de equipe: espera antes da luta ($_r)" ;;
+esac
+
+# --- Caverna -cv: depois da fuga do monstro o link vem da pagina NOVA; o
+# preco do acelerar so conta quando a acao foi acelerar.
+_r=$( TMP="$_td64/cv"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; RUN=-cv; export TMP URL RUN
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/cave.sh" > /dev/null 2>&1
+      clan_id() { :; }; get_config() { :; }; espera_interrompivel() { :; }; sleep() { :; }; bottom_info() { :; }
+      _viva="<script>jsInterface.event(\"user=5;level=40\")</script>"
+      echo 0 > "$TMP/passo"
+      fetch_page() {
+          case "$1" in /cave/) : ;; *) echo "$1" >> "$TMP/req" ;; esac
+          read -r _p < "$TMP/passo"; echo $(( _p + 1 )) > "$TMP/passo"
+          case "$_p" in
+              0) echo "Monstro! <a href='/cave/runaway/?r=1'>Fugir</a> <a href='/cave/gather/?r=1'>Minerar</a> $_viva" ;;
+              1) echo "<a href='/cave/gather/?r=2'>Minerar</a> <a href='/cave/speedUp/?r=2'>Acelerar <img src='/images/icon/silver.png' alt=''/> 500</a> $_viva" ;;
+              *) echo "espera $_viva" ;;
+          esac > "$TMP/SRC"; }
+      cave_start > /dev/null 2>&1
+      printf '%s| gasto=%s' "`tr '\n' ' ' < "$TMP/req"`" "$SILVER_SPENT_TOTAL" )
+check "caverna -cv: link relido depois da fuga e preco so no acelerar" \
+    "/cave/runaway/?r=1 /cave/gather/?r=2 | gasto=0" "$_r"
+
+# --- /train sem energia na pagina: a segunda chamada espera o intervalo.
+_r=$( TMP="$_td64/tr"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; export TMP URL
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo x >> "$TMP/req"; echo "Vida (5000) : 1 : 2 : 3 : 4 : 5"; }
+      FIXHP=5000; ACC_ENE=""
+      fetch_train_stats; fetch_train_stats; fetch_train_stats
+      printf '%s %s' "`wc -l < "$TMP/req" | tr -d ' '`" "$FIXHP" )
+check "/train sem a energia na pagina: um pedido, nao um por chamada" "1 5000" "$_r"
+
+# --- Dia 1 antes das 9h: a missao 11 nao tira a espera curta da madrugada.
+_d164() { ( TMP="$_td64/d1"; rm -rf "$TMP"; mkdir -p "$TMP"; . "$LIB/crono.sh" > /dev/null 2>&1
+            _M=$2; _A=$3; dia_atual() { _DIA=01; }; minuto_atual() { _MIN=$_M; }; func_cat() { printf '%s' "$i"; }
+            caverna_noite_ativa() { [ "$_A" = 1 ]; }; coliseum_start() { :; }
+            HOUR=$1; func_sleep 2>/dev/null ) ; }
+check "dia 1 de madrugada: caverna e pulsos do Coliseu com 15s; resto 60s" "15 15 60" \
+    "`_d164 1 17 1` `_d164 3 44 0` `_d164 6 17 0`"
+rm -rf "$_td64"; unset _td64 _r; unset -f _dm64 _cc64 _d164
+
+# =============================================================================
+printf "\n=== 65. travas, um play.sh por vez, stop.sh e uninstall ===\n"
+# =============================================================================
+_td65=`mktemp -d`
+
+# --- Sonda do disjuntor: trava sem PID e velha nao segura a sonda para sempre.
+_r=$( HOME="$_td65/h"; TMP="$_td65/t"; URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1
+      export HOME TMP URL SLS_TAG SLS_DISJUNTOR; mkdir -p "$HOME/.sls/net" "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl() { echo sonda >> "$_td65/req"; }
+      date +%s > "$HOME/.sls/net/BR.aberto"
+      mkdir "$HOME/.sls/net/BR.sonda"; touch -t 200001010000 "$HOME/.sls/net/BR.sonda"
+      disjuntor_segura > /dev/null 2>&1
+      printf '%s' "`cat "$_td65/req" 2>/dev/null | wc -l | tr -d ' '`" )
+check "sonda: trava sem PID ha mais de 1 min nao segura a sonda" 1 "$_r"
+check "sls.sh: encerrado no meio do login, a trava sai junto (trap EXIT)" 1 \
+    "`grep -c '^trap .*_lk_meu.*rm -rf .*LOCKDIR.* EXIT$' "$LIB/sls.sh"`"
+
+# --- play.sh: um por vez no le/encerra/grava do orchestrator.pid; trava
+# presa de um play.sh morto nao segura o proximo.
+_bl65=`sed -n '/^_orq_lk=/,/^unset _orq_lk/p' "$ROOT/play.sh"`
+_r=$( STATUS_DIR="$_td65/st"; mkdir -p "$STATUS_DIR/.orq.lock"
+      sleep() { :; }
+      eval "$_bl65"
+      printf '%s %s' "`cat "$STATUS_DIR/orchestrator.pid"`" "`[ -d "$STATUS_DIR/.orq.lock" ] && echo trava_ficou || echo trava_saiu`" )
+check "play.sh: trava presa nao segura; grava o pid e solta a trava" "$$ trava_saiu" "$_r"
+_l1=`printf '%s\n' "$_bl65" | grep -n 'until mkdir' | cut -d: -f1`
+_l2=`printf '%s\n' "$_bl65" | grep -n '^_orq=\$(cat' | cut -d: -f1`
+_l3=`printf '%s\n' "$_bl65" | grep -n 'orchestrator.pid"$' | tail -n1 | cut -d: -f1`
+_l4=`printf '%s\n' "$_bl65" | grep -n '^rm -rf "\$_orq_lk"' | cut -d: -f1`
+if [ -n "$_l1" ] && [ -n "$_l4" ] && [ "$_l1" -lt "$_l2" ] && [ "$_l3" -lt "$_l4" ]; then
+    ok "play.sh: a trava cobre ler o .pid, encerrar o anterior e gravar o novo"
+else
+    bad "play.sh: ordem da trava do orchestrator ($_l1 $_l2 $_l3 $_l4)"
+fi
+unset _bl65 _l1 _l2 _l3 _l4
+
+# --- stop.sh: script_do_bot reconhece o shell rodando o play.sh desta pasta,
+# de dentro dela ou de outra; nao um editor/visualizador nem o de outra pasta.
+mkdir -p "$_td65/bot" "$_td65/outro"
+printf 'sleep 30\n' > "$_td65/bot/play.sh"; printf 'sleep 30\n' > "$_td65/outro/play.sh"
+( cd "$_td65/bot" && exec sh ./play.sh ) & _p65a=$!
+( cd "$_td65" && exec sh "$_td65/bot/play.sh" ) & _p65b=$!
+( cd "$_td65/bot" && exec tail -f play.sh ) > /dev/null 2>&1 & _p65c=$!
+( cd "$_td65/outro" && exec sh ./play.sh ) & _p65d=$!
+sleep 1
+_r=$( SLSDIR=`cd "$_td65/bot" && pwd -P`
+      eval "`sed -n '/^script_do_bot() {/,/^}/p' "$ROOT/stop.sh"`"
+      for _p in $_p65a $_p65b $_p65c $_p65d; do script_do_bot "$_p" play.sh && printf S || printf N; done )
+if [ -r "/proc/$_p65a/cmdline" ]; then
+    check "stop.sh: play.sh do bot (de dentro e de fora) sim; tail -f play.sh e outro bot nao" "SSNN" "$_r"
+else
+    ok "stop.sh: sem /proc legivel neste aparelho (teste pulado)"
+fi
+kill $_p65a $_p65b $_p65c $_p65d 2>/dev/null; wait $_p65a $_p65b $_p65c $_p65d 2>/dev/null
+unset _p65a _p65b _p65c _p65d
+
+# --- stop.sh com 3 contas: TERM em todas e UMA espera (eram 2s por conta).
+mkdir -p "$_td65/sh/.sls/status" "$_td65/w/lib"; printf 'sleep 60\n' > "$_td65/w/lib/sls.sh"
+_ws65=""
+for _c in A B C; do
+    sh "$_td65/w/lib/sls.sh" & echo $! > "$_td65/sh/.sls/status/BR_$_c.pid"; _ws65="$_ws65 $!"
+done
+sleep 1
+_t0=`date +%s`; ( HOME="$_td65/sh" sh "$ROOT/stop.sh" ) > /dev/null 2>&1; _t1=`date +%s`
+_r=""; for _p in $_ws65; do kill -0 "$_p" 2>/dev/null && _r="${_r}V" || _r="${_r}M"; done
+check "stop.sh: tres contas paradas" "MMM" "$_r"
+[ $(( _t1 - _t0 )) -le 4 ] && ok "stop.sh: uma espera so ($(( _t1 - _t0 ))s para 3 contas; eram 1+2x3)" \
+                           || bad "stop.sh: lento ($(( _t1 - _t0 ))s para 3 contas)"
+kill $_ws65 2>/dev/null; wait $_ws65 2>/dev/null; unset _ws65 _t0 _t1 _c _p
+
+# --- uninstall.sh: bot clonado direto no HOME nao apaga o HOME.
+mkdir -p "$_td65/casa/lib" "$_td65/fake"
+for _f in uninstall.sh play.sh stop.sh setup.sh; do cp "$ROOT/$_f" "$_td65/casa/"; done
+cp "$LIB/sls.sh" "$LIB/info.sh" "$_td65/casa/lib/"
+for _b in rm pkill sleep du termux-wake-unlock; do
+    printf '#!/bin/sh\necho "%s $*" >> "%s"\n' "$_b" "$_td65/apagou" > "$_td65/fake/$_b"
+    chmod +x "$_td65/fake/$_b"
+done
+echo REMOVER | ( HOME="$_td65/casa" PATH="$_td65/fake:$PATH" sh "$_td65/casa/uninstall.sh" ) > /dev/null 2>&1
+grep -q "rm -rf" "$_td65/apagou" 2>/dev/null && _r=apagaria || _r=recusou
+check "uninstall.sh: bot no proprio HOME nao apaga o HOME" recusou "$_r"
+check "uninstall.sh: so apaga em /tmp o que o bot cria" 0 \
+    "`grep -v '^ *#' "$ROOT/uninstall.sh" | grep -c '/tmp/sls_\*\|/tmp/diag_\*'`"
+rm -rf "$_td65"; unset _td65 _r _f _b
+
+# =============================================================================
+printf "\n=== 66. Coliseu: troca por inimigo forte com 4s e no maximo 2 seguidas ===\n"
+# =============================================================================
+# Pedido do dono (3.9.107). Mesmo roteiro de paginas para o codigo ANTIGO
+# (o coliseum.sh atual com as tres linhas da troca devolvidas ao que eram) e o
+# NOVO: sala so com inimigo mais forte (HP 9000 x 5000 meu), sem cura nem
+# esquiva devidas; relogio simulado, 1s por pedido; aos 40s o jogo encerra.
+_td66=`mktemp -d`
+sed -e 's/\[ "\$time_since_last_atk" -ge "\$COL_TROCA_MIN" \]/[ "$time_since_last_atk" -ne "$LA" ]/' \
+    -e 's/\[ "\$_col_trocas" -lt "\$COL_TROCAS_MAX" \] && \\$/[ 1 = 1 ] \&\& \\/' \
+    -e 's/_col_alvo=\$COL_TROCA_MIN$/_col_alvo=$LA/' \
+    "$LIB/coliseum.sh" > "$_td66/coliseum_antigo.sh"
+#   _col66 ARQUIVO_DO_MODULO [HP_DO_INIMIGO] -> "segundo:acao ..." das acoes de luta
+_col66() {
+    _en66="${2:-9000}"
+    ( TMP="$_td66/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$1" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; echo 10000 > "$TMP/col_full"; : > "$TMP/req"; COLISEU_GRAFICO=1
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in */coliseum/atk/*|*/coliseum/atkrnd/*) _v=${1#*/coliseum/}; echo "$(( _t - 1000 )):${_v%%/*}" >> "$TMP/req" ;; esac
+          if [ "$_t" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/coliseum/?end_fight=true'>Fim</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> 5000 Inimigo <span class='nwr'>&nbsp;$_en66</span>
+                    <a href='/coliseum/atk/?r=$_t'>a</a> <a href='/coliseum/atkrnd/?r=$_t'>t</a> <a href='/coliseum/dodge/?r=$_t'>d</a> <a href='/coliseum/heal/?r=$_t'>h</a>"
+          fi; }
+      coliseum_fight > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/req" )
+}
+_v66=`_col66 "$LIB/coliseum.sh"`
+_a66=`_col66 "$_td66/coliseum_antigo.sh"`
+printf "  [INFO] antigo: %s\n  [INFO] novo:   %s\n" "$_a66" "$_v66"
+# Resumo: ataques, trocas, maior sequencia de trocas e menor intervalo entre acoes.
+_res66() { printf '%s\n' $1 | awk -F: '
+    { if ($2 == "atk") { a++; s = 0 } else { r++; s++; if (s > m) m = s }
+      if (NR > 1 && (min == "" || $1 - u < min)) min = $1 - u; u = $1 }
+    END { printf "atk=%d trocas=%d seguidas=%d intervalo_min=%d", a, r, m, min }'; }
+_rv66=`_res66 "$_v66"`; _ra66=`_res66 "$_a66"`
+printf "  [INFO] antigo: %s | novo: %s\n" "$_ra66" "$_rv66"
+case "$_ra66" in "atk=0 "*) ok "Coliseu ANTIGO no roteiro: so trocava, nenhum ataque ($_ra66)" ;;
+                 *) bad "Coliseu antigo nao reproduz o defeito ($_ra66)" ;; esac
+case "$_rv66" in
+    "atk="[1-9]*" seguidas=2 intervalo_min="[4-9]*) ok "Coliseu NOVO: ataca, no maximo 2 trocas seguidas, acoes com 4s ou mais ($_rv66)" ;;
+    *) bad "Coliseu novo ($_rv66)" ;;
+esac
+# A ordem do novo: troca, troca, ataque, de novo.
+case "$_v66" in
+    *":atkrnd "*":atkrnd "*":atk "*":atkrnd "*":atkrnd "*":atk "*) ok "Coliseu NOVO: troca, troca, ataque (e repete)" ;;
+    *) bad "Coliseu novo fora da ordem troca, troca, ataque ($_v66)" ;;
+esac
+# Inimigo mais fraco (3000 x 5000 meu): a troca nao entra, e o antigo e o
+# novo fazem exatamente os mesmos pedidos (so ataques, a cada 6s).
+_v66f=`_col66 "$LIB/coliseum.sh" 3000`; _a66f=`_col66 "$_td66/coliseum_antigo.sh" 3000`
+case "$_v66f" in
+    *atk*) check "Coliseu com inimigo fraco: antigo e novo iguais" "$_a66f" "$_v66f" ;;
+    *)     bad "Coliseu com inimigo fraco: nenhum ataque no roteiro ($_v66f)" ;;
+esac
+rm -rf "$_td66"; unset _td66 _v66 _a66 _rv66 _ra66 _v66f _a66f _en66; unset -f _col66 _res66
+
+# =============================================================================
+printf "\n=== 67. HP de 7 digitos, disjuntor sem perda, logs, -cl, credencial e cookie ===\n"
+# =============================================================================
+_td67=`mktemp -d`
+
+# --- HP: a mesma expressao de cada modulo, tirada do arquivo, numa pagina
+# com 1.234.567 de HP (eram 6 digitos: 123456) e numa com 123456 (igual).
+printf "%s\n" "<img src='/images/icon/health.png' alt='hp'/> 1234567 x" > "$_td67/hp7"
+printf "%s\n" "<img src='/images/icon/health.png' alt='hp'/> 123456 x" > "$_td67/hp6"
+_r=""
+for _m in altars clanfight clandmg clancoliseum flagfight coliseum; do
+    _re=`sed -n 's/.*\((hp)\[^A-Za-z0-9\]{1,4}\[0-9\]{1,[0-9]}\).*/\1/p' "$LIB/$_m.sh" | head -n1`
+    _a=`grep -o -E "$_re" "$_td67/hp7" | grep -o -E '[0-9]+$'`
+    _b=`grep -o -E "$_re" "$_td67/hp6" | grep -o -E '[0-9]+$'`
+    _r="$_r$_m=$_a/$_b "
+done
+check "HP das lutas: 1234567 inteiro (e 123456 como antes) nos seis modulos" \
+    "altars=1234567/123456 clanfight=1234567/123456 clandmg=1234567/123456 clancoliseum=1234567/123456 flagfight=1234567/123456 coliseum=1234567/123456 " "$_r"
+_r=`sed -n 's/.*\((nbsp)\[^A-Za-z0-9\]{1,2}\[0-9\]{1,[0-9]}\).*/\1/p' "$LIB/coliseum.sh" | head -n1`
+check "Coliseu: HP do inimigo com ate 9 digitos" "1234567" \
+    "`printf '%s\n' '<span>&nbsp;1234567</span>' | grep -o -E "$_r" | grep -o -E '[0-9]+$'`"
+
+# --- Disjuntor: tres contas falhando AO MESMO TEMPO abrem (cada uma grava o
+# seu arquivo; antes o awk+mv de uma podia apagar a linha de outra).
+_r=$( HOME="$_td67/h"; URL=http://jogo; SLS_TAG=BR; SLS_DISJUNTOR=1; export HOME URL SLS_TAG SLS_DISJUNTOR
+      mkdir -p "$HOME/.sls"; . "$LIB/info.sh" > /dev/null 2>&1
+      for _c in BR_A BR_B BR_C; do ( TMP="$_td67/$_c"; disjuntor_falha > /dev/null 2>&1 ) & done; wait
+      printf '%s %s' "`[ -f "$HOME/.sls/net/BR.aberto" ] && echo aberto || echo fechado`" \
+          "`ls "$HOME/.sls/net" | grep -c '^BR\.falha\.BR_'`" )
+check "disjuntor: tres contas ao mesmo tempo abrem; um arquivo de falha por conta" "aberto 3" "$_r"
+check "disjuntor: sem regravar arquivo comum (awk + mv)" 0 "`grep -c 'mv -f "\$_DJ.falhas' "$LIB/info.sh"`"
+
+# --- Logs: req.stat grande (worker que morre antes dos 300 registros) e o
+# blessing_blocked.log entram no rotate_log; o modo -cv passa por ele.
+_r=$( TMP="$_td67/lg"; mkdir -p "$TMP"; eval "$(sed -n '/^_rl_voltas=0/,/^}/p' "$LIB/sls.sh")"
+      _i=0; while [ "$_i" -lt 4000 ]; do echo "1700000000 200 300 0"; _i=$((_i + 1)); done > "$TMP/req.stat"
+      head -c 5242881 /dev/zero > "$TMP/blessing_blocked.log"
+      rotate_log
+      printf '%s %s %s' "`grep -c . "$TMP/req.stat"`" "`wc -c < "$TMP/blessing_blocked.log" | tr -d ' '`" \
+          "`wc -c < "$TMP/blessing_blocked.log.1" | tr -d ' '`" )
+check "rotate_log: req.stat grande vira 200 linhas; blessing_blocked.log roda" "200 0 1048576" "$_r"
+check "caverna -cv: o laco confere os logs" 1 "`sed -n '/^cave_start() {/,/^}/p' "$LIB/cave.sh" | grep -c 'rotate_log'`"
+
+# --- Modo -cl: o Coliseu nao comeca nos minutos antes do Torneio de Equipe.
+_pt67=`sed -n 's/^ *(\(09:2\[4-9\]|.*\))$/\1/p' "$LIB/coliseum.sh" | head -n1`
+_r=""
+for _h in 11:24 11:29 17:54 17:59 11:20 17:50; do
+    eval "case $_h in $_pt67) _r=\"\${_r}B\" ;; *) _r=\"\${_r}L\" ;; esac"
+done
+check "modo -cl: bloqueia 11:24-11:29 e 17:54-17:59 (Torneio de Equipe), libera 11:20 e 17:50" "BBBBLL" "$_r"
+
+# --- Conta removida respondendo "n" para os dados: credencial e cookie saem.
+_r=$( _h="$_td67/rm"; mkdir -p "$_h/.sls/status" "$_h/.sls/BR_Ze"
+      printf '1|Ze|Y3JlZGVuY2lhbA==\n' > "$_h/acc.conf"
+      echo cred > "$_h/.sls/BR_Ze/cript_file"; echo ck > "$_h/.sls/BR_Ze/cookie.txt"; echo log > "$_h/.sls/BR_Ze/sls.log"
+      HOME="$_h"; SLSDIR="$ROOT"; STATUS_DIR="$_h/.sls/status"; ACCOUNTS_FILE="$_h/acc.conf"
+      export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE
+      . "$LIB/contas.sh" > /dev/null 2>&1
+      eval "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh"`"
+      clear() { :; }; sleep() { :; }; escolher_conta() { srv=1; user=Ze; return 0; }
+      printf 'y\nn\n' | remove_account > /dev/null 2>&1
+      ls "$_h/.sls/BR_Ze" | tr '\n' ' ' )
+check "conta removida (dados mantidos): cript_file e cookie saem, o log fica" "sls.log " "$_r"
+
+# --- test_login: cookie num arquivo do mktemp, apagado no fim; o trap de
+# quem chama fica como estava (uma versao com trap proprio o apagava).
+_r=$( TMPDIR="$_td67/tmp"; mkdir -p "$TMPDIR"; export TMPDIR
+      . "$LIB/session_check.sh" > /dev/null 2>&1
+      curl() { while [ "$#" -gt 0 ]; do [ "$1" = -c ] && { echo "$2" >> "$TMPDIR/../ck"; shift; }; shift; done
+               [ -f "$TMPDIR/../ck" ] && cat > /dev/null; echo "<title>x</title>"; }
+      test_login https://jogo a b > /dev/null 2>&1
+      _c=`head -n1 "$TMPDIR/../ck"`
+      case "${_c##*/}" in sls_test_$$.txt) printf 'nome_fixo ' ;; sls_test_*) printf 'mktemp ' ;; *) printf '%s ' "$_c" ;; esac
+      [ -e "$_c" ] && printf 'ficou ' || printf 'apagado '
+      grep -q 'test_login() {' "$LIB/session_check.sh" && \
+          sed -n '/^test_login() {/,/^}/p' "$LIB/session_check.sh" | grep -q '^ *trap' && printf 1 || printf 0 )
+case "$_r" in
+    "mktemp apagado 0") ok "test_login: cookie do mktemp, apagado no fim, sem trap sobrando" ;;
+    "nome_fixo apagado 0") ok "test_login: sem mktemp neste aparelho, nome com o PID (apagado no fim)" ;;
+    *) bad "test_login: cookie ($_r)" ;;
+esac
+rm -rf "$_td67"; unset _td67 _r _m _re _a _b _c _pt67 _h
+
+# =============================================================================
+printf "\n=== 68. troca por aliado com 4s ou mais nos cinco modulos de cla ===\n"
+# =============================================================================
+# Pedido do dono (3.9.109). Mesmo roteiro de paginas para o codigo ANTIGO (o
+# modulo atual com a condicao da troca devolvida a "-ne") e o NOVO, nos cinco
+# modulos: alvo sempre aliado (na lista do cla) ou sempre inimigo; HP cheio
+# (sem cura nem esquiva); relogio simulado, 1s por pedido; aos 40s o jogo
+# encerra. Saida: "segundo:acao" dos golpes (attack e attackrandom).
+_td68=`mktemp -d`
+#   _al68 MODULO FUNCAO SECAO ARQUIVO_DO_MODULO NOME_DO_ALVO
+_al68() {
+    ( TMP="$_td68/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$4" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo Amigo > "$TMP/callies.txt"
+      for _f in FULL ccol_full flag_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$3"; _N="$5"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg68() {
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> 50000</span> <img src='/images/icon/race/0.png' alt=''/> $_N <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/attackrandom/?r=$1'>t</a> <a href='/$_S/dodge/?r=$1'>d</a>"
+          fi; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in */attack/*|*/attackrandom/*) _v=${1#*/"$_S"/}; echo "$(( _t - 1000 )):${_v%%/*}" >> "$TMP/req" ;; esac
+          _pg68 "$_t"; }
+      for _f in src.html SRC ccol_src flag_src; do _pg68 1000 > "$TMP/$_f"; done
+      "$2" > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/req" )
+}
+# Resumo: golpes, trocas e menor intervalo entre duas acoes.
+_res68() { printf '%s\n' $1 | awk -F: '
+    { if ($2 == "attack") a++; else r++
+      if (NR > 1 && (min == "" || $1 - u < min)) min = $1 - u; u = $1 }
+    END { printf "atk=%d trocas=%d intervalo_min=%d", a, r, min }'; }
+for _m68 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "flagfight flagfight_fight flagfight"; do
+    set -- $_m68
+    sed 's/\[ "\$_latk" -ge "\$LA" \] && \[ "\$_grey" = 0 \]/[ "$_latk" -ne "$LA" ] \&\& [ "$_grey" = 0 ]/' \
+        "$LIB/$1.sh" > "$_td68/antigo_$1.sh"
+    _v=`_al68 "$1" "$2" "$3" "$LIB/$1.sh" Amigo`;            _rv=`_res68 "$_v"`
+    _a=`_al68 "$1" "$2" "$3" "$_td68/antigo_$1.sh" Amigo`;   _ra=`_res68 "$_a"`
+    printf "  [INFO] %s aliado: antigo %s | novo %s\n" "$1" "$_ra" "$_rv"
+    case "$_rv" in
+        *"trocas="[1-9]*" intervalo_min="[4-9]*) ok "$1: troca por aliado so com 4s ou mais ($_rv)" ;;
+        *) bad "$1: troca por aliado ($_rv; antigo $_ra)" ;;
+    esac
+    case "$_ra" in *" intervalo_min="[0-3]) ok "$1: o antigo trocava antes de 4s (roteiro reproduz o defeito)" ;;
+                   *) bad "$1: o antigo nao reproduz a troca colada ($_ra)" ;; esac
+    # Alvo inimigo: nenhuma troca, e antigo e novo fazem os mesmos pedidos.
+    _v=`_al68 "$1" "$2" "$3" "$LIB/$1.sh" Inimigo`
+    _a=`_al68 "$1" "$2" "$3" "$_td68/antigo_$1.sh" Inimigo`
+    case "$_v" in
+        *attack*) check "$1: alvo inimigo, antigo e novo iguais" "$_a" "$_v" ;;
+        *) bad "$1: alvo inimigo sem golpe no roteiro ($_v)" ;;
+    esac
+done
+set --
+rm -rf "$_td68"; unset _td68 _m68 _v _a _rv _ra; unset -f _al68 _res68
+
+# =============================================================================
+printf "\n=== 69. cura so conta a recarga quando a pagina confirma ===\n"
+# =============================================================================
+# Pedido do dono (3.9.110). Mesmo roteiro de paginas para o codigo ANTIGO (o
+# modulo atual com o cura_relogio de antes: grava sempre a hora do pedido) e
+# o NOVO, em seis modulos: HP 30000 de 100000 (abaixo do limiar), botao da
+# cura sempre na tela, alvo inimigo fraco; relogio simulado, 1s por pedido,
+# 40s de luta. Cada clique na cura segue o roteiro: "ok" sobe o HP para
+# 70000, "recusa" deixa como esta (o jogo recusou). Saida: "segundos das
+# curas | HP no fim".
+_td69=`mktemp -d`
+#   _cu69 FUNCAO SECAO ARQUIVO_DO_MODULO ROTEIRO [antigo]
+_cu69() {
+    ( TMP="$_td69/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$3" > /dev/null 2>&1
+      [ "$5" = antigo ] && cura_relogio() { CURA_RELOGIO="$1"; _CURA_TENTOU=0; }
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo 30000 > "$TMP/hpv"; echo "$4" > "$TMP/rot"
+      for _f in FULL ccol_full flag_full col_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$2"; COLISEU_GRAFICO=1
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg69() {
+          read -r _h < "$TMP/hpv"
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a> <a href='/coliseum/?end_fight=true'>x</a>"
+          elif [ "$_S" = coliseum ]; then
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/health.png' alt='hp'/> $_h Inimigo <span class='nwr'>&nbsp;3000</span> <a href='/coliseum/atk/?r=$1'>a</a> <a href='/coliseum/atkrnd/?r=$1'>t</a> <a href='/coliseum/dodge/?r=$1'>d</a> <a href='/coliseum/heal/?r=$1'>h</a>"
+          else
+              echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> $_h</span> <img src='/images/icon/race/0.png' alt=''/> Inimigo <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/attackrandom/?r=$1'>t</a> <a href='/$_S/dodge/?r=$1'>d</a> <a href='/$_S/heal/?r=$1'>h</a>"
+          fi; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          case "$1" in
+              */heal/*)
+                  echo "$(( _t - 1000 ))" >> "$TMP/req"
+                  read -r _r < "$TMP/rot"; set -- $_r; _c=$1; shift; echo "$*" > "$TMP/rot"
+                  [ "$_c" = ok ] && echo 70000 > "$TMP/hpv" ;;
+          esac
+          _pg69 "$_t"; }
+      for _f in src.html SRC ccol_src ccmd_src col_src; do _pg69 1000 > "$TMP/$_f"; done
+      "$1" > /dev/null 2>&1
+      printf '%s| %s' "`tr '\n' ' ' < "$TMP/req"`" "`cat "$TMP/hpv"`" )
+}
+for _m69 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "clancommand clancommand_fight clancommand" "coliseum coliseum_fight coliseum"; do
+    set -- $_m69
+    # Recusada a primeira: o antigo espera 90s com o HP baixo; o novo tenta
+    # de novo LA segundos depois e a conta cura.
+    _a=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa ok" antigo`; _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa ok"`
+    printf "  [INFO] %s, primeira recusada: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a" in *"| 30000") ;; *) bad "$1: o antigo nao reproduz os 90s sem cura ($_a)" ;; esac
+    case "$_v" in
+        [0-9]*" "[0-9]*" | 70000") ok "$1: cura recusada sai de novo e a conta cura ($_v)" ;;
+        *) bad "$1: cura recusada ($_v)" ;;
+    esac
+    # Cura que sobe o HP: antigo e novo iguais.
+    _a=`_cu69 "$2" "$3" "$LIB/$1.sh" "ok" antigo`; _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "ok"`
+    check "$1: cura confirmada, antigo e novo iguais" "$_a" "$_v"
+    # Nunca confirma: no maximo dois pedidos de cura por recarga (90s); se o
+    # primeiro valeu, o jogo recusa o segundo (o elixir tem recarga de 90s).
+    _v=`_cu69 "$2" "$3" "$LIB/$1.sh" "recusa recusa recusa recusa"`
+    case "$_v" in
+        [0-9]*" "[0-9]*" | 30000") ok "$1: sem confirmacao, so dois pedidos de cura por recarga ($_v)" ;;
+        *) bad "$1: sem confirmacao ($_v)" ;;
+    esac
+done
+set --
+rm -rf "$_td69"; unset _td69 _m69 _a _v; unset -f _cu69
+
+# =============================================================================
+printf "\n=== 70. descanso numa leitura so e log de combate guardado no painel ===\n"
+# =============================================================================
+_td70=`mktemp -d`
+
+# --- descanso_ler x a leitura de antes (o grep do out_gate, o grep do menu da
+# caverna com o relogio_seg_sh e o sessao_estado), pagina a pagina.
+_ant70() { # ARQUIVO -> "GATE CAVE SESSAO" do jeito da 3.9.110
+    if grep -q 'out_gate_confirm' "$1" 2>/dev/null; then _g=1; else _g=0; fi
+    _cv=`grep -o -m 1 -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='grey'>\\(([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\\)" "$1" 2>/dev/null`
+    _cv=${_cv%%"
+"*}; _cv=${_cv##*\(}; _cv=${_cv%\)}
+    if [ -n "$_cv" ]; then _cv=`relogio_seg_sh "$_cv"`
+    elif grep -q -E "href='/cave/'>(<img[^>]*>)?[^<()]*<span class='green'> ?\\(\\+\\)" "$1" 2>/dev/null; then _cv=+
+    else _cv=-; fi
+    printf '%s %s %s' "$_g" "$_cv" "`sessao_estado "$1"`"
+}
+_v70="jsInterface.event(\"user=5;level=40\")"
+_menu70="<a href='/king/'>Rei <span class='grey'>(0:10:00)</span></a>"
+_i70=0
+for _p70 in \
+    "<a href='/cave/'><img src='/images/c.png'/>Caverna <span class='grey'>(1:02:03)</span></a> $_menu70 $_v70" \
+    "<a href='/cave/'>Caverna <span class='grey'>(07:09)</span></a> $_menu70 $_v70" \
+    "<a href='/cave/'>Caverna <span class='green'> (+)</span></a> $_menu70 $_v70" \
+    "$_menu70 jsInterface.event(\"user=0;level=0\")" \
+    "<form action='/?sign_in=1'><input name='pass'/></form>" \
+    "<img src='/images/icon/level.png'/> 40 pagina cortada" \
+    "Fuja da batalha? <a href='/?out_gate_confirm=true'>sim</a> $_v70" \
+    "<html>502 Bad Gateway</html>" \
+    ""; do
+    _i70=$((_i70 + 1))
+    printf '%s\n' "$_p70" > "$_td70/p$_i70"; [ -n "$_p70" ] || : > "$_td70/p$_i70"
+    _r=$( TMP="$_td70"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+          descanso_ler "$_td70/p$_i70"; printf '%s %s %s|' "$_DL_GATE" "$_DL_CAVE" "$_DL_SESSAO"
+          _ant70 "$_td70/p$_i70" )
+    check "descanso_ler = leitura de antes (pagina $_i70)" "${_r#*|}" "${_r%%|*}"
+done
+_r=$( TMP="$_td70"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      descanso_ler "$_td70/nao_existe"; printf '%s %s %s' "$_DL_GATE" "$_DL_CAVE" "$_DL_SESSAO" )
+check "descanso_ler: arquivo que nao existe = sem resposta, sem caverna" "0 - sem_resposta" "$_r"
+_r=`sed -n '/^descansar() {/,/^}/p' "$LIB/crono.sh" | grep -v '^ *#' | grep -c 'grep \|sessao_estado'`
+check "descansar: nenhum grep nem sessao_estado (uma leitura so da Home)" 0 "$_r"
+
+# --- Painel: o log guardado sai igual ao do combate_log, e o awk so roda de
+# novo com a pagina nova ou a largura nova.
+mkdir -p "$_td70/conta"
+printf '%s\n' "<div>Bahamut acertou Voce por 2864</div><div>Voce usou Posicao defensiva</div><div>Fulano usou Pocao</div>" > "$_td70/conta/SRC"
+touch -t 202601010000 "$_td70/conta/SRC"
+_r=$( HOME=/nao/existe; SLS_EMOJI=0; export HOME SLS_EMOJI
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      _ref=`combate_log "$_td70/conta" 2 60`
+      combate_log_cache "$_td70/conta" 2 60 "$_td70/cache"; _a="$_LOG"
+      [ "$_a" = "$_ref" ] && printf 'igual ' || printf 'diferente '
+      combate_log() { echo RECALCULOU; }
+      combate_log_cache "$_td70/conta" 2 60 "$_td70/cache"
+      [ "$_LOG" = "$_ref" ] && printf 'guardado ' || printf '[%s] ' "$_LOG"
+      combate_log_cache "$_td70/conta" 2 50 "$_td70/cache"; printf '%s ' "$_LOG"
+      touch -t 203001010000 "$_td70/conta/SRC"
+      combate_log_cache "$_td70/conta" 2 50 "$_td70/cache"; printf '%s' "$_LOG" )
+check "painel: log guardado igual ao combate_log; recalcula so com largura ou pagina nova" \
+    "igual guardado RECALCULOU RECALCULOU" "$_r"
+check "painel: o log de combate passa pelo cache" 1 "`grep -c 'combate_log_cache \"\$acc_dir\"' "$LIB/panel.sh"`"
+rm -rf "$_td70"; unset _td70 _r _v70 _menu70 _i70 _p70; unset -f _ant70
+
+# =============================================================================
+printf "\n=== 71. esquiva nos eventos de cla: vida baixa, sem elixir, 20%% em 15s ===\n"
+# =============================================================================
+# Regra do dono (3.9.112), nos cinco eventos de cla. Mesmo roteiro de
+# paginas para o codigo ANTIGO (o modulo atual com a esquiva de antes: saia
+# com QUALQUER perda de vida desde a leitura anterior) e o NOVO; relogio
+# simulado, 1s por pedido, 40s de luta, HP maximo 100000 (limiar da cura
+# 48000, dano alto 20000 em 15s). Cada pedido tira DANO de vida, ate o piso.
+# Saida: "esquivas=N curas=N primeira=acao".
+_td71=`mktemp -d`
+_ant71() { # MODULO -> o modulo atual com a esquiva de antes
+    sed -e 's/^    dano_registrar "\$_hp"$/    _caiu=0; [ -s DODGE ] \&\& awk -v ush="$_hp" -v oldhp="$_old_hp" '"'"'BEGIN { exit !(ush < oldhp) }'"'"' \&\& _caiu=1/' \
+        -e 's/^         esquiva_devida "\$_hp" "[^"]*" "\$_full_hp"; then$/         [ "$_caiu" = 1 ]; then/' \
+        "$LIB/$1.sh" > "$_td71/antigo_$1.sh"
+}
+#   _es71 FUNCAO SECAO ARQUIVO HP_INICIAL DANO PISO CURA(com|sem)
+_es71() {
+    ( TMP="$_td71/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0
+      export TMP URL SLS_PACING
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1; . "$3" > /dev/null 2>&1
+      echo 1000 > "$TMP/t"; : > "$TMP/req"; echo "$4" > "$TMP/hpv"
+      for _f in FULL ccol_full; do echo 100000 > "$TMP/$_f"; done
+      _S="$2"; _D="$5"; _P="$6"; _C="$7"
+      date() { case "$1" in +%s) cat "$TMP/t" ;; *) command date "$@" ;; esac; }
+      sleep() { _s=${1%%[!0-9]*}; read -r _t < "$TMP/t"; echo $(( _t + ${_s:-0} )) > "$TMP/t"; }
+      _pg71() {
+          read -r _h < "$TMP/hpv"
+          if [ "$1" -ge 1040 ]; then
+              echo "<img src='/images/icon/level.png'/> <a href='/$_S/?close=reward'>Fim</a>"
+              return
+          fi
+          _cl=""; [ "$_C" = com ] && _cl="<a href='/$_S/heal/?r=$1'>h</a>"
+          echo "<img src='/images/icon/level.png'/> <img src='/images/icon/race/1.png' alt=''/> Minha <span class='nwr'><img src='/images/icon/health.png' alt='hp'/> $_h</span> <img src='/images/icon/race/0.png' alt=''/> Inimigo <span class='nwr'><img src='/images/icon/health.png' alt='hp'/>&nbsp;8000</span> <a href='/$_S/attack/?r=$1'>a</a> <a href='/$_S/dodge/?r=$1'>d</a> $_cl"; }
+      run_curl_exec() {
+          read -r _t < "$TMP/t"; echo $(( _t + 1 )) > "$TMP/t"
+          read -r _h < "$TMP/hpv"
+          case "$1" in
+              */heal/*)  echo cura >> "$TMP/req"; _h=90000 ;;
+              */dodge/*) echo esquiva >> "$TMP/req" ;;
+              *)         [ "$_t" -gt 1000 ] && _h=$(( _h - _D )) ;;
+          esac
+          [ "$_h" -lt "$_P" ] && _h=$_P
+          echo "$_h" > "$TMP/hpv"
+          _pg71 "$_t"; }
+      for _f in src.html SRC ccol_src ccmd_src; do _pg71 1000 > "$TMP/$_f"; done
+      "$1" > /dev/null 2>&1
+      printf 'esquivas=%s curas=%s primeira=%s' "`grep -c esquiva "$TMP/req"`" "`grep -c cura "$TMP/req"`" \
+          "`sed -n 1p "$TMP/req"`" )
+}
+for _m71 in "altars altars_fight altars" "clanfight clanfight_fight clanfight" \
+            "clandmg clandmgfight_fight clandmgfight" "clancoliseum clancoliseum_fight clancoliseum" \
+            "clancommand clancommand_fight clancommand"; do
+    set -- $_m71
+    _ant71 "$1"
+    # Vida baixa (45000), sem elixir, dano pequeno (500 por pedido): o antigo
+    # esquivava a toa; o novo so ataca.
+    _a=`_es71 "$2" "$3" "$_td71/antigo_$1.sh" 45000 500 1000 sem`; _v=`_es71 "$2" "$3" "$LIB/$1.sh" 45000 500 1000 sem`
+    printf "  [INFO] %s vida baixa, dano pequeno: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a/$_v" in "esquivas="[1-9]*"/esquivas=0 "*) ok "$1: dano pequeno nao esquiva (antes esquivava)" ;;
+                      *) bad "$1: dano pequeno ($_a | $_v)" ;; esac
+    # Vida alta (100000 caindo ate 60000, sempre acima de 48%), dano alto:
+    # o antigo esquivava; o novo nao (a vida nao esta baixa).
+    _a=`_es71 "$2" "$3" "$_td71/antigo_$1.sh" 100000 8000 60000 sem`; _v=`_es71 "$2" "$3" "$LIB/$1.sh" 100000 8000 60000 sem`
+    printf "  [INFO] %s vida alta, dano alto: antigo %s | novo %s\n" "$1" "$_a" "$_v"
+    case "$_a/$_v" in "esquivas="[1-9]*"/esquivas=0 "*) ok "$1: vida acima de 48% nao esquiva (antes esquivava)" ;;
+                      *) bad "$1: vida alta ($_a | $_v)" ;; esac
+    # Vida baixa, sem elixir, dano alto (7000 por pedido): o novo esquiva.
+    _v=`_es71 "$2" "$3" "$LIB/$1.sh" 47000 7000 5000 sem`
+    case "$_v" in "esquivas="[1-9]*) ok "$1: vida baixa, sem elixir e dano alto esquiva ($_v)" ;;
+                  *) bad "$1: vida baixa, sem elixir, dano alto ($_v)" ;; esac
+    # Vida baixa e dano alto COM elixir: a primeira acao e a cura, nao a esquiva.
+    _v=`_es71 "$2" "$3" "$LIB/$1.sh" 47000 7000 5000 com`
+    case "$_v" in *" primeira=cura") ok "$1: com elixir, cura antes de esquivar ($_v)" ;;
+                  *) bad "$1: com elixir ($_v)" ;; esac
+done
+set --
+# dano_registrar: so a janela de 15s conta.
+_r=$( TMP="$_td71"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      _DANO_HIST=""; date() { cat "$_td71/t0"; }
+      echo 100 > "$_td71/t0"; dano_registrar 90000
+      echo 105 > "$_td71/t0"; dano_registrar 80000; printf '%s ' "$DANO_15S"
+      echo 114 > "$_td71/t0"; dano_registrar 60000; printf '%s ' "$DANO_15S"
+      echo 121 > "$_td71/t0"; dano_registrar 55000; printf '%s' "$DANO_15S" )
+# (aos 121s as leituras de 100s e 105s ja sairam da janela: so a de 114s)
+check "dano_registrar: vida perdida so nos ultimos 15s" "10000 30000 5000" "$_r"
+rm -rf "$_td71"; unset _td71 _m71 _a _v _r; unset -f _ant71 _es71
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"

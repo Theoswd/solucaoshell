@@ -119,12 +119,12 @@ login_lock() {
             return 0
         fi
         _dono=; { read -r _dono < "$LOCKDIR/pid"; } 2>/dev/null
-        case "$_dono" in
-            # PID ainda nao gravado: o dono esta a caminho de escrever.
-            # Apagar aqui seria corrida (dois entrariam juntos). So espera.
-            ''|*[!0-9]*) : ;;
-            *) kill -0 "$_dono" 2>/dev/null || rm -rf "$LOCKDIR" 2>/dev/null ;;
-        esac
+        # Dono vivo (PID que responde, com cmdline de sls.sh), ou trava sem PID
+        # ainda nova (o dono esta a caminho de gravar): espera. Senao a trava
+        # e velha e sai por troca atomica (trava_dono_vivo e trava_tomar,
+        # em info.sh): um rm aqui podia apagar a trava viva de outra conta
+        # criada entre a leitura do PID e o rm.
+        trava_dono_vivo "$_dono" "$LOCKDIR" || trava_tomar "$LOCKDIR"
         sleep 3
         _n=$((_n + 1))
     done
@@ -141,6 +141,11 @@ login_unlock() {
     [ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null
     _lk_meu=0
 }
+
+# Encerrado no meio do login (stop.sh, painel relancando), a trava sai junto
+# em vez de esperar quem vier depois a julgar velha.
+trap '[ "${_lk_meu:-0}" = 1 ] && rm -rf "$LOCKDIR" 2>/dev/null' EXIT
+trap 'exit 143' TERM INT
 
 do_login() {
     # REAPROVEITA A SESSAO EXISTENTE (PHPSESSID vale 30 dias): testar custa
@@ -271,6 +276,8 @@ while true; do
     [ "$login_delay" -gt "$_cap" ] && login_delay=$_cap
     rm -f "$TMP_COOKIE"
 done
+# Logado: o portao de reconexao da rotina (loginlogoff.sh) recomeca do zero.
+relogin_zerar
 
 clan_id 2>/dev/null
 
@@ -313,11 +320,22 @@ _rl_voltas=0
 rotate_log() {
     _rl_voltas=$(( _rl_voltas + 1 ))
     [ $(( _rl_voltas % 10 )) -eq 1 ] || return 0
-    for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG"; do
+    # O blessing_blocked.log (bloqueios da Bencao) nao tinha limite nenhum.
+    for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG" "$TMP/blessing_blocked.log"; do
         _sz=$(wc -c < "$_lg" 2>/dev/null)
         case "$_sz" in ''|*[!0-9]*) continue ;; esac
         [ "$_sz" -gt 5242880 ] && tail -c 1048576 "$_lg" > "$_lg.1" && : > "$_lg"
     done
+    # TELEMETRIA: o tele_registrar corta o req.stat a cada 300 registros DO
+    # MESMO PROCESSO; um worker relancado antes disso (SIGKILL do Android)
+    # recomecava a conta e o arquivo crescia sem limite. Aqui o corte vale
+    # pelo tamanho (64 KB, ~2000 linhas), na primeira volta de cada worker.
+    _sz=$(wc -c < "$TMP/req.stat" 2>/dev/null)
+    case "$_sz" in
+        ''|*[!0-9]*) ;;
+        *) [ "$_sz" -gt 65536 ] && tail -n 200 "$TMP/req.stat" > "$TMP/req.stat.t" 2>/dev/null \
+               && mv -f "$TMP/req.stat.t" "$TMP/req.stat" ;;
+    esac
     unset _lg _sz
 }
 
