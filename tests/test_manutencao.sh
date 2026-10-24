@@ -5476,6 +5476,13 @@ _r=$( TMP="$_td67/lg"; mkdir -p "$TMP"; eval "$(sed -n '/^_rl_voltas=0/,/^}/p' "
           "`wc -c < "$TMP/blessing_blocked.log.1" | tr -d ' '`" )
 check "rotate_log: req.stat grande vira 200 linhas; blessing_blocked.log roda" "200 0 1048576" "$_r"
 check "caverna -cv: o laco confere os logs" 1 "`sed -n '/^cave_start() {/,/^}/p' "$LIB/cave.sh" | grep -c 'rotate_log'`"
+# Sem blessing_blocked.log, ERROR_DEBUG e req.stat (o normal numa conta nova):
+# nenhuma linha de erro. Na 3.9.108 a 3.9.112 o "<" de um arquivo que nao
+# existe escrevia "cannot open" no sls.log a cada 10 voltas (visto no WSL).
+_r=$( TMP="$_td67/lg0"; mkdir -p "$TMP"; echo x > "$TMP/sls.log"
+      eval "$(sed -n '/^_rl_voltas=0/,/^}/p' "$LIB/sls.sh")"
+      rotate_log 2>&1 )
+check "rotate_log: arquivos que nao existem nao viram erro no log" "" "$_r"
 
 # --- Modo -cl: o Coliseu nao comeca nos minutos antes do Torneio de Equipe.
 _pt67=`sed -n 's/^ *(\(09:2\[4-9\]|.*\))$/\1/p' "$LIB/coliseum.sh" | head -n1`

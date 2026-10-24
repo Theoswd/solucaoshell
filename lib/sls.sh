@@ -321,7 +321,11 @@ rotate_log() {
     _rl_voltas=$(( _rl_voltas + 1 ))
     [ $(( _rl_voltas % 10 )) -eq 1 ] || return 0
     # O blessing_blocked.log (bloqueios da Bencao) nao tinha limite nenhum.
+    # Arquivo que nao existe fica de fora ANTES do "<": o erro do "<" sai no
+    # shell, antes do 2>/dev/null valer, e caia no sls.log a cada 10 voltas
+    # ("cannot open .../blessing_blocked.log", 3.9.108 a 3.9.112).
     for _lg in "$TMP/sls.log" "$TMP/ERROR_DEBUG" "$TMP/blessing_blocked.log"; do
+        [ -f "$_lg" ] || continue
         _sz=$(wc -c < "$_lg" 2>/dev/null)
         case "$_sz" in ''|*[!0-9]*) continue ;; esac
         [ "$_sz" -gt 5242880 ] && tail -c 1048576 "$_lg" > "$_lg.1" && : > "$_lg"
@@ -330,7 +334,7 @@ rotate_log() {
     # MESMO PROCESSO; um worker relancado antes disso (SIGKILL do Android)
     # recomecava a conta e o arquivo crescia sem limite. Aqui o corte vale
     # pelo tamanho (64 KB, ~2000 linhas), na primeira volta de cada worker.
-    _sz=$(wc -c < "$TMP/req.stat" 2>/dev/null)
+    _sz=""; [ -f "$TMP/req.stat" ] && _sz=$(wc -c < "$TMP/req.stat" 2>/dev/null)
     case "$_sz" in
         ''|*[!0-9]*) ;;
         *) [ "$_sz" -gt 65536 ] && tail -n 200 "$TMP/req.stat" > "$TMP/req.stat.t" 2>/dev/null \
