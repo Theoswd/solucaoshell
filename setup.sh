@@ -125,18 +125,30 @@ aviso_subir() {
     unset _as
 }
 
-# Servidor unico: nao ha o que escolher.
 show_servers() {
     printf "
-${CYAN}Servidor: BR${RESET}
+${CYAN}Servidor:${RESET} 1) BR   2) RU
 "
+}
+
+# Le o servidor da conta nova em $srv. ENTER fica no BR (servidor 1).
+escolher_servidor() {
+    printf "Servidor [1]: "
+    read -r srv
+    srv=$(printf %s "$srv" | tr -d '[:space:][:cntrl:]')
+    [ -n "$srv" ] || srv=1
+    if [ -z "$(server_tag "$srv")" ]; then
+        printf "${RED}Servidor invalido: %s${RESET}\n" "$srv"
+        sleep 2
+        return 1
+    fi
 }
 
 add_account() {
     clear
     printf "${CYAN}=== Adicionar conta ===${RESET}\n"
     show_servers
-    srv=1
+    escolher_servidor || return
 
     url=$(server_url "$srv")
     tag=$(server_tag "$srv")

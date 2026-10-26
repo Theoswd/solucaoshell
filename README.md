@@ -93,7 +93,7 @@ Os comandos funcionam de qualquer pasta.
 | Subir as contas e abrir o painel | `~/solucaoshell/play.sh` |
 | Parar todas as contas | `~/solucaoshell/stop.sh` |
 | Ver o painel sem mexer nas contas | `~/solucaoshell/status.sh` |
-| Cadastrar, listar, testar ou remover contas | `~/solucaoshell/setup.sh` |
+| Cadastrar, listar, testar ou remover contas (servidor 1 = BR, 2 = RU) | `~/solucaoshell/setup.sh` |
 | Derrubar e subir tudo de novo | `~/solucaoshell/play.sh --restart` |
 | Remover o bot e as contas cadastradas | `~/solucaoshell/uninstall.sh` |
 
@@ -122,6 +122,8 @@ rm ~/.sls/PAUSED
 ```bash
 tail -n 15 ~/.sls/BR_NomeDaConta/sls.log
 ```
+
+Conta do servidor russo: a pasta é `~/.sls/RU_NomeDaConta`.
 
 | No log | O que fazer |
 |---|---|

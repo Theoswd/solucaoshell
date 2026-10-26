@@ -4165,8 +4165,9 @@ if [ -z "$_vg" ]; then ok "versionNum: sem git aqui, nada a comparar ($_vn)"
 elif [ "`printf '%s\n%s\n' "$_vg" "$_vn" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`" = "$_vn" ]; then ok "versionNum ($_vn) nao fica atras do ultimo commit ($_vg)"
 else bad "versionNum ($_vn) atras do ultimo commit ($_vg)"; fi
 unset _vn _vg
-check "evento especial: a chamada direta marca o portao (sem repetir no start)" 1 \
-    "`sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' "$LIB/run.sh" | grep -c '^ *ativ_marcar evento$'`"
+# Nas duas tabelas: a do BR (sls_play) e a do russo (cronograma_ru).
+check "evento especial: a chamada direta marca o portao (sem repetir no start), BR e RU" "1 1" \
+    "`sed -n '/^sls_play() {/,/^}/p' "$LIB/run.sh" | sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' | grep -c '^ *ativ_marcar evento$'` `sed -n '/^cronograma_ru() {/,/^}/p' "$LIB/run.sh" | sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' | grep -c '^ *ativ_marcar evento$'`"
 check "modo -cl: arena so pelo portao (tarefas_livres), sem echo|grep" "0 0" \
     "`sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c '^ *arena_duel$'` `sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c 'echo "\$RUN" | grep'`"
 _r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; URL=http://jogo
@@ -5809,6 +5810,203 @@ _r=$( TMP="$_td71"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/
 # (aos 121s as leituras de 100s e 105s ja sairam da janela: so a de 114s)
 check "dano_registrar: vida perdida so nos ultimos 15s" "10000 30000 5000" "$_r"
 rm -rf "$_td71"; unset _td71 _m71 _a _v _r; unset -f _ant71 _es71
+
+printf "\n=== 72. servidor russo: cadastro, setup e painel ===\n"
+_r=`( . "$LIB/contas.sh"; printf '%s %s %s %s [%s][%s]' "$(server_url 1)" "$(server_tag 1)" \
+      "$(server_url 2)" "$(server_tag 2)" "$(server_url 3)" "$(server_tag 3)" )`
+check "contas: 1 = BR, 2 = RU (tiwar.ru), 3 = nenhum" "furiadetitas.net BR tiwar.ru RU [][]" "$_r"
+
+# setup.sh: a escolha do servidor (ENTER fica no BR).
+_td72=`mktemp -d`
+sed -n '/^escolher_servidor() {/,/^}/p' "$ROOT/setup.sh" > "$_td72/esc.sh"
+_r=""
+for _e72 in "" 1 2 " 2 " 9 x; do
+    _v=`( . "$LIB/contas.sh"; . "$_td72/esc.sh"; RED=; RESET=; sleep() { :; }
+          printf '%s\n' "$_e72" | { escolher_servidor > /dev/null && printf '%s' "$srv" || printf 'recusa'; } )`
+    _r="$_r$_v "
+done
+check "setup: ENTER=1, 1, 2, ' 2 ', 9 e x" "1 1 2 2 recusa recusa " "$_r"
+grep -q 'escolher_servidor || return' "$ROOT/setup.sh" && ok "setup: adicionar conta pergunta o servidor" \
+    || bad "setup: adicionar conta nao pergunta o servidor"
+
+# Painel: a conta RU aparece na lista, com a pasta RU_.
+mkdir -p "$_td72/home/.sls/status" "$_td72/home/.sls/BR_Ze" "$_td72/home/.sls/RU_Ivan"
+printf '1|Ze|x\n2|Ivan|x\n3|Fora|x\n' > "$_td72/accounts.conf"
+for _a72 in BR_Ze RU_Ivan; do
+    echo running > "$_td72/home/.sls/status/$_a72.status"
+    echo "$$"    > "$_td72/home/.sls/status/$_a72.pid"
+    date +%s     > "$_td72/home/.sls/$_a72/last_ok"
+done
+printf 'Ze|900|10|5|7|12|3,4K|%s\n' "`date +%s`" > "$_td72/home/.sls/BR_Ze/stats"
+printf 'Ivan|11182|1520|5|41|2548|71217|%s\n' "`date +%s`" > "$_td72/home/.sls/RU_Ivan/stats"
+( HOME="$_td72/home"; SLSDIR="$ROOT"; STATUS_DIR="$_td72/home/.sls/status"; ACCOUNTS_FILE="$_td72/accounts.conf"
+  clean_field() { printf '%s' "$1" | tr -d '\r'; }; worker_vivo() { kill -0 "$1"; }
+  PANEL_SUPERVISE=0; PANEL_ONCE=1; PANEL_DRAW=1; SLS_EMOJI=0; SLS_COLS=100
+  export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+  . "$LIB/panel.sh"; painel_loop ) > "$_td72/saida.txt" 2>/dev/null
+_r=`grep -c -E '(Ze|Ivan) ' "$_td72/saida.txt"`; _f=`grep -c 'Fora' "$_td72/saida.txt"`
+check "painel: lista a conta BR e a RU, e pula o servidor desconhecido" "2 0" "$_r $_f"
+rm -rf "$_td72"; unset _td72 _e72 _a72 _v _f
+printf "\n=== 73. servidor russo: cambio prata -> ouro pelo link certo ===\n"
+# Pagina real do cambio russo (tiwar.ru, 26/10/2026, conta nivel 41): os
+# botoes silver/N trocam prata por ouro; os gold/N COMPRAM prata com ouro.
+_td73=`mktemp -d`
+_cambio73() { # PRATA_DA_CONTA -> pagina em $1/SRC
+    {
+    printf "%s" "<div class='block_zero center blue'>Обмен: <img src='/images/icon/silver.png' alt=''/> Серебро -&#62; <img src='/images/icon/gold.png' alt=''/> Золото<br/></div>"
+    printf "%s" "<div class='block_zero center'><span class='small grey'>Доступное золото к обмену: 41 из 41</span></div><div class='menuList'>"
+    printf "%s" "<li><a href='/trade/exchange/silver/41?r=71'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>6'724 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>41</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/silver/1?r=72'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>164 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>1</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/silver/10?r=73'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>1'640 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>10</span></a></li></div>"
+    printf "%s" "<div class='block_zero center blue'>Купить <img src='/images/icon/silver.png' alt=''/> Cеребро</div><div class='menuList'>"
+    printf "%s" "<li><a href='/trade/exchange/gold/1?r=74'><img src='/images/icon/arrow.png' alt=''/>Купить <span class='white'><img src='/images/icon/silver.png' alt=''/>410 за <img src='/images/icon/gold.png' alt=''/>1</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/gold/100?r=75'><img src='/images/icon/arrow.png' alt=''/>Купить <span class='white'><img src='/images/icon/silver.png' alt=''/>41000 за <img src='/images/icon/gold.png' alt=''/>100</span></a></li></div>"
+    printf "%s\n" "<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 41 | <img src='/images/icon/gold.png' alt='g'/> 2'548 | <img src='/images/icon/silver.png' alt='s'/> $2</div><script>jsInterface.event(\"user=5;level=41\")</script>"
+    } > "$1/SRC"
+}
+# trade_lote_ru: o maior lote que aguenta FUNC_trade_dias trocas iguais.
+_r=""
+for _c73 in "71'217 365" "999,9M 365" "6'724 1" "6'723 1" "1'000 365"; do
+    set -- $_c73
+    _v=`( TMP="$_td73"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+          _cambio73 "$TMP" "$1"; trade_lote_ru "$(valor_num "$1")" "$2"; printf '%s=%s' "${_lote:--}" "${_cl:--}" )`
+    _r="$_r$_v "
+done
+check "cambio RU: lote por prata e dias (71217/365, 999,9M/365, 6724/1, 6723/1, 1000/365)" \
+    "1=/trade/exchange/silver/1?r=72 41=/trade/exchange/silver/41?r=71 41=/trade/exchange/silver/41?r=71 10=/trade/exchange/silver/10?r=73 -=- " "$_r"
+
+# func_trade inteiro: conta RU troca pelo silver/ e nunca pede o gold/; a
+# conta BR, com a pagina do BR, continua no gold/ de sempre.
+_tr73() { # TAG PAGINA(ru|br) PRATA
+    ( TMP="$_td73/$1"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG="$1"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=365
+      : > "$TMP/pedidos"
+      fetch_page() { echo "$1" >> "$TMP/pedidos"; case "$1" in
+          /trade/exchange)
+              if [ "$_PG73" = ru ]; then _cambio73 "$TMP" "$_PR73"
+              else echo "<img src='/images/icon/gold.png' alt='g'/> 50 <img src='/images/icon/silver.png' alt='s'/> $_PR73 <a href='/trade/exchange/gold/100?r=4'>x</a><a href='/trade/exchange/gold/1?r=5'>y</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC"; fi ;;
+          *) echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          esac; }
+      _PG73="$2"; _PR73="$3"; func_trade > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/pedidos" )
+}
+check "cambio RU: troca prata -> ouro pelo silver/ (nunca o gold/)" \
+    "/trade/exchange /trade/exchange/silver/41?r=71 " "`_tr73 RU ru 999,9M`"
+check "cambio RU: prata curta, so olha a pagina" "/trade/exchange " "$(_tr73 RU ru "1'000")"
+check "cambio BR: igual a antes (gold/100 com prata alta)" "/trade/exchange /trade/exchange/gold/100?r=4 " "`_tr73 BR br 999,9M`"
+check "cambio BR: igual a antes (gold/1 com prata media)" "/trade/exchange /trade/exchange/gold/1?r=5 " "`_tr73 BR br 700000`"
+
+# Trava no HTTP: conta russa nao pede o gold/ nem por engano.
+_r=`( . "$LIB/blessing.sh" > /dev/null 2>&1
+      for _t in RU BR; do SLS_TAG=$_t
+          for _u in https://tiwar.ru/trade/exchange/gold/100?r=1 https://tiwar.ru/trade/exchange/silver/41?r=1 https://x/effshop/blessing/; do
+              blessing_url_bloqueada -s "$_u" && printf 'B' || printf '.'
+          done; printf ' '
+      done )`
+check "trava HTTP: RU barra gold/ e bencao, BR so a bencao" "B.B ..B " "$_r"
+_r=`( TMP="$_td73"; SLS_TAG=RU; . "$LIB/blessing.sh" > /dev/null 2>&1; _rc_run() { echo PEDIU; }
+      run_curl -s "https://tiwar.ru/trade/exchange/gold/1?r=2"; echo "rc=$?"; cut -d'|' -f2 "$TMP/blessing_blocked.log" )`
+check "trava HTTP: o pedido nao sai e o log diz o motivo" "rc=1 Cambio ouro->prata" "`echo $_r`"
+rm -rf "$_td73"; unset _td73 _c73 _v _r; unset -f _cambio73 _tr73
+
+printf "\n=== 74. servidor russo: cronograma proprio em horario de Moscou ===\n"
+# O sls_play com cada funcao que ele chama trocada por um eco do nome, nos
+# 1440 minutos do dia. _dia74 TAG -> arquivo com "HH:MM chamadas" por minuto.
+_td74=`mktemp -d`
+_dia74() {
+    ( SLS_TAG="$1"; RUN=-boot; CLD=889; TMP="$_td74"
+      for _f74 in clan_id batalha_retomar evento_dedicar evento_espera start clancoliseum_start \
+                  clancommand_start clanfight_start king_start undying_start altars_start \
+                  flagfight_start descansar specialEvent coliseum_fight tarefas_livres func_sleep \
+                  func_crono coliseum_start messages_info sleep; do
+          eval "$_f74() { printf ' %s' $_f74; }"
+      done
+      ativ_marcar() { printf ' marcar:%s' "$1"; }
+      . "$LIB/run.sh"
+      _h74=0
+      while [ "$_h74" -lt 24 ]; do
+          _m74=0
+          while [ "$_m74" -lt 60 ]; do
+              _hh74=`printf '%02d' "$_h74"`; _mm74=`printf '%02d' "$_m74"`
+              relogio_sync() { _HH=$_hh74; _MM=$_mm74; _DD=26; }
+              _COL_PULSO=""
+              printf '%s:%s' "$_hh74" "$_mm74"; sls_play; printf '\n'
+              _m74=$((_m74 + 1))
+          done
+          _h74=$((_h74 + 1))
+      done ) > "$_td74/$1.txt" 2>/dev/null
+}
+_dia74 BR; _dia74 RU
+check "cronograma: o dia inteiro tem 1440 minutos nos dois" "1440 1440" \
+    "`wc -l < "$_td74/BR.txt" | tr -d ' '` `wc -l < "$_td74/RU.txt" | tr -d ' '`"
+# Em 26/10/2026 a tabela russa em MSK e a do BR em horario de Brasilia sao
+# iguais minuto a minuto. Se um dia o russo mudar um horario, este teste
+# avisa: atualize a tabela russa (cronograma_ru) e o esperado aqui.
+cmp -s "$_td74/BR.txt" "$_td74/RU.txt" && ok "cronograma RU (MSK) = cronograma BR (BRT) nos 1440 minutos" \
+    || bad "cronograma RU difere do BR: `diff "$_td74/BR.txt" "$_td74/RU.txt" | head -n 3 | tr '\n' ' '`"
+
+# A tabela russa responde pelos horarios dela e so por eles.
+_r=`( for _f74 in evento_dedicar evento_espera start clancoliseum_start clancommand_start clanfight_start \
+                  king_start undying_start altars_start flagfight_start descansar specialEvent; do
+          eval "$_f74() { :; }"
+      done
+      king_start() { printf 'rei'; }; undying_start() { printf 'vale'; }; altars_start() { printf 'altares'; }
+      clanfight_start() { printf 'torneio'; }; clancoliseum_start() { printf 'ccol'; }; flagfight_start() { printf 'band'; }
+      ativ_marcar() { :; }; CLD=889; . "$LIB/run.sh"
+      for _t74 in 10:25 14:59 10:55 18:59 12:25 16:29 22:25 09:55 15:55 21:59 13:55 20:59 10:10 16:14 10:30 23:59 02:45; do
+          cronograma_ru "$_t74" && printf ' ' || printf '%s' '- '
+      done )`
+check "cronograma_ru: ccol 10:25/14:55, torneio 10:55/18:55, rei 12:25/16:25/22:25, vale 09:55/15:55/21:55, altares 13:55/20:55, bandeiras 10:10/16:10" \
+    "ccol ccol torneio torneio rei rei rei vale vale vale altares altares band band - - - " "$_r"
+_r=`sed -n '/^sls_play() {/,/^}/p' "$LIB/run.sh" | grep -c 'SLS_TAG:-BR}" = RU ] && cronograma_ru'`
+check "sls_play: conta RU passa pela tabela russa antes da do BR" 1 "$_r"
+_r=`grep -c 'SLS_TAG:-BR}" != RU ] && ativ_liberada agenda' "$LIB/crono.sh"`
+check "agenda do painel (BR): a conta russa nao a sobrescreve" 1 "$_r"
+rm -rf "$_td74"; unset _td74 _r; unset -f _dia74
+
+printf "\n=== 75. servidor russo: relogio de Moscou no worker ===\n"
+# O trecho do sls.sh que escolhe o fuso, rodado para cada sigla.
+_td75=`mktemp -d`
+sed -n '/^case "\$SLS_TAG" in$/,/^esac$/p' "$LIB/sls.sh" > "$_td75/tz.sh"
+_r=`for _t75 in BR RU ""; do ( SLS_TAG="$_t75"; unset TZ; . "$_td75/tz.sh"; printf '%s ' "$TZ" ); done`
+check "fuso: BR e sem sigla em America/Bahia, RU em Europe/Moscow" "America/Bahia Europe/Moscow America/Bahia " "$_r"
+# O relogio do worker russo e UTC+3 (o rodape do tiwar.ru, 18:36 com 15:36 UTC).
+_r=`( SLS_TAG=RU; . "$_td75/tz.sh"; _u=\`date -u +%s\`; _l=\`date -d "@$_u" +%H 2>/dev/null\`
+      [ -n "$_l" ] || { echo sem_date_d; exit 0; }
+      _e=$(( ( _u / 3600 + 3 ) % 24 )); [ "${_l#0}" = "$_e" ] && echo 3 || echo "$_l x $_e" )`
+case "$_r" in
+    3)          ok "fuso: o relogio da conta russa e UTC+3" ;;
+    sem_date_d) ok "fuso: date -d indisponivel aqui, nada a medir" ;;
+    *)          bad "fuso: o relogio da conta russa nao e UTC+3 ($_r)" ;;
+esac
+grep -q '^export TZ="America/Bahia"$' "$LIB/sls.sh" && bad "sls.sh: fuso fixo do BR ainda vale para todo servidor" \
+    || ok "sls.sh: o fuso vem da sigla do servidor"
+rm -rf "$_td75"; unset _td75 _t75 _r
+
+printf "\n=== 76. servidor russo: relogios da campanha e da masmorra ===\n"
+# Trechos reais do tiwar.ru (26/10/2026), com as campanhas e os golpes acabados.
+_td76=`mktemp -d`
+printf '%s\n' "<div class='block_zero center'><img src='/images/icon/2hit.png' alt=''/> Новый поход через: <span id='time_28772000'>7 ч 59 мин</span></div><div class='block_zero center'><a class='btn' href='/campaign/'><span class='end'><span class='label'>Обновить</span></span></a></div><script>jsInterface.event(\"user=5;level=41\")</script>" > "$_td76/camp_fim"
+printf '%s\n' "<div class='block_zero center'><img src='/images/icon/2hit.png' alt=''/> Осталось походов: 1</div><a class='btn' href='/campaign/go/?r=9'>go</a>" > "$_td76/camp_resta"
+printf '%s\n' "<div class='block_zero center'>Удары закончились<br/><span class='grey medium'>+10 ударов через <span id='time_28765000'>07:59:25</span></span><div class='mb5'></div><a class='btn' href='/clandungeon/buy/?r=9'><span class='end'><span class='label'>Купить 10 ударов за <img src='/images/icon/gold.png' alt=''/>20</span></span></a></div><div class='block_zero center'><span class='grey'>До конца боя: <span id='time_245885000'>2 дня</span></span></div>" > "$_td76/masm_fim"
+printf '%s\n' "<a class='btn' href='/clandungeon/attack/?r=9'><span class='end'><span class='label'>Атаковать монстра</span></span></a><div class='mb5'></div>Осталось ударов: <img src='/images/icon/hit.png' alt=''/> 5</div><div class='block_zero center'><span class='grey'>До конца боя: <span id='time_245941000'>2 дня</span></span></div>" > "$_td76/masm_resta"
+printf '%s\n' "<img src='/images/icon/2hit.png' alt=''/> Nova campanha em 7 h 59 min<br/>" > "$_td76/camp_br"
+printf '%s\n' "<div>Mais golpes em <span id='time_28800000'>08:00:00</span></div>" > "$_td76/masm_br"
+
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      for _t76 in RU BR; do SLS_TAG=$_t76
+          printf '%s=[%s][%s][%s] ' "$_t76" "\`campanha_relogio "$_td76/camp_fim"\`" "\`campanha_relogio "$_td76/camp_resta"\`" "\`campanha_relogio "$_td76/camp_br"\`"
+      done )`
+check "campanha: RU le o time_ (28772 s), sem relogio com campanha restando; BR so a frase dele" \
+    "RU=[28772][][] BR=[][][28740] " "$_r"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      printf '[%s][%s][%s]' "\`masmorra_relogio "$_td76/masm_fim"\`" "\`masmorra_relogio "$_td76/masm_resta"\`" "\`masmorra_relogio "$_td76/masm_br"\`" )`
+check "masmorra: RU '+10 ударов через' (28765 s, nao o fim do monstro), RU com golpe sem relogio, BR igual" \
+    "[28765][][28800]" "$_r"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      printf '[%s][%s]' "\`masmorra_golpe "$_td76/masm_resta"\`" "\`masmorra_golpe "$_td76/masm_fim"\`" )`
+check "masmorra: golpe pelo attack/; com os golpes acabados o 'comprar' nao vira golpe" "[/clandungeon/attack/?r=9][]" "$_r"
+rm -rf "$_td76"; unset _td76 _t76 _r
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
