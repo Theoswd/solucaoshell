@@ -5811,6 +5811,42 @@ _r=$( TMP="$_td71"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/
 check "dano_registrar: vida perdida so nos ultimos 15s" "10000 30000 5000" "$_r"
 rm -rf "$_td71"; unset _td71 _m71 _a _v _r; unset -f _ant71 _es71
 
+printf "\n=== 72. servidor russo: cadastro, setup e painel ===\n"
+_r=`( . "$LIB/contas.sh"; printf '%s %s %s %s [%s][%s]' "$(server_url 1)" "$(server_tag 1)" \
+      "$(server_url 2)" "$(server_tag 2)" "$(server_url 3)" "$(server_tag 3)" )`
+check "contas: 1 = BR, 2 = RU (tiwar.ru), 3 = nenhum" "furiadetitas.net BR tiwar.ru RU [][]" "$_r"
+
+# setup.sh: a escolha do servidor (ENTER fica no BR).
+_td72=`mktemp -d`
+sed -n '/^escolher_servidor() {/,/^}/p' "$ROOT/setup.sh" > "$_td72/esc.sh"
+_r=""
+for _e72 in "" 1 2 " 2 " 9 x; do
+    _v=`( . "$LIB/contas.sh"; . "$_td72/esc.sh"; RED=; RESET=; sleep() { :; }
+          printf '%s\n' "$_e72" | { escolher_servidor > /dev/null && printf '%s' "$srv" || printf 'recusa'; } )`
+    _r="$_r$_v "
+done
+check "setup: ENTER=1, 1, 2, ' 2 ', 9 e x" "1 1 2 2 recusa recusa " "$_r"
+grep -q 'escolher_servidor || return' "$ROOT/setup.sh" && ok "setup: adicionar conta pergunta o servidor" \
+    || bad "setup: adicionar conta nao pergunta o servidor"
+
+# Painel: a conta RU aparece na lista, com a pasta RU_.
+mkdir -p "$_td72/home/.sls/status" "$_td72/home/.sls/BR_Ze" "$_td72/home/.sls/RU_Ivan"
+printf '1|Ze|x\n2|Ivan|x\n3|Fora|x\n' > "$_td72/accounts.conf"
+for _a72 in BR_Ze RU_Ivan; do
+    echo running > "$_td72/home/.sls/status/$_a72.status"
+    echo "$$"    > "$_td72/home/.sls/status/$_a72.pid"
+    date +%s     > "$_td72/home/.sls/$_a72/last_ok"
+done
+printf 'Ze|900|10|5|7|12|3,4K|%s\n' "`date +%s`" > "$_td72/home/.sls/BR_Ze/stats"
+printf 'Ivan|11182|1520|5|41|2548|71217|%s\n' "`date +%s`" > "$_td72/home/.sls/RU_Ivan/stats"
+( HOME="$_td72/home"; SLSDIR="$ROOT"; STATUS_DIR="$_td72/home/.sls/status"; ACCOUNTS_FILE="$_td72/accounts.conf"
+  clean_field() { printf '%s' "$1" | tr -d '\r'; }; worker_vivo() { kill -0 "$1"; }
+  PANEL_SUPERVISE=0; PANEL_ONCE=1; PANEL_DRAW=1; SLS_EMOJI=0; SLS_COLS=100
+  export HOME SLSDIR STATUS_DIR ACCOUNTS_FILE PANEL_SUPERVISE PANEL_ONCE PANEL_DRAW SLS_EMOJI SLS_COLS
+  . "$LIB/panel.sh"; painel_loop ) > "$_td72/saida.txt" 2>/dev/null
+_r=`grep -c -E '(Ze|Ivan) ' "$_td72/saida.txt"`; _f=`grep -c 'Fora' "$_td72/saida.txt"`
+check "painel: lista a conta BR e a RU, e pula o servidor desconhecido" "2 0" "$_r $_f"
+rm -rf "$_td72"; unset _td72 _e72 _a72 _v _f
 printf "\n=== 73. servidor russo: cambio prata -> ouro pelo link certo ===\n"
 # Pagina real do cambio russo (tiwar.ru, 26/10/2026, conta nivel 41): os
 # botoes silver/N trocam prata por ouro; os gold/N COMPRAM prata com ouro.

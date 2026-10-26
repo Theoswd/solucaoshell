@@ -22,10 +22,17 @@ resolve_accounts_file() {
     printf '%s' "$SLSDIR/accounts.conf"
 }
 
-# Servidor unico (BR). O campo de servidor continua no accounts.conf (sempre
-# "1") para nao quebrar cadastros existentes.
-server_url() { case "$1" in 1) printf %s ZnVyaWFkZXRpdGFzLm5ldA== | base64 -d ;; esac; }
-server_tag() { case "$1" in 1) echo "BR" ;; esac; }
+# Servidores: 1 = BR, 2 = RU (mesma engine; mapa do russo de 26/10/2026).
+# O numero fica no accounts.conf; a sigla nomeia a pasta da conta (BR_x,
+# RU_x), o status e o disjuntor, e o worker le dela o fuso e o que muda de
+# um servidor para o outro (SLS_TAG).
+server_url() {
+    case "$1" in
+        1) printf %s ZnVyaWFkZXRpdGFzLm5ldA== | base64 -d ;;
+        2) printf %s dGl3YXIucnU= | base64 -d ;;
+    esac
+}
+server_tag() { case "$1" in 1) echo "BR" ;; 2) echo "RU" ;; esac; }
 
 # Contas do accounts.conf, na ordem do arquivo. O setup.sh usa esta mesma
 # funcao para lista, contagem e escolha por numero (um filtro diferente

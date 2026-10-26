@@ -1070,7 +1070,7 @@ while true; do
         limpa_campo "$user"; user="$_CF"
         case "$srv" in ''|\#*|*[!0-9]*) continue ;; esac
         [ -z "$user" ] && continue
-        case "$srv" in 1) tag="BR" ;; *) continue ;; esac
+        case "$srv" in 1) tag="BR" ;; 2) tag="RU" ;; *) continue ;; esac
 
         acc_id="${tag}_${user}"
         acc_dir="$HOME/.sls/${acc_id}"
