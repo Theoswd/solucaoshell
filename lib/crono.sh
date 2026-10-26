@@ -968,7 +968,9 @@ start() {
     # Agenda oficial do jogo (painel) e elixir das batalhas: uma vez por
     # varredura das :00/:30 (25 min deixa passar as duas). A agenda e uma so
     # para o aparelho (~/.sls/agenda): baixada ha menos de 25 min ja serve.
-    if ativ_liberada agenda 25; then
+    # A agenda do painel e a do BR, em horario de Brasilia: a conta russa nao
+    # a sobrescreve (o /fights/ russo nem traz o horario, so a contagem).
+    if [ "${SLS_TAG:-BR}" != RU ] && ativ_liberada agenda 25; then
         [ -n "`find "$HOME/.sls/agenda" -mmin -25 2>/dev/null`" ] || atualiza_agenda 2>/dev/null
         ativ_marcar agenda
     fi

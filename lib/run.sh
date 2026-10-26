@@ -1,3 +1,87 @@
+# CRONOGRAMA DO SERVIDOR RUSSO (tiwar.ru), EM HORARIO DE MOSCOU.
+#
+# Tabela propria do russo: o worker da conta RU roda com TZ=Europe/Moscow
+# (sls.sh), entao estes horarios sao os do servidor. Lidos do
+# /fights/timetable/ em 26/10/2026 (inicio da batalha, em MSK):
+#
+#   1. Клановый колизей    Coliseu do Cla     10:30  15:00
+#   2. Клановый турнир     Torneio dos Clas   11:00  19:00
+#   3. Король бессмертных  Rei dos Imortais   12:30  16:30  22:30
+#   4. Долина бессмертных  Vale dos Imortais  10:00  16:00  22:00
+#   5. Древние алтари      Altares            14:00  21:00
+#   6. Битва знамён        Bandeiras          10:15  16:15  (de temporada)
+#
+# Os outros eventos de temporada (Torneio de Equipe, Duelo do Cla e os
+# especiais do banner) nao estavam no ar no dia do mapa: ficam nos mesmos
+# horarios do BR ate aparecerem na tabela russa. Fora da temporada a pagina
+# deles cai na inicial e o modulo volta sem lutar, como no BR.
+#
+# Mesma ordem de prioridade e mesmas regras do cronograma do BR (abaixo):
+# inscricao cinco minutos antes e a conta dedicada ao evento ate o fim.
+# Devolve 1 fora destes horarios: a volta segue o case do sls_play (coliseu
+# da madrugada, varredura das :00/:30 e ocioso, que valem para os dois).
+cronograma_ru() {
+    case "$1" in
+        (10:2[5-9]|14:5[5-9])
+            if [ -n "$CLD" ]; then
+                evento_dedicar
+                clancoliseum_start
+                evento_espera
+            fi
+            start
+            ;;
+        (11:2[5-9]|17:5[5-9])
+            if [ -n "$CLD" ]; then
+                evento_dedicar
+                clancommand_start
+                evento_espera
+            fi
+            start
+            ;;
+        (10:5[5-9]|18:5[5-9])
+            if [ -n "$CLD" ]; then
+                evento_dedicar
+                clanfight_start
+                evento_espera
+            fi
+            start
+            ;;
+        (12:2[5-9]|16:2[5-9]|22:2[5-9])
+            evento_dedicar
+            king_start
+            evento_espera
+            start
+            ;;
+        (09:5[5-9]|15:5[5-9]|21:5[5-9])
+            evento_dedicar
+            undying_start
+            evento_espera
+            start
+            ;;
+        (13:5[5-9]|20:5[5-9])
+            if [ -n "$CLD" ]; then
+                evento_dedicar
+                altars_start
+                evento_espera
+            fi
+            start
+            ;;
+        (10:1[0-4]|16:1[0-4])
+            flagfight_start
+            descansar
+            ;;
+        (09:2[5-9]|21:2[5-9])
+            specialEvent
+            ativ_marcar evento
+            start
+            ;;
+        (*)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
 sls_play() {
     echo "$RUN" > "$TMP/runmode_file" 2>/dev/null
 
@@ -15,6 +99,11 @@ sls_play() {
     # um /clan lento antes do case faria a agenda ver o minuto errado e
     # entrar num evento fora da janela. Cobre tambem a retomada.
     relogio_sync
+
+    # Conta do servidor russo: a tabela dele, em horario de Moscou.
+    if [ "${SLS_TAG:-BR}" = RU ] && cronograma_ru "$_HH:$_MM"; then
+        return 0
+    fi
 
     # CRONOGRAMA DE BATALHAS — ORDEM DE PRIORIDADE
     #

@@ -4165,8 +4165,9 @@ if [ -z "$_vg" ]; then ok "versionNum: sem git aqui, nada a comparar ($_vn)"
 elif [ "`printf '%s\n%s\n' "$_vg" "$_vn" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1`" = "$_vn" ]; then ok "versionNum ($_vn) nao fica atras do ultimo commit ($_vg)"
 else bad "versionNum ($_vn) atras do ultimo commit ($_vg)"; fi
 unset _vn _vg
-check "evento especial: a chamada direta marca o portao (sem repetir no start)" 1 \
-    "`sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' "$LIB/run.sh" | grep -c '^ *ativ_marcar evento$'`"
+# Nas duas tabelas: a do BR (sls_play) e a do russo (cronograma_ru).
+check "evento especial: a chamada direta marca o portao (sem repetir no start), BR e RU" "1 1" \
+    "`sed -n '/^sls_play() {/,/^}/p' "$LIB/run.sh" | sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' | grep -c '^ *ativ_marcar evento$'` `sed -n '/^cronograma_ru() {/,/^}/p' "$LIB/run.sh" | sed -n '/(09:2\[5-9\]|21:2\[5-9\])/,/;;/p' | grep -c '^ *ativ_marcar evento$'`"
 check "modo -cl: arena so pelo portao (tarefas_livres), sem echo|grep" "0 0" \
     "`sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c '^ *arena_duel$'` `sed -n '/^        (\*)/,/;;/p' "$LIB/run.sh" | grep -c 'echo "\$RUN" | grep'`"
 _r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1; URL=http://jogo
@@ -5871,6 +5872,61 @@ _r=`( TMP="$_td73"; SLS_TAG=RU; . "$LIB/blessing.sh" > /dev/null 2>&1; _rc_run()
       run_curl -s "https://tiwar.ru/trade/exchange/gold/1?r=2"; echo "rc=$?"; cut -d'|' -f2 "$TMP/blessing_blocked.log" )`
 check "trava HTTP: o pedido nao sai e o log diz o motivo" "rc=1 Cambio ouro->prata" "`echo $_r`"
 rm -rf "$_td73"; unset _td73 _c73 _v _r; unset -f _cambio73 _tr73
+
+printf "\n=== 74. servidor russo: cronograma proprio em horario de Moscou ===\n"
+# O sls_play com cada funcao que ele chama trocada por um eco do nome, nos
+# 1440 minutos do dia. _dia74 TAG -> arquivo com "HH:MM chamadas" por minuto.
+_td74=`mktemp -d`
+_dia74() {
+    ( SLS_TAG="$1"; RUN=-boot; CLD=889; TMP="$_td74"
+      for _f74 in clan_id batalha_retomar evento_dedicar evento_espera start clancoliseum_start \
+                  clancommand_start clanfight_start king_start undying_start altars_start \
+                  flagfight_start descansar specialEvent coliseum_fight tarefas_livres func_sleep \
+                  func_crono coliseum_start messages_info sleep; do
+          eval "$_f74() { printf ' %s' $_f74; }"
+      done
+      ativ_marcar() { printf ' marcar:%s' "$1"; }
+      . "$LIB/run.sh"
+      _h74=0
+      while [ "$_h74" -lt 24 ]; do
+          _m74=0
+          while [ "$_m74" -lt 60 ]; do
+              _hh74=`printf '%02d' "$_h74"`; _mm74=`printf '%02d' "$_m74"`
+              relogio_sync() { _HH=$_hh74; _MM=$_mm74; _DD=26; }
+              _COL_PULSO=""
+              printf '%s:%s' "$_hh74" "$_mm74"; sls_play; printf '\n'
+              _m74=$((_m74 + 1))
+          done
+          _h74=$((_h74 + 1))
+      done ) > "$_td74/$1.txt" 2>/dev/null
+}
+_dia74 BR; _dia74 RU
+check "cronograma: o dia inteiro tem 1440 minutos nos dois" "1440 1440" \
+    "`wc -l < "$_td74/BR.txt" | tr -d ' '` `wc -l < "$_td74/RU.txt" | tr -d ' '`"
+# Em 26/10/2026 a tabela russa em MSK e a do BR em horario de Brasilia sao
+# iguais minuto a minuto. Se um dia o russo mudar um horario, este teste
+# avisa: atualize a tabela russa (cronograma_ru) e o esperado aqui.
+cmp -s "$_td74/BR.txt" "$_td74/RU.txt" && ok "cronograma RU (MSK) = cronograma BR (BRT) nos 1440 minutos" \
+    || bad "cronograma RU difere do BR: `diff "$_td74/BR.txt" "$_td74/RU.txt" | head -n 3 | tr '\n' ' '`"
+
+# A tabela russa responde pelos horarios dela e so por eles.
+_r=`( for _f74 in evento_dedicar evento_espera start clancoliseum_start clancommand_start clanfight_start \
+                  king_start undying_start altars_start flagfight_start descansar specialEvent; do
+          eval "$_f74() { :; }"
+      done
+      king_start() { printf 'rei'; }; undying_start() { printf 'vale'; }; altars_start() { printf 'altares'; }
+      clanfight_start() { printf 'torneio'; }; clancoliseum_start() { printf 'ccol'; }; flagfight_start() { printf 'band'; }
+      ativ_marcar() { :; }; CLD=889; . "$LIB/run.sh"
+      for _t74 in 10:25 14:59 10:55 18:59 12:25 16:29 22:25 09:55 15:55 21:59 13:55 20:59 10:10 16:14 10:30 23:59 02:45; do
+          cronograma_ru "$_t74" && printf ' ' || printf '%s' '- '
+      done )`
+check "cronograma_ru: ccol 10:25/14:55, torneio 10:55/18:55, rei 12:25/16:25/22:25, vale 09:55/15:55/21:55, altares 13:55/20:55, bandeiras 10:10/16:10" \
+    "ccol ccol torneio torneio rei rei rei vale vale vale altares altares band band - - - " "$_r"
+_r=`sed -n '/^sls_play() {/,/^}/p' "$LIB/run.sh" | grep -c 'SLS_TAG:-BR}" = RU ] && cronograma_ru'`
+check "sls_play: conta RU passa pela tabela russa antes da do BR" 1 "$_r"
+_r=`grep -c 'SLS_TAG:-BR}" != RU ] && ativ_liberada agenda' "$LIB/crono.sh"`
+check "agenda do painel (BR): a conta russa nao a sobrescreve" 1 "$_r"
+rm -rf "$_td74"; unset _td74 _r; unset -f _dia74
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
