@@ -175,7 +175,7 @@ clanDungeon() {
     # Golpes gratuitos restantes. O numero vem separado por tags no HTML
     # cru, entao e preciso remove-las antes de casar.
     _golpes=`sed 's/<[^>]*>//g' "$TMP/DUNGEON" 2>/dev/null \
-             | grep -oE "Golpes mais:[^0-9]{0,8}[0-9]{1,3}" | grep -oE '[0-9]{1,3}$' | head -n1`
+             | grep -oE "(Golpes mais|Осталось ударов):[^0-9]{0,8}[0-9]{1,3}" | grep -oE '[0-9]{1,3}$' | head -n1`
     [ -n "$_golpes" ] && printf "Masmorra: %s golpes disponiveis\n" "$_golpes"
 
     if [ -z "$_cl" ]; then

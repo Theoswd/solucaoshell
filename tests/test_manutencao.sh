@@ -5983,6 +5983,31 @@ grep -q '^export TZ="America/Bahia"$' "$LIB/sls.sh" && bad "sls.sh: fuso fixo do
     || ok "sls.sh: o fuso vem da sigla do servidor"
 rm -rf "$_td75"; unset _td75 _t75 _r
 
+printf "\n=== 76. servidor russo: relogios da campanha e da masmorra ===\n"
+# Trechos reais do tiwar.ru (26/10/2026), com as campanhas e os golpes acabados.
+_td76=`mktemp -d`
+printf '%s\n' "<div class='block_zero center'><img src='/images/icon/2hit.png' alt=''/> Новый поход через: <span id='time_28772000'>7 ч 59 мин</span></div><div class='block_zero center'><a class='btn' href='/campaign/'><span class='end'><span class='label'>Обновить</span></span></a></div><script>jsInterface.event(\"user=5;level=41\")</script>" > "$_td76/camp_fim"
+printf '%s\n' "<div class='block_zero center'><img src='/images/icon/2hit.png' alt=''/> Осталось походов: 1</div><a class='btn' href='/campaign/go/?r=9'>go</a>" > "$_td76/camp_resta"
+printf '%s\n' "<div class='block_zero center'>Удары закончились<br/><span class='grey medium'>+10 ударов через <span id='time_28765000'>07:59:25</span></span><div class='mb5'></div><a class='btn' href='/clandungeon/buy/?r=9'><span class='end'><span class='label'>Купить 10 ударов за <img src='/images/icon/gold.png' alt=''/>20</span></span></a></div><div class='block_zero center'><span class='grey'>До конца боя: <span id='time_245885000'>2 дня</span></span></div>" > "$_td76/masm_fim"
+printf '%s\n' "<a class='btn' href='/clandungeon/attack/?r=9'><span class='end'><span class='label'>Атаковать монстра</span></span></a><div class='mb5'></div>Осталось ударов: <img src='/images/icon/hit.png' alt=''/> 5</div><div class='block_zero center'><span class='grey'>До конца боя: <span id='time_245941000'>2 дня</span></span></div>" > "$_td76/masm_resta"
+printf '%s\n' "<img src='/images/icon/2hit.png' alt=''/> Nova campanha em 7 h 59 min<br/>" > "$_td76/camp_br"
+printf '%s\n' "<div>Mais golpes em <span id='time_28800000'>08:00:00</span></div>" > "$_td76/masm_br"
+
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      for _t76 in RU BR; do SLS_TAG=$_t76
+          printf '%s=[%s][%s][%s] ' "$_t76" "\`campanha_relogio "$_td76/camp_fim"\`" "\`campanha_relogio "$_td76/camp_resta"\`" "\`campanha_relogio "$_td76/camp_br"\`"
+      done )`
+check "campanha: RU le o time_ (28772 s), sem relogio com campanha restando; BR so a frase dele" \
+    "RU=[28772][][] BR=[][][28740] " "$_r"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      printf '[%s][%s][%s]' "\`masmorra_relogio "$_td76/masm_fim"\`" "\`masmorra_relogio "$_td76/masm_resta"\`" "\`masmorra_relogio "$_td76/masm_br"\`" )`
+check "masmorra: RU '+10 ударов через' (28765 s, nao o fim do monstro), RU com golpe sem relogio, BR igual" \
+    "[28765][][28800]" "$_r"
+_r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      printf '[%s][%s]' "\`masmorra_golpe "$_td76/masm_resta"\`" "\`masmorra_golpe "$_td76/masm_fim"\`" )`
+check "masmorra: golpe pelo attack/; com os golpes acabados o 'comprar' nao vira golpe" "[/clandungeon/attack/?r=9][]" "$_r"
+rm -rf "$_td76"; unset _td76 _t76 _r
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

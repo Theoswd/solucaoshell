@@ -323,8 +323,11 @@ masmorra_liberada() {
     [ "$_u" -le 0 ] || [ "$_u" -gt 172800 ]
 }
 # Segundos ate os golpes voltarem, lidos da pagina da masmorra ($1).
+# BR "golpes em <span id='time_N'>", RU "+10 ударов через <span id='time_N'>"
+# (pagina real de 26/10/2026). O "До конца боя" (fim do monstro) tem outro
+# relogio e fica de fora.
 masmorra_relogio() {
-    _mr=`grep -o -E "golpes em <span id='time_[0-9]+'>" "$1" 2>/dev/null | head -n 1 | grep -o -E '[0-9]+'`
+    _mr=`grep -o -E "(golpes em|ударов через) <span id='time_[0-9]+'>" "$1" 2>/dev/null | head -n 1 | grep -o -E 'time_[0-9]+' | grep -o -E '[0-9]+'`
     case "$_mr" in ''|*[!0-9]*) unset _mr; return 1 ;; esac
     echo $(( _mr / 1000 ))
     unset _mr
@@ -471,6 +474,17 @@ caverna_marcar() {
 
 # "Nova campanha em 7 h 38 min" -> segundos. Sem tags no meio do texto.
 campanha_relogio() {
+    # Servidor russo: "Новый поход через: <span id='time_28772000'>7 ч 59
+    # мин</span>" (pagina real de 26/10/2026). O relogio vem em milissegundos
+    # no id, como o da masmorra: le dali, sem depender do idioma.
+    if [ "${SLS_TAG:-BR}" = RU ]; then
+        _cr=`grep -o -E "2hit\.png' alt=''/> [^<]*<span id='time_[0-9]+'>" "$1" 2>/dev/null | head -n 1 | grep -o -E 'time_[0-9]+'`
+        _cr=${_cr#time_}
+        case "$_cr" in ''|*[!0-9]*) unset _cr; return 0 ;; esac
+        [ "$_cr" -ge 1000 ] && echo $(( _cr / 1000 ))
+        unset _cr
+        return 0
+    fi
     sed 's/<[^>]*>//g' "$1" 2>/dev/null | grep -o -E 'campanha em[^0-9]{0,4}([0-9]+ ?h)?[^0-9]{0,3}([0-9]+ ?min)?' | head -n 1 | \
         awk '{
             s = 0
