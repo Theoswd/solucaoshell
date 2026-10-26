@@ -5810,6 +5810,68 @@ _r=$( TMP="$_td71"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/
 check "dano_registrar: vida perdida so nos ultimos 15s" "10000 30000 5000" "$_r"
 rm -rf "$_td71"; unset _td71 _m71 _a _v _r; unset -f _ant71 _es71
 
+printf "\n=== 73. servidor russo: cambio prata -> ouro pelo link certo ===\n"
+# Pagina real do cambio russo (tiwar.ru, 26/10/2026, conta nivel 41): os
+# botoes silver/N trocam prata por ouro; os gold/N COMPRAM prata com ouro.
+_td73=`mktemp -d`
+_cambio73() { # PRATA_DA_CONTA -> pagina em $1/SRC
+    {
+    printf "%s" "<div class='block_zero center blue'>Обмен: <img src='/images/icon/silver.png' alt=''/> Серебро -&#62; <img src='/images/icon/gold.png' alt=''/> Золото<br/></div>"
+    printf "%s" "<div class='block_zero center'><span class='small grey'>Доступное золото к обмену: 41 из 41</span></div><div class='menuList'>"
+    printf "%s" "<li><a href='/trade/exchange/silver/41?r=71'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>6'724 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>41</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/silver/1?r=72'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>164 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>1</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/silver/10?r=73'><img src='/images/icon/arrow.png' alt=''/>Обменять <span class='white'><img src='/images/icon/silver.png' alt=''/>1'640 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>10</span></a></li></div>"
+    printf "%s" "<div class='block_zero center blue'>Купить <img src='/images/icon/silver.png' alt=''/> Cеребро</div><div class='menuList'>"
+    printf "%s" "<li><a href='/trade/exchange/gold/1?r=74'><img src='/images/icon/arrow.png' alt=''/>Купить <span class='white'><img src='/images/icon/silver.png' alt=''/>410 за <img src='/images/icon/gold.png' alt=''/>1</span></a></li>"
+    printf "%s" "<li><a href='/trade/exchange/gold/100?r=75'><img src='/images/icon/arrow.png' alt=''/>Купить <span class='white'><img src='/images/icon/silver.png' alt=''/>41000 за <img src='/images/icon/gold.png' alt=''/>100</span></a></li></div>"
+    printf "%s\n" "<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 41 | <img src='/images/icon/gold.png' alt='g'/> 2'548 | <img src='/images/icon/silver.png' alt='s'/> $2</div><script>jsInterface.event(\"user=5;level=41\")</script>"
+    } > "$1/SRC"
+}
+# trade_lote_ru: o maior lote que aguenta FUNC_trade_dias trocas iguais.
+_r=""
+for _c73 in "71'217 365" "999,9M 365" "6'724 1" "6'723 1" "1'000 365"; do
+    set -- $_c73
+    _v=`( TMP="$_td73"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
+          _cambio73 "$TMP" "$1"; trade_lote_ru "$(valor_num "$1")" "$2"; printf '%s=%s' "${_lote:--}" "${_cl:--}" )`
+    _r="$_r$_v "
+done
+check "cambio RU: lote por prata e dias (71217/365, 999,9M/365, 6724/1, 6723/1, 1000/365)" \
+    "1=/trade/exchange/silver/1?r=72 41=/trade/exchange/silver/41?r=71 41=/trade/exchange/silver/41?r=71 10=/trade/exchange/silver/10?r=73 -=- " "$_r"
+
+# func_trade inteiro: conta RU troca pelo silver/ e nunca pede o gold/; a
+# conta BR, com a pagina do BR, continua no gold/ de sempre.
+_tr73() { # TAG PAGINA(ru|br) PRATA
+    ( TMP="$_td73/$1"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG="$1"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=365
+      : > "$TMP/pedidos"
+      fetch_page() { echo "$1" >> "$TMP/pedidos"; case "$1" in
+          /trade/exchange)
+              if [ "$_PG73" = ru ]; then _cambio73 "$TMP" "$_PR73"
+              else echo "<img src='/images/icon/gold.png' alt='g'/> 50 <img src='/images/icon/silver.png' alt='s'/> $_PR73 <a href='/trade/exchange/gold/100?r=4'>x</a><a href='/trade/exchange/gold/1?r=5'>y</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC"; fi ;;
+          *) echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          esac; }
+      _PG73="$2"; _PR73="$3"; func_trade > /dev/null 2>&1
+      tr '\n' ' ' < "$TMP/pedidos" )
+}
+check "cambio RU: troca prata -> ouro pelo silver/ (nunca o gold/)" \
+    "/trade/exchange /trade/exchange/silver/41?r=71 " "`_tr73 RU ru 999,9M`"
+check "cambio RU: prata curta, so olha a pagina" "/trade/exchange " "$(_tr73 RU ru "1'000")"
+check "cambio BR: igual a antes (gold/100 com prata alta)" "/trade/exchange /trade/exchange/gold/100?r=4 " "`_tr73 BR br 999,9M`"
+check "cambio BR: igual a antes (gold/1 com prata media)" "/trade/exchange /trade/exchange/gold/1?r=5 " "`_tr73 BR br 700000`"
+
+# Trava no HTTP: conta russa nao pede o gold/ nem por engano.
+_r=`( . "$LIB/blessing.sh" > /dev/null 2>&1
+      for _t in RU BR; do SLS_TAG=$_t
+          for _u in https://tiwar.ru/trade/exchange/gold/100?r=1 https://tiwar.ru/trade/exchange/silver/41?r=1 https://x/effshop/blessing/; do
+              blessing_url_bloqueada -s "$_u" && printf 'B' || printf '.'
+          done; printf ' '
+      done )`
+check "trava HTTP: RU barra gold/ e bencao, BR so a bencao" "B.B ..B " "$_r"
+_r=`( TMP="$_td73"; SLS_TAG=RU; . "$LIB/blessing.sh" > /dev/null 2>&1; _rc_run() { echo PEDIU; }
+      run_curl -s "https://tiwar.ru/trade/exchange/gold/1?r=2"; echo "rc=$?"; cut -d'|' -f2 "$TMP/blessing_blocked.log" )`
+check "trava HTTP: o pedido nao sai e o log diz o motivo" "rc=1 Cambio ouro->prata" "`echo $_r`"
+rm -rf "$_td73"; unset _td73 _c73 _v _r; unset -f _cambio73 _tr73
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

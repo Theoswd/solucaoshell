@@ -20,6 +20,41 @@
 # mexem): subiu o lote, a troca saiu; igual, tenta de novo (duas tentativas
 # no dia); ouro ilegivel ou abreviado, nao arrisca e da o dia por feito.
 
+# SERVIDOR RUSSO (tiwar.ru): O CAMBIO E INVERTIDO.
+#   /trade/exchange/silver/N?r=R   prata -> N ouro   ("Обменять 6'724 -> 41")
+#   /trade/exchange/gold/N?r=R     N ouro -> prata   ("Купить 41000 за 100")
+# O link que no BR GANHA ouro, no russo GASTA ouro. Os lotes russos sao 1, 10
+# e "tudo o que o nivel deixa" (41 no nivel 41), com o custo em prata escrito
+# no proprio botao. A regra e a mesma do BR: o maior lote cuja prata aguente
+# essa troca uma vez por dia durante FUNC_trade_dias. E o gold/ fica barrado
+# no HTTP para conta russa (blessing.sh).
+#
+#   trade_lote_ru PRATA DIAS  ->  _lote e _cl (vazios: nenhum lote cabe)
+trade_lote_ru() {
+    set -- `awk -v p="$1" -v d="$2" -v q="'" '
+        { t = t $0 " " }
+        END {
+            reab = "/trade/exchange/silver/[0-9]+[?]r=[0-9]+"
+            recu = "silver[.]png[^>]*>[0-9][0-9" q ",.]*"
+            best = 0; bl = ""
+            while (match(t, reab)) {
+                l = substr(t, RSTART, RLENGTH)
+                r = substr(t, RSTART + RLENGTH, 400)
+                t = substr(t, RSTART + RLENGTH)
+                f = index(r, "</a>"); if (f) r = substr(r, 1, f)
+                if (!match(r, recu)) continue
+                # Custo abreviado (K/M) nao da a conta exata: lote fora.
+                if (substr(r, RSTART + RLENGTH, 1) ~ /[KMBkmb]/) continue
+                c = substr(r, RSTART, RLENGTH); sub(/^[^>]*>/, "", c); gsub(/[^0-9]/, "", c)
+                n = l; sub(/^.*silver[/]/, "", n); sub(/[?].*$/, "", n)
+                if (c == "" || n + 0 <= 0) continue
+                if (c * d <= p && n + 0 > best) { best = n + 0; bl = l }
+            }
+            if (best) print best, bl
+        }' "$TMP/SRC" 2>/dev/null`
+    _lote="$1"; _cl="$2"
+}
+
 # Ouro da conta no cabecalho de $TMP/SRC, inteiro; vazio se ilegivel ou
 # abreviado (K/M: a precisao nao enxerga o lote).
 trade_ouro() {
@@ -92,18 +127,24 @@ func_trade() {
     _prata=`valor_num "$_pr"`
     case "$_prata" in ''|*[!0-9]*) _prata=0 ;; esac
 
-    if   [ "$_prata" -ge $((180000 * _dias)) ]; then _lote=100
+    if [ "${SLS_TAG:-BR}" = RU ]; then
+        trade_lote_ru "$_prata" "$_dias"
+    elif [ "$_prata" -ge $((180000 * _dias)) ]; then _lote=100
     elif [ "$_prata" -ge $((18000  * _dias)) ]; then _lote=10
     elif [ "$_prata" -ge $((1800   * _dias)) ]; then _lote=1
     else
+        _lote=""
+    fi
+    if [ -z "$_lote" ]; then
         printf "Trade: prata insuficiente para trocar com seguranca (%s)\n" "$_pr"
         [ -n "$_pr" ] && printf %s "$_hoje" > "$TMP/last_trade" 2>/dev/null
         printf "Trade ok\n"
-        unset _hoje _ult _dias _pr _prata _lote
+        unset _hoje _ult _dias _pr _prata _lote _cl
         return 0
     fi
 
-    _cl=`grep -o -E "/trade/exchange/gold/${_lote}[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
+    [ "${SLS_TAG:-BR}" = RU ] || \
+        _cl=`grep -o -E "/trade/exchange/gold/${_lote}[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -z "$_cl" ]; then
         printf "Trade: lote de %s indisponivel agora\n" "$_lote"
         printf %s "$_hoje" > "$TMP/last_trade" 2>/dev/null
