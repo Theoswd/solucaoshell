@@ -5928,6 +5928,25 @@ _r=`grep -c 'SLS_TAG:-BR}" != RU ] && ativ_liberada agenda' "$LIB/crono.sh"`
 check "agenda do painel (BR): a conta russa nao a sobrescreve" 1 "$_r"
 rm -rf "$_td74"; unset _td74 _r; unset -f _dia74
 
+printf "\n=== 75. servidor russo: relogio de Moscou no worker ===\n"
+# O trecho do sls.sh que escolhe o fuso, rodado para cada sigla.
+_td75=`mktemp -d`
+sed -n '/^case "\$SLS_TAG" in$/,/^esac$/p' "$LIB/sls.sh" > "$_td75/tz.sh"
+_r=`for _t75 in BR RU ""; do ( SLS_TAG="$_t75"; unset TZ; . "$_td75/tz.sh"; printf '%s ' "$TZ" ); done`
+check "fuso: BR e sem sigla em America/Bahia, RU em Europe/Moscow" "America/Bahia Europe/Moscow America/Bahia " "$_r"
+# O relogio do worker russo e UTC+3 (o rodape do tiwar.ru, 18:36 com 15:36 UTC).
+_r=`( SLS_TAG=RU; . "$_td75/tz.sh"; _u=\`date -u +%s\`; _l=\`date -d "@$_u" +%H 2>/dev/null\`
+      [ -n "$_l" ] || { echo sem_date_d; exit 0; }
+      _e=$(( ( _u / 3600 + 3 ) % 24 )); [ "${_l#0}" = "$_e" ] && echo 3 || echo "$_l x $_e" )`
+case "$_r" in
+    3)          ok "fuso: o relogio da conta russa e UTC+3" ;;
+    sem_date_d) ok "fuso: date -d indisponivel aqui, nada a medir" ;;
+    *)          bad "fuso: o relogio da conta russa nao e UTC+3 ($_r)" ;;
+esac
+grep -q '^export TZ="America/Bahia"$' "$LIB/sls.sh" && bad "sls.sh: fuso fixo do BR ainda vale para todo servidor" \
+    || ok "sls.sh: o fuso vem da sigla do servidor"
+rm -rf "$_td75"; unset _td75 _t75 _r
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

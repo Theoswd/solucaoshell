@@ -29,8 +29,14 @@ TMP="$SLS_ACC_DIR"
 TMP_COOKIE="$TMP/cookie.txt"
 export URL UR TMP TMP_COOKIE
 
-# Servidor unico (BR): fuso fixo.
-export TZ="America/Bahia"
+# Fuso do servidor da conta. Todo o cronograma le o relogio local: as
+# janelas dos eventos, a troca e a Liga do dia, o coliseu da madrugada e o
+# dia 1. O russo (tiwar.ru) roda no horario de Moscou, o do proprio servidor
+# (cronograma_ru, em run.sh).
+case "$SLS_TAG" in
+    RU) export TZ="Europe/Moscow" ;;
+    *)  export TZ="America/Bahia" ;;
+esac
 
 mkdir -p "$TMP"
 chmod 700 "$TMP" 2>/dev/null
