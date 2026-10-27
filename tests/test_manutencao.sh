@@ -5846,6 +5846,9 @@ printf 'Ivan|11182|1520|5|41|2548|71217|%s\n' "`date +%s`" > "$_td72/home/.sls/R
   . "$LIB/panel.sh"; painel_loop ) > "$_td72/saida.txt" 2>/dev/null
 _r=`grep -c -E '(Ze|Ivan) ' "$_td72/saida.txt"`; _f=`grep -c 'Fora' "$_td72/saida.txt"`
 check "painel: lista a conta BR e a RU, e pula o servidor desconhecido" "2 0" "$_r $_f"
+# A sigla antes do nome so na conta russa (pedido do dono); a BR como estava.
+_r=`grep -c '\[RU\] Ivan' "$_td72/saida.txt"`; _f=`grep -c -E '\[BR\]|\[RU\] Ze' "$_td72/saida.txt"`
+check "painel: '[RU] Ivan' na conta russa, BR sem sigla" "1 0" "$_r $_f"
 rm -rf "$_td72"; unset _td72 _e72 _a72 _v _f
 printf "\n=== 73. servidor russo: cambio prata -> ouro pelo link certo ===\n"
 # Pagina real do cambio russo (tiwar.ru, 26/10/2026, conta nivel 41): os

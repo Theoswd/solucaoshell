@@ -1137,6 +1137,9 @@ while true; do
                    [ "$_idade" -gt 10 ] && _velho="$_idade min" ;;
             esac
         fi
+        # Conta do servidor russo: a sigla antes do nome, na lista e nas
+        # batalhas, para separar da BR (pedido do dono). A BR fica como estava.
+        [ "$tag" = RU ] && nome="[RU] $nome"
 
         # Sessao no jogo, separada do estado do worker: com o cookie morto o
         # worker segue vivo e o servidor o ve como visitante. O worker carimba
