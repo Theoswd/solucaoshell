@@ -6021,7 +6021,8 @@ _td77=`mktemp -d`
   sed -n '/^show_menu() {/,/^# Loop principal/p' "$ROOT/setup.sh"; } > "$_td77/setup_fn.sh"
 # Sem cor e sem terminal: largura fixa de 40 colunas.
 _fn77() { . "$_td77/setup_fn.sh"; clear() { :; }; sleep() { :; }; stty() { echo "24 40"; }
-          A1=; A2=; DIM=; WHITE=; GOLD=; RED=; GREEN=; CYAN=; RESET=; SLSDIR="$ROOT"; }
+          A1=; A2=; DIM=; WHITE=; GOLD=; RED=; GREEN=; CYAN=; RESET=; SLSDIR="$ROOT"
+          SLS_EMOJI=0; carregar_icones; }
 
 # Menu principal: as linhas do modelo do dono, sem o "BR" fixo no titulo.
 _r=`( HOME="$_td77/h"; ACCOUNTS_FILE="$_td77/nada"; _fn77; show_menu )`
@@ -6160,6 +6161,50 @@ if command -v git > /dev/null 2>&1; then
         || bad "atualizar: o arquivo novo nao chegou"
     unset _g77
 fi
+
+# Emoji: a mesma regra do painel (so no modo 1), sem exagero.
+# $1 = SLS_EMOJI  $2 = conteudo de ~/.sls/emoji (vazio = sem arquivo)  $3 = PREFIX
+_em77() {
+    _h="$_td77/em"; rm -rf "$_h"; mkdir -p "$_h/.sls"
+    [ -n "$2" ] && echo "$2" > "$_h/.sls/emoji"
+    _s=`( HOME="$_h"; SLS_EMOJI="$1"; PREFIX="$3"; . "$_td77/setup_fn.sh"; setup_emoji && echo 1 || echo 0 )`
+    _p=`( HOME="$_h"; SLS_EMOJI="$1"; PREFIX="$3"; export HOME SLS_EMOJI PREFIX
+          . "$LIB/panel.sh" > /dev/null 2>&1; [ "$SLS_EMOJI" = 1 ] && echo 1 || echo 0 )`
+    printf '%s%s ' "$_s" "$_p"
+}
+_r=""
+for _e in "||" "0||" "1||" "2||" "|1|" "|2|" "||/data/data/com.termux/files/usr" \
+          "|1|/data/data/com.termux/files/usr" "1|2|/data/data/com.termux/files/usr" "|talvez|"; do
+    _a=${_e%%|*}; _b=${_e#*|}; _b=${_b%%|*}; _c=${_e##*|}
+    _r="$_r`_em77 "$_a" "$_b" "$_c"`"
+done
+check "emoji: setup e painel decidem igual (o painel e a regra)" \
+    "11 00 11 00 11 00 00 11 11 11 " "$_r"
+
+_r=`( _fn77; SLS_EMOJI=1; carregar_icones; HOME="$_td77/h"; ACCOUNTS_FILE="$_td77/nada"; show_menu )`
+printf '%s\n' "$_r" | grep -qF -- "🔱 SLS - Gerenciador de Contas" \
+    && ok "emoji: titulo do menu com 🔱" || bad "emoji: titulo do menu sem 🔱"
+_r=`( _fn77; SLS_EMOJI=2; carregar_icones; HOME="$_td77/h"; ACCOUNTS_FILE="$_td77/nada"; show_menu; titulo "Testar Login" "🎯" ) | LC_ALL=C tr -dc '\360-\367' | wc -c | tr -d ' '`
+check "emoji: no modo de simbolos o setup nao mostra emoji" 0 "$_r"
+# 40 colunas, "Modo de Batalha" (15) + emoji e espaco (3) -> 11 espacos antes.
+_r=`( _fn77; SLS_EMOJI=1; carregar_icones; titulo "Modo de Batalha" "🎮" | sed -n 2p )`
+check "emoji: titulo com emoji continua centralizado" "           🎮 Modo de Batalha" "$_r"
+_r=`( _fn77; SLS_EMOJI=1; carregar_icones; printf '%s %s|' "$T_OK" "$T_FALHA"
+      SLS_EMOJI=0; carregar_icones; printf '%s %s' "$T_OK" "$T_FALHA" )`
+check "emoji: ✅/❌ com emoji, [OK]/[FALHOU] sem" "✅ ❌|[OK] [FALHOU]" "$_r"
+# Nenhum emoji com seletor de variacao (U+FE0F, bytes EF B8 8F): o terminal
+# que o ignora desenha caixa.
+_fe0f=`printf '\357\270\217'`
+check "emoji: setup.sh e panel.sh sem seletor de variacao" "0 0" \
+    "`grep -c "$_fe0f" "$ROOT/setup.sh"` `grep -c "$_fe0f" "$LIB/panel.sh"`"
+# Painel: 🔱 no titulo so no modo 1.
+_r=""
+for _m in 0 1 2; do
+    _r="$_r`( HOME="$_td77/h"; SLS_EMOJI=$_m; export HOME SLS_EMOJI
+              . "$LIB/panel.sh" > /dev/null 2>&1; printf '[%s%s]' "$I_TITULO" "$TITULO_W" )`"
+done
+check "painel: 🔱 no titulo so no modo emoji" "[0][🔱 3][0]" "$_r"
+unset _em77 _e _a _b _c _fe0f _m _h _s _p
 
 rm -rf "$_td77"; unset _td77 _r _n _l77 _bs77
 

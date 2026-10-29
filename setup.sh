@@ -58,11 +58,14 @@ show_menu() {
     # Reavalia a cada abertura ("Adicionar"/"Remover" mudam o arquivo).
     ACCOUNTS_FILE=$(resolve_accounts_file)
 
-    # Titulo centralizado numa linha so (27 colunas, ASCII).
-    _pad=$(( (_cols - 27) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
+    # Titulo centralizado numa linha so (27 colunas, ASCII; o emoji soma 3).
+    _ti=""; _tw=27
+    [ "$SETUP_EMOJI" = 1 ] && { _ti="🔱 "; _tw=30; }
+    _pad=$(( (_cols - _tw) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
     printf "%b%s%b\n" "$A2" "$_L" "$RESET"
-    printf "%*s%bSLS%b %b- Gerenciador de Contas%b\n" "$_pad" '' \
+    printf "%*s%s%bSLS%b %b- Gerenciador de Contas%b\n" "$_pad" '' "$_ti" \
            "$A1" "$RESET" "$WHITE" "$RESET"
+    unset _ti _tw
     printf "%b%s%b\n\n" "$A2" "$_L" "$RESET"
 
     printf "   %b1%b - Listar Contas\n"   "$A1" "$RESET"
@@ -75,7 +78,7 @@ show_menu() {
 
     # Aviso so quando o arquivo de contas nao esta no lugar padrao.
     if [ "$ACCOUNTS_FILE" != "$SLSDIR/accounts.conf" ]; then
-        printf "  %b(!) contas lidas de outro local%b\n\n" "$GOLD" "$RESET"
+        printf "  %b%s contas lidas de outro local%b\n\n" "$GOLD" "${E_AVISO:-(!) }" "$RESET"
     fi
 
     rodape
@@ -94,13 +97,57 @@ medir_tela() {
 }
 
 # Titulo de tela centralizado entre duas linhas.  $1 = texto (ASCII: o
-# ${#} conta bytes no dash, e acento tiraria o titulo do centro).
+# ${#} conta bytes no dash, e acento tiraria o titulo do centro)
+# $2 = emoji da tela, so com o emoji ligado (carregar_icones).
 titulo() {
     medir_tela
-    _pad=$(( (_cols - ${#1}) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
+    _tt="$1"; _tw=${#1}
+    # O emoji ocupa 2 colunas, mais o espaco depois dele.
+    if [ "$SETUP_EMOJI" = 1 ] && [ -n "$2" ]; then _tt="$2 $1"; _tw=$((_tw + 3)); fi
+    _pad=$(( (_cols - _tw) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
     printf "%b%s%b\n" "$A2" "$_L" "$RESET"
-    printf "%*s%b%s%b\n" "$_pad" '' "$A1" "$1" "$RESET"
+    printf "%*s%b%s%b\n" "$_pad" '' "$A1" "$_tt" "$RESET"
     printf "%b%s%b\n\n" "$A2" "$_L" "$RESET"
+    unset _tt _tw
+}
+
+# Emoji como no painel: so no modo 1 do lib/panel.sh. A escolha manual
+# ganha (SLS_EMOJI=N no comando, depois "echo N > ~/.sls/emoji"); sem ela,
+# Android/Termux fica sem emoji (muito aparelho nao tem a fonte e mostra
+# caixa vazia) e o resto com. Mesma regra do painel_e_android.
+setup_emoji() {
+    _em="$SLS_EMOJI"
+    if [ -z "$_em" ] && [ -r "$HOME/.sls/emoji" ]; then
+        read -r _em < "$HOME/.sls/emoji" 2>/dev/null || :
+    fi
+    case "$_em" in 0|1|2) ;; *) _em="" ;; esac
+    if [ -z "$_em" ]; then
+        _em=1
+        case "${PREFIX:-}" in *com.termux*) _em=2 ;; esac
+        [ "$_em" = 1 ] && [ "`uname -o 2>/dev/null`" = "Android" ] && _em=2
+        [ "$_em" = 1 ] && command -v getprop > /dev/null 2>&1 && _em=2
+    fi
+    [ "$_em" = 1 ]
+}
+
+# Icones das mensagens. Sem emoji, o texto de sempre ([OK], [FALHOU]).
+# So emoji de codepoint unico, sem seletor de variacao (U+FE0F): o
+# terminal que ignora o seletor desenha caixa ou o glifo de texto.
+carregar_icones() {
+    if setup_emoji; then
+        SETUP_EMOJI=1
+        T_OK="✅"; T_FALHA="❌"
+        E_OK="✅ "; E_ERR="❌ "; E_AVISO="🚨 "; E_PARA="🛑 "; E_ROLA="🔄 "; E_SOBE="🤖 "
+    else
+        SETUP_EMOJI=0
+        T_OK="[OK]"; T_FALHA="[FALHOU]"
+        E_OK=""; E_ERR=""; E_AVISO=""; E_PARA=""; E_ROLA=""; E_SOBE=""
+    fi
+}
+
+# Emoji de cada modo, para o titulo da tela do modo.
+modo_emoji() {
+    case "$1" in -cv) echo "💀" ;; -cl) echo "🔥" ;; *) echo "🤖" ;; esac
 }
 
 # Linha de baixo e o "Opcao:" dos menus.
@@ -111,7 +158,7 @@ rodape() {
 
 list_accounts() {
     clear
-    titulo "Contas Cadastradas"
+    titulo "Contas Cadastradas" "📜"
     if [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ]; then
         printf "${RED}Nenhuma conta cadastrada ainda.${RESET}\n"
     else
@@ -214,7 +261,7 @@ escolher_servidor() {
 
 add_account() {
     clear
-    titulo "Adicionar Conta"
+    titulo "Adicionar Conta" "🥷"
     show_servers
     escolher_servidor || return
 
@@ -256,11 +303,11 @@ add_account() {
         encoded=$(printf "login=%s&pass=%s" "$user" "$pass" | base64 | tr -d '[:space:]')
         printf "%s|%s|%s\n" "$srv" "$user" "$encoded" >> "$ACCOUNTS_FILE"
         chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
-        printf "${GREEN}[OK] Conta [%s] %s adicionada!${RESET}\n" "$tag" "$user"
+        printf "${GREEN}%s Conta [%s] %s adicionada!${RESET}\n" "$T_OK" "$tag" "$user"
         mostra_logado
         aviso_subir
     else
-        printf "${RED}Login nao confirmado automaticamente.${RESET}\n"
+        printf "${RED}%sLogin nao confirmado automaticamente.${RESET}\n" "$E_ERR"
         printf "Isso pode ocorrer por bloqueio de IP no teste.\n"
         printf "Salvar mesmo assim? (y/n): "
         read -r force
@@ -269,7 +316,7 @@ add_account() {
                 encoded=$(printf "login=%s&pass=%s" "$user" "$pass" | base64 | tr -d '[:space:]')
                 printf "%s|%s|%s\n" "$srv" "$user" "$encoded" >> "$ACCOUNTS_FILE"
                 chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
-                printf "${GOLD}Conta salva sem validacao.${RESET}\n"
+                printf "${GOLD}%sConta salva sem validacao.${RESET}\n" "$E_AVISO"
                 aviso_subir
                 ;;
             *) printf "Conta nao salva.\n" ;;
@@ -309,7 +356,7 @@ escolher_conta() {
 
 remove_account() {
     clear
-    titulo "Remover Contas"
+    titulo "Remover Contas" "💣"
     escolher_conta || return
     tag=$(server_tag "$srv")
 
@@ -358,7 +405,7 @@ remove_account() {
 
 test_account() {
     clear
-    titulo "Testar Login"
+    titulo "Testar Login" "🎯"
     escolher_conta || return
     tag=$(server_tag "$srv")
     url=$(server_url "$srv")
@@ -372,10 +419,10 @@ test_account() {
     printf "Testando [%s] %s...\n" "$tag" "$user"
 
     if test_login "https://$url" "$luser" "$lpass"; then
-        printf "${GREEN}[OK] Login confirmado.${RESET}\n"
+        printf "${GREEN}%s Login confirmado.${RESET}\n" "$T_OK"
         mostra_logado
     else
-        printf "${RED}[FALHOU] Login nao confirmado.${RESET}\n"
+        printf "${RED}%s Login nao confirmado.${RESET}\n" "$T_FALHA"
         printf "Nota: pode ser bloqueio de IP. O bot pode funcionar mesmo assim.\n"
     fi
     unset lpass
@@ -389,7 +436,7 @@ test_account() {
 atualizar_menu() {
     while true; do
         clear
-        titulo "Atualizar Repositorio"
+        titulo "Atualizar Repositorio" "🔄"
         printf "   %b1%b - git pull pelo setup\n\n" "$A1" "$RESET"
         printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
         rodape
@@ -405,46 +452,46 @@ atualizar_menu() {
 # --ff-only" e sobe de novo. Sem nada novo, nao para nada.
 git_pull_setup() {
     clear
-    titulo "Atualizar Repositorio"
+    titulo "Atualizar Repositorio" "🔄"
     if ! command -v git > /dev/null 2>&1 || [ ! -d "$SLSDIR/.git" ]; then
-        printf "${RED}Sem git, ou %s nao e um clone do repositorio.${RESET}\n" "$SLSDIR"
+        printf "${RED}%sSem git, ou %s nao e um clone do repositorio.${RESET}\n" "$E_ERR" "$SLSDIR"
         sleep 3; return
     fi
 
     printf "Procurando atualizacao...\n"
     if ! git -C "$SLSDIR" fetch --quiet 2>/dev/null; then
-        printf "${RED}Nao consegui falar com o GitHub. Confira a internet.${RESET}\n"
+        printf "${RED}%sNao consegui falar com o GitHub. Confira a internet.${RESET}\n" "$E_ERR"
         sleep 3; return
     fi
     _novos=$(git -C "$SLSDIR" rev-list --count HEAD..@{u} 2>/dev/null)
     case "$_novos" in
         ''|*[!0-9]*)
-            printf "${RED}O repositorio nao tem um ramo remoto para atualizar.${RESET}\n"
+            printf "${RED}%sO repositorio nao tem um ramo remoto para atualizar.${RESET}\n" "$E_ERR"
             sleep 3; return ;;
         0)
-            printf "${GREEN}Ja esta na versao mais nova.${RESET}\n"
+            printf "${GREEN}%sJa esta na versao mais nova.${RESET}\n" "$E_OK"
             sleep 2; return ;;
     esac
 
-    printf "\n${GOLD}%s atualizacao(oes):${RESET}\n" "$_novos"
+    printf "\n${GOLD}%s%s atualizacao(oes):${RESET}\n" "$E_AVISO" "$_novos"
     git -C "$SLSDIR" log --oneline --no-decorate HEAD..@{u} 2>/dev/null | head -n 10
     printf "\n"
 
-    printf "Parando o bot...\n"
+    printf "%sParando o bot...\n" "$E_PARA"
     sh "$SLSDIR/stop.sh"
 
     printf "\nAtualizando...\n"
     if git -C "$SLSDIR" pull --ff-only; then
-        printf "${GREEN}[OK] Repositorio atualizado.${RESET}\n"
+        printf "${GREEN}%s Repositorio atualizado.${RESET}\n" "$T_OK"
     else
         # Arquivo mudado a mao na pasta (ou historico diferente): o pull
         # recusa e nada muda. O bot sobe de novo na versao que estava.
-        printf "${RED}Nao deu para atualizar: tem arquivo mudado na pasta.${RESET}\n"
+        printf "${RED}%sNao deu para atualizar: tem arquivo mudado na pasta.${RESET}\n" "$E_ERR"
         git -C "$SLSDIR" status --short 2>/dev/null | head -n 10
     fi
     chmod +x "$SLSDIR"/*.sh 2>/dev/null
 
-    printf "\nSubindo o bot...\n"
+    printf "\n%sSubindo o bot...\n" "$E_SOBE"
     sleep 2
     # O play.sh fica com o terminal (painel); o setup termina aqui.
     exec sh "$SLSDIR/play.sh"
@@ -472,7 +519,7 @@ modo_da_conta() {
 modo_menu() {
     while true; do
         clear
-        titulo "Modo de Batalha"
+        titulo "Modo de Batalha" "🎮"
         printf "   %b1%b - Caverna\n" "$A1" "$RESET"
         printf "   %b2%b - Coliseu\n" "$A1" "$RESET"
         printf "   %b3%b - Normal (todos os eventos)\n\n" "$A1" "$RESET"
@@ -492,7 +539,7 @@ modo_menu() {
 aplicar_modo() {
     while true; do
         clear
-        titulo "Modo $(modo_nome "$1")"
+        titulo "Modo $(modo_nome "$1")" "$(modo_emoji "$1")"
         printf "   %b1%b - Escolher contas\n" "$A1" "$RESET"
         printf "   %b2%b - Definir para todas\n\n" "$A1" "$RESET"
         printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
@@ -518,7 +565,7 @@ aplicar_modo() {
 # cada conta uma vez so. Volta 1 se cancelou ou se um numero nao existe.
 escolher_contas() {
     clear
-    titulo "Modo $(modo_nome "$1")"
+    titulo "Modo $(modo_nome "$1")" "$(modo_emoji "$1")"
     if [ -z "$(contas_validas)" ]; then
         printf "${RED}Nenhuma conta.${RESET}\n"; sleep 2; return 1
     fi
@@ -558,7 +605,7 @@ escolher_contas() {
 # ar, oferece reiniciar as que estao rodando para valer na hora.
 gravar_modo() {
     clear
-    titulo "Modo $(modo_nome "$1")"
+    titulo "Modo $(modo_nome "$1")" "$(modo_emoji "$1")"
     _vivos=""
     _nv=0
     while IFS='|' read -r srv user _enc; do
@@ -612,7 +659,7 @@ FIM
                 done <<FIM
 $_vivos
 FIM
-                printf "Reiniciando: as contas voltam no modo novo, uma por vez.\n"
+                printf "%sReiniciando: as contas voltam no modo novo, uma por vez.\n" "$E_ROLA"
                 ;;
             *) printf "Vale no proximo reinicio (${CYAN}./play.sh --restart${RESET}).\n" ;;
         esac
@@ -621,6 +668,8 @@ FIM
     printf "\nENTER para voltar..."
     read -r _d
 }
+
+carregar_icones
 
 # Loop principal
 while true; do
