@@ -6059,7 +6059,7 @@ _r=`( _fn77; stty() { return 1; }
       printf '%s\n' ' a\b ' | { ler_senha > /dev/null; printf '[%s]' "$pass"; } )`
 check "senha sem terminal: le a linha inteira" '[ a\b ]' "$_r"
 _r=`sed -n '/^add_account() {/,/^}/p' "$ROOT/setup.sh"`
-printf '%s\n' "$_r" | grep -q '^    ler_senha$' && ! printf '%s\n' "$_r" | grep -q 'IFS= read -r pass' \
+printf '%s\n' "$_r" | grep -q '^    ler_senha "Senha: "$' && ! printf '%s\n' "$_r" | grep -q 'IFS= read -r pass' \
     && ok "setup: adicionar conta le a senha com *" || bad "setup: adicionar conta sem o ler_senha"
 
 # Testar login: mostra o nome com que o jogo recebeu a conta.

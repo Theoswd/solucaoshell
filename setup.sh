@@ -207,16 +207,20 @@ show_servers() {
 
 # Le a senha em $pass mostrando um * por tecla (backspace apaga). Sem
 # terminal (o stty falha), le a linha inteira sem eco, como antes.
+# $1 = pergunta ("Senha: "), escrita DEPOIS de desligar o eco: a senha
+# digitada ou colada no instante em que a pergunta aparece nao vaza na tela.
 ler_senha() {
     pass=""
     _stty=$(stty -g 2>/dev/null)
     if [ -z "$_stty" ] || ! stty -echo -icanon min 1 time 0 2>/dev/null; then
         stty -echo 2>/dev/null
+        printf '%s' "$1"
         # IFS= : sem ele o read tira espacos do comeco e do fim da senha.
         IFS= read -r pass
         stty echo 2>/dev/null
         return 0
     fi
+    printf '%s' "$1"
     _del=$(printf '\177'); _bs=$(printf '\010'); _cr=$(printf '\r')
     while :; do
         # Um byte por vez. O ENTER chega vazio: o $(...) tira a quebra de
@@ -288,10 +292,9 @@ add_account() {
     # (removida antes) seguraria o painel de subi-la com o bot no ar.
     rm -f "$HOME/.sls/status/${tag}_${user}.status" 2>/dev/null
 
-    printf "Senha: "
     # Ctrl+C na senha nao pode deixar o terminal sem eco (nem sem o ENTER).
     trap 'stty echo icanon 2>/dev/null; printf "\n"; exit 130' INT TERM
-    ler_senha
+    ler_senha "Senha: "
     trap - INT TERM
     printf "\n"
     [ -z "$pass" ] && printf "${RED}Senha vazia.${RESET}\n" && sleep 2 && return
