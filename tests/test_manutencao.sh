@@ -5164,7 +5164,9 @@ if [ -r "/proc/$$/stat" ] && [ -r "/proc/$$/cmdline" ]; then
           eval "`sed -n '/^limpa_orfaos() {/,/^}/p' "$ROOT/play.sh"`"
           limpa_orfaos )
     sleep 1
-    _vivo63() { kill -0 "$1" 2>/dev/null && printf V || printf M; }
+    # Zumbi conta como morto: o orfao morto fica "Z" ate o PID 1 recolhe-lo,
+    # e o kill -0 ainda responde por ele.
+    _vivo63() { case "`cut -d' ' -f3 /proc/$1/stat 2>/dev/null`" in ''|Z) printf M ;; *) printf V ;; esac; }
     check "limpa_orfaos: worker e subshell conhecidos ficam; orfao e o subshell dele morrem" \
         "VV MM 2" "`_vivo63 $_w63a``_vivo63 $_s63a` `_vivo63 $_w63b``_vivo63 $_s63b` `printf '%s' "$_r" | grep -o '[0-9][0-9]*' | head -n1`"
     kill "$_w63a" "$_s63a" "$_w63b" "$_s63b" 2>/dev/null
