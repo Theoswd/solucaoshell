@@ -71,7 +71,7 @@ show_menu() {
     printf "   %b1%b - Listar Contas\n"   "$A1" "$RESET"
     printf "   %b2%b - Adicionar Conta\n" "$A1" "$RESET"
     printf "   %b3%b - Remover Contas\n"  "$A1" "$RESET"
-    printf "   %b4%b - Testar Login\n\n"  "$A1" "$RESET"
+    printf "   %b4%b - Testar Login\n"    "$A1" "$RESET"
     printf "   %b5%b - Atualizar Repositorio\n" "$A1" "$RESET"
     printf "   %b6%b - Modo de Batalha\n"       "$A1" "$RESET"
     printf "   %b7%b - Adicionar Aliados\n\n"   "$A1" "$RESET"

@@ -6033,6 +6033,9 @@ for _l77 in "SLS - Gerenciador de Contas" "1 - Listar Contas" "2 - Adicionar Con
 done
 check "setup: menu com as 8 linhas do modelo" 8 "$_n"
 check "setup: titulo do menu sem o 'BR' fixo" 0 "`printf '%s\n' "$_r" | grep -c 'Contas -'`"
+# Pedido do dono: o 5, 6 e 7 seguem logo depois do 4, sem linha em branco.
+check "setup: opcoes 1 a 7 em sequencia, sem linha em branco no meio" "4 - Testar Login|5 - Atualizar Repositorio" \
+    "`printf '%s\n' "$_r" | grep -A1 '4 - Testar Login' | sed 's/^ *//' | tr '\n' '|' | sed 's/|$//'`"
 check "setup: menu le as opcoes 5 e 6" 2 \
     "`grep -c -E '^        (5\) atualizar_menu|6\) modo_menu) ;;$' "$ROOT/setup.sh"`"
 
