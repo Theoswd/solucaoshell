@@ -114,7 +114,8 @@ titulo() {
 # Emoji como no painel: so no modo 1 do lib/panel.sh. A escolha manual
 # ganha (SLS_EMOJI=N no comando, depois "echo N > ~/.sls/emoji"); sem ela,
 # Android/Termux fica sem emoji (muito aparelho nao tem a fonte e mostra
-# caixa vazia) e o resto com. Mesma regra do painel_e_android.
+# caixa vazia) e o resto com (aparelho_android, em contas.sh). Na primeira
+# abertura no Android o emoji_perguntar ja gravou a escolha.
 setup_emoji() {
     _em="$SLS_EMOJI"
     if [ -z "$_em" ] && [ -r "$HOME/.sls/emoji" ]; then
@@ -122,10 +123,7 @@ setup_emoji() {
     fi
     case "$_em" in 0|1|2) ;; *) _em="" ;; esac
     if [ -z "$_em" ]; then
-        _em=1
-        case "${PREFIX:-}" in *com.termux*) _em=2 ;; esac
-        [ "$_em" = 1 ] && [ "`uname -o 2>/dev/null`" = "Android" ] && _em=2
-        [ "$_em" = 1 ] && command -v getprop > /dev/null 2>&1 && _em=2
+        if aparelho_android; then _em=2; else _em=1; fi
     fi
     [ "$_em" = 1 ]
 }
@@ -669,6 +667,7 @@ FIM
     read -r _d
 }
 
+emoji_perguntar
 carregar_icones
 
 # Loop principal

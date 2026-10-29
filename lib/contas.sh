@@ -64,3 +64,43 @@ worker_vivo() {
     case "$wv_nl$wv_cl$wv_nl" in *"$wv_nl$2$wv_nl"*) return 0 ;; esac
     return 1
 }
+
+# E Android/Termux? PREFIX do Termux, "uname -o" ou getprop (so existe no
+# Android): qualquer pista basta. A mesma regra do painel_e_android
+# (panel.sh), que o painel guarda em cache.
+aparelho_android() {
+    case "${PREFIX:-}" in *com.termux*) return 0 ;; esac
+    [ "`uname -o 2>/dev/null`" = "Android" ] && return 0
+    command -v getprop > /dev/null 2>&1
+}
+
+# Tem gente olhando? (Termux:Boot e cron sobem sem terminal.)
+tem_terminal() { [ -t 0 ] && [ -t 1 ]; }
+
+# EMOJI NO APARELHO: o script nao enxerga a tela, e um aparelho sem fonte
+# de emoji (Moto E22 e afins) mostra caixa vazia com o cursor andando as
+# mesmas 2 colunas. Por isso, na primeira abertura no Android sem escolha
+# gravada, mostra os emoji e pergunta uma vez; a resposta vai para
+# ~/.sls/emoji (1 = emoji, 2 = simbolos), que o painel e o setup leem.
+# Nao pergunta com SLS_EMOJI no comando, com escolha valida ja gravada,
+# fora do Android (la o padrao e emoji) nem sem terminal.
+emoji_perguntar() {
+    [ -z "$SLS_EMOJI" ] || return 0
+    _ep=""
+    { read -r _ep < "$HOME/.sls/emoji"; } 2>/dev/null
+    case "$_ep" in 0|1|2) unset _ep; return 0 ;; esac
+    aparelho_android || { unset _ep; return 0; }
+    tem_terminal || { unset _ep; return 0; }
+    printf "\nTeste de emoji:  🔱  💀  🔥  ✅\n"
+    printf "Aparecem 4 desenhos (e nao quadrados vazios)? (s/n): "
+    read -r _ep
+    mkdir -p "$HOME/.sls" 2>/dev/null
+    case "$_ep" in
+        s|S|y|Y) echo 1 > "$HOME/.sls/emoji"; printf "Emoji ligado.\n" ;;
+        *)       echo 2 > "$HOME/.sls/emoji"; printf "Sem emoji: o bot usa simbolos.\n" ;;
+    esac
+    printf "Para trocar depois: ./status.sh -icones\n\n"
+    # Uma vez so: da tempo de ler antes do menu limpar a tela.
+    sleep 2
+    unset _ep
+}

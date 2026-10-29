@@ -115,6 +115,14 @@ No `setup.sh`, opção **6**: **1** Caverna, **2** Coliseu ou **3** Normal (todo
 
 O modo fica salvo por conta. Com o bot rodando, o setup oferece reiniciar as contas escolhidas para o modo valer na hora. Um modo passado na linha de comando, como `./play.sh -cv`, vale para todas as contas e tem prioridade sobre o modo salvo.
 
+### Emoji
+
+Na primeira vez que o bot abre no Termux, ele mostra alguns emoji e pergunta se aparecem os desenhos. Responda **s** se aparecerem, ou **n** se aparecerem quadrados vazios. A resposta fica salva; para trocar depois:
+
+```bash
+~/solucaoshell/status.sh -icones
+```
+
 ### Pausar sem deslogar
 
 ```bash

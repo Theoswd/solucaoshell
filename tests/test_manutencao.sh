@@ -6206,6 +6206,43 @@ done
 check "painel: 🔱 no titulo so no modo emoji" "[0][🔱 3][0]" "$_r"
 unset _em77 _e _a _b _c _fe0f _m _h _s _p
 
+# Primeira abertura no Termux: pergunta uma vez se aparecem os emoji.
+# $1 = resposta  $2 = PREFIX  $3 = conteudo previo de ~/.sls/emoji  $4 = terminal (1/0)
+# $5 = SLS_EMOJI  -> "perguntou?:arquivo"
+_ep77() {
+    _h="$_td77/ep"; rm -rf "$_h"; mkdir -p "$_h"
+    [ -n "$3" ] && { mkdir -p "$_h/.sls"; echo "$3" > "$_h/.sls/emoji"; }
+    _t="$4"
+    _o=`( HOME="$_h"; PREFIX="$2"; SLS_EMOJI="$5"; . "$LIB/contas.sh"
+          tem_terminal() { [ "$_t" = 1 ]; }; sleep() { :; }
+          printf '%s\n' "$1" | emoji_perguntar )`
+    case "$_o" in *"Teste de emoji"*) _o=sim ;; *) _o=nao ;; esac
+    printf '%s:%s' "$_o" "`cat "$_h/.sls/emoji" 2>/dev/null`"
+}
+_tx77=/data/data/com.termux/files/usr
+check "emoji: Termux sem escolha, 's' liga o emoji"        "sim:1"   "`_ep77 s "$_tx77" '' 1 ''`"
+check "emoji: Termux sem escolha, 'n' fica nos simbolos"   "sim:2"   "`_ep77 n "$_tx77" '' 1 ''`"
+check "emoji: ENTER sem resposta fica nos simbolos"        "sim:2"   "`_ep77 '' "$_tx77" '' 1 ''`"
+check "emoji: escolha ja gravada, nao pergunta de novo"    "nao:1"   "`_ep77 n "$_tx77" 1 1 ''`"
+check "emoji: arquivo com lixo, pergunta de novo"          "sim:1"   "`_ep77 s "$_tx77" talvez 1 ''`"
+check "emoji: sem terminal (Termux:Boot) nao pergunta"     "nao:"    "`_ep77 s "$_tx77" '' 0 ''`"
+check "emoji: SLS_EMOJI no comando, nao pergunta"          "nao:"    "`_ep77 s "$_tx77" '' 1 2`"
+_r=`( PREFIX=; . "$LIB/contas.sh"; command -v getprop > /dev/null 2>&1 && echo pula || _ep77 s '' '' 1 '' )`
+case "$_r" in pula) ok "emoji: fora do Android nao pergunta (aqui tem getprop, pulado)" ;;
+    *) check "emoji: fora do Android nao pergunta" "nao:" "$_r" ;; esac
+# Depois da resposta, setup e painel seguem a escolha gravada.
+_h="$_td77/ep2"; mkdir -p "$_h/.sls"; echo 1 > "$_h/.sls/emoji"
+_r=`( HOME="$_h"; PREFIX="$_tx77"; SLS_EMOJI=; . "$_td77/setup_fn.sh"; setup_emoji && echo 1 || echo 0 )``( HOME="$_h"; PREFIX="$_tx77"; SLS_EMOJI=; export HOME PREFIX SLS_EMOJI; . "$LIB/panel.sh" > /dev/null 2>&1; echo "$SLS_EMOJI" )`
+check "emoji: com 's' gravado no Termux, setup e painel usam emoji" "11" "$_r"
+# O setup e o play.sh perguntam antes de carregar os icones e o painel.
+_r=`sed -n '/^emoji_perguntar$/=;/^carregar_icones$/=' "$ROOT/setup.sh" | tr '\n' ' '`
+case "$_r" in [0-9]*" "[0-9]*" ") set -- $_r; [ "$1" -lt "$2" ] && _r=ok ;; esac
+check "setup: pergunta do emoji antes de carregar os icones" ok "$_r"
+_a=`grep -n '^emoji_perguntar$' "$ROOT/play.sh" | cut -d: -f1`; _b=`grep -n '^\. "\$LIBDIR/panel.sh"$' "$ROOT/play.sh" | cut -d: -f1`
+[ -n "$_a" ] && [ -n "$_b" ] && [ "$_a" -lt "$_b" ] && ok "play.sh: pergunta do emoji antes do painel" \
+    || bad "play.sh: pergunta do emoji fora do lugar ($_a $_b)"
+unset _ep77 _tx77 _h _o _a _b _t
+
 rm -rf "$_td77"; unset _td77 _r _n _l77 _bs77
 
 printf "\n=== RESUMO ===\n"

@@ -220,6 +220,10 @@ total=$(grep -c -E '^[0-9]+\|' "$ACCOUNTS_FILE" 2>/dev/null)
 case "$total" in *[!0-9]*) total=0 ;; esac
 [ -z "$total" ] && total=0
 
+# Primeira abertura no Termux: pergunta uma vez se o aparelho mostra emoji,
+# antes do painel ler a escolha (emoji_perguntar, em contas.sh).
+emoji_perguntar
+
 printf "${CYAN}solucaoshell - %s conta(s)${RESET}\n" "$total"
 # Mostra o accounts.conf so quando nao e o do repositorio: o
 # resolve_accounts_file procura em outras pastas (pode ser de outra instalacao).
