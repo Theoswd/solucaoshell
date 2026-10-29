@@ -91,6 +91,8 @@ painel_icones_carregar() {
         T_V="│"; T_H="─"; T_X="┼"; T_B="┴"; T_D="╌"; T_RET="…"
         # COLUNAS (nao bytes) do prefixo "ao vivo": 2 do glifo + o espaco.
         LIVE_W=3
+        # Titulo: "🔱 " antes de "Painel SLS" (2 colunas do glifo + espaco).
+        I_TITULO="🔱 "; TITULO_W=3
         S_ON="🟢"; S_WAIT="🟡"; S_ERR="🔴"; S_OFF="🌑"; S_UNK="🔘"; S_PAUSE="💤"
         A_CLANFIGHT="🏆  Torneio do Clã";   A_ALTARES="🔥  Altares dos Deuses"
         A_VALE="🌘  Vale dos Imortais";     A_REI="👑  Rei dos Imortais"
@@ -103,6 +105,7 @@ painel_icones_carregar() {
         I_ARROW=">"; I_LIVE=""
         T_V="|"; T_H="-"; T_X="+"; T_B="+"; T_D="-"; T_RET="~"
         LIVE_W=0
+        I_TITULO=""; TITULO_W=0
         S_ON="[on]"; S_WAIT="[..]"; S_ERR="[off]"; S_OFF="[--]"; S_UNK="[??]"; S_PAUSE="[||]"
         A_CLANFIGHT="Torneio do Clã";   A_ALTARES="Altares dos Deuses"
         A_VALE="Vale dos Imortais";     A_REI="Rei dos Imortais"
@@ -1279,10 +1282,11 @@ while true; do
 
     if [ "${PANEL_DRAW:-$HAS_TTY}" = 1 ]; then
         # Titulo centralizado. Largura em COLUNAS ("·" tem 2 bytes): parte fixa
-        # "Painel SLS · BR · " = 18 colunas, mais o relogio.
-        _pad=$(( (LARG - 18 - ${#agora}) / 2 ))
+        # "Painel SLS · BR · " = 18 colunas, mais o relogio e o emoji do
+        # modo 1 (TITULO_W).
+        _pad=$(( (LARG - 18 - ${#agora} - ${TITULO_W:-0}) / 2 ))
         [ "$_pad" -lt 0 ] && _pad=0
-        printf "%*s%bPainel SLS%b %b·%b %bBR%b %b· %s%b\n" "$_pad" '' \
+        printf "%*s%s%bPainel SLS%b %b·%b %bBR%b %b· %s%b\n" "$_pad" '' "$I_TITULO" \
                "$C_CYAN$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET" \
                "$C_WHITE" "$C_RESET" "$C_DIM" "$agora" "$C_RESET"
         painel_regua "$LARG"

@@ -649,16 +649,17 @@ tarefas_livres() {
         ativ_marcar evento
     fi
 
-    # --- Lista de aliados (amigos + cla, ver allies.sh), a cada 12h. Sem
-    # isto as listas das batalhas de cla ficariam vazias: o worker nao tem
-    # teclado. A chave "aliados2" faz quem atualizar refazer a lista ja.
+    # --- Lista de aliados (cla + lista de IDs do servidor, ver allies.sh),
+    # a cada 12h e ao subir a conta (o play.sh apaga a marca). Sem isto as
+    # listas das batalhas de cla ficariam vazias: o worker nao tem teclado.
+    # A chave "aliados3" faz quem atualizar refazer a lista ja (regra nova).
     liga_fora_da_inscricao || return 0
-    if ativ_liberada aliados2 720; then
+    if ativ_liberada aliados3 720; then
         if allies_refresh 2>/dev/null; then
-            ativ_marcar aliados2
+            ativ_marcar aliados3
         else
             # Pagina que nao respondeu: nova tentativa em 30 min, nao em 12h.
-            echo $(( `date +%s` - 690 * 60 )) > "$TMP/last_aliados2" 2>/dev/null
+            echo $(( `date +%s` - 690 * 60 )) > "$TMP/last_aliados3" 2>/dev/null
         fi
     fi
 }
