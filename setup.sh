@@ -53,30 +53,24 @@ RESET='[0m'
 
 show_menu() {
     clear
-
-    # Largura do terminal (stty size -> tput cols -> 40 de reserva), entre
-    # 16 e 60 colunas, para a moldura caber na tela do celular.
-    _cols=$(stty size 2>/dev/null | awk '{print $2}')
-    case "$_cols" in ''|*[!0-9]*) _cols=$(tput cols 2>/dev/null) ;; esac
-    case "$_cols" in ''|*[!0-9]*) _cols=40 ;; esac
-    [ "$_cols" -lt 16 ] && _cols=16
-    [ "$_cols" -gt 60 ] && _cols=60
-    _L=$(printf '%*s' "$_cols" '' | tr ' ' '-')
+    medir_tela
 
     # Reavalia a cada abertura ("Adicionar"/"Remover" mudam o arquivo).
     ACCOUNTS_FILE=$(resolve_accounts_file)
 
-    # Titulo centralizado numa linha so (32 colunas, ASCII).
-    _pad=$(( (_cols - 32) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
+    # Titulo centralizado numa linha so (27 colunas, ASCII).
+    _pad=$(( (_cols - 27) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
     printf "%b%s%b\n" "$A2" "$_L" "$RESET"
-    printf "%*s%bSLS%b %b- Gerenciador de Contas -%b %bBR%b\n" "$_pad" '' \
-           "$A1" "$RESET" "$DIM" "$RESET" "$WHITE" "$RESET"
+    printf "%*s%bSLS%b %b- Gerenciador de Contas%b\n" "$_pad" '' \
+           "$A1" "$RESET" "$WHITE" "$RESET"
     printf "%b%s%b\n\n" "$A2" "$_L" "$RESET"
 
-    printf "   %b1%b - Listar contas\n"   "$A1" "$RESET"
-    printf "   %b2%b - Adicionar conta\n" "$A1" "$RESET"
-    printf "   %b3%b - Remover conta\n"   "$A1" "$RESET"
-    printf "   %b4%b - Testar login\n\n"  "$A1" "$RESET"
+    printf "   %b1%b - Listar Contas\n"   "$A1" "$RESET"
+    printf "   %b2%b - Adicionar Conta\n" "$A1" "$RESET"
+    printf "   %b3%b - Remover Contas\n"  "$A1" "$RESET"
+    printf "   %b4%b - Testar Login\n\n"  "$A1" "$RESET"
+    printf "   %b5%b - Atualizar Repositorio\n" "$A1" "$RESET"
+    printf "   %b6%b - Modo de Batalha\n\n"     "$A1" "$RESET"
     printf "   %b0%b - Sair\n\n"          "$DIM" "$RESET"
 
     # Aviso so quando o arquivo de contas nao esta no lugar padrao.
@@ -84,13 +78,40 @@ show_menu() {
         printf "  %b(!) contas lidas de outro local%b\n\n" "$GOLD" "$RESET"
     fi
 
+    rodape
+}
+
+# Largura do terminal em _cols (stty size -> tput cols -> 40 de reserva),
+# entre 16 e 60 colunas, para a moldura caber na tela do celular; a linha
+# da moldura em _L.
+medir_tela() {
+    _cols=$(stty size 2>/dev/null | awk '{print $2}')
+    case "$_cols" in ''|*[!0-9]*) _cols=$(tput cols 2>/dev/null) ;; esac
+    case "$_cols" in ''|*[!0-9]*) _cols=40 ;; esac
+    [ "$_cols" -lt 16 ] && _cols=16
+    [ "$_cols" -gt 60 ] && _cols=60
+    _L=$(printf '%*s' "$_cols" '' | tr ' ' '-')
+}
+
+# Titulo de tela centralizado entre duas linhas.  $1 = texto (ASCII: o
+# ${#} conta bytes no dash, e acento tiraria o titulo do centro).
+titulo() {
+    medir_tela
+    _pad=$(( (_cols - ${#1}) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
+    printf "%b%s%b\n" "$A2" "$_L" "$RESET"
+    printf "%*s%b%s%b\n" "$_pad" '' "$A1" "$1" "$RESET"
+    printf "%b%s%b\n\n" "$A2" "$_L" "$RESET"
+}
+
+# Linha de baixo e o "Opcao:" dos menus.
+rodape() {
     printf "%b%s%b\n" "$A2" "$_L" "$RESET"
     printf "  %bOpcao:%b " "$WHITE" "$RESET"
 }
 
 list_accounts() {
     clear
-    printf "${CYAN}=== Contas cadastradas ===${RESET}\n\n"
+    titulo "Contas Cadastradas"
     if [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ]; then
         printf "${RED}Nenhuma conta cadastrada ainda.${RESET}\n"
     else
@@ -100,7 +121,10 @@ list_accounts() {
             [ -z "$user" ] && continue
             url=$(server_url "$srv")
             tag=$(server_tag "$srv")
-            printf "${GOLD}%d)${RESET} [%s] %-20s %s\n" "$n" "$tag" "$user" "$url"
+            # Modo de batalha so quando nao e o normal (opcao 6).
+            _m=$(modo_da_conta "$HOME/.sls/${tag}_${user}")
+            [ -n "$_m" ] && _m=" ($(modo_nome "$_m"))"
+            printf "${GOLD}%d)${RESET} [%s] %-20s %s%s\n" "$n" "$tag" "$user" "$url" "$_m"
             n=$((n + 1))
         done < "$ACCOUNTS_FILE"
     fi
@@ -111,24 +135,68 @@ list_accounts() {
 # Conta cadastrada nao joga sozinha: ou o bot ja esta no ar (o painel a sobe
 # na volta seguinte), ou falta o ./play.sh.
 aviso_subir() {
+    if bot_no_ar; then
+        printf "O bot ja esta rodando: a conta sobe sozinha em ate 1 minuto.\n"
+    else
+        printf "Para comecar a jogar: ${CYAN}./play.sh${RESET}\n"
+    fi
+}
+
+# O play.sh (o painel que relanca as contas) esta no ar?
+bot_no_ar() {
     _as=$(cat "$HOME/.sls/status/orchestrator.pid" 2>/dev/null)
     # .pid velho (play.sh morto): so vale se o PID ainda for um play.sh.
     case "$_as" in
         ''|*[!0-9]*) _as="" ;;
         *) grep -q 'play\.sh' "/proc/$_as/cmdline" 2>/dev/null || _as="" ;;
     esac
-    if [ -n "$_as" ]; then
-        printf "O bot ja esta rodando: a conta sobe sozinha em ate 1 minuto.\n"
-    else
-        printf "Para comecar a jogar: ${CYAN}./play.sh${RESET}\n"
-    fi
-    unset _as
+    [ -n "$_as" ]
 }
 
 show_servers() {
-    printf "
-${CYAN}Servidor:${RESET} 1) BR   2) RU
-"
+    printf "${CYAN}Servidores:${RESET}\n\n"
+    printf "   %b1%b - Servidor Brasileiro\n" "$A1" "$RESET"
+    printf "   %b2%b - Servidor Russo\n\n"    "$A1" "$RESET"
+}
+
+# Le a senha em $pass mostrando um * por tecla (backspace apaga). Sem
+# terminal (o stty falha), le a linha inteira sem eco, como antes.
+ler_senha() {
+    pass=""
+    _stty=$(stty -g 2>/dev/null)
+    if [ -z "$_stty" ] || ! stty -echo -icanon min 1 time 0 2>/dev/null; then
+        stty -echo 2>/dev/null
+        # IFS= : sem ele o read tira espacos do comeco e do fim da senha.
+        IFS= read -r pass
+        stty echo 2>/dev/null
+        return 0
+    fi
+    _del=$(printf '\177'); _bs=$(printf '\010'); _cr=$(printf '\r')
+    while :; do
+        # Um byte por vez. O ENTER chega vazio: o $(...) tira a quebra de
+        # linha (e o fim da entrada tambem para aqui).
+        _c=$(dd bs=1 count=1 2>/dev/null)
+        case "$_c" in
+            ''|"$_cr") break ;;
+            "$_del"|"$_bs")
+                if [ -n "$pass" ]; then
+                    pass=${pass%?}
+                    printf '\b \b'
+                fi ;;
+            *[[:cntrl:]]*) ;;
+            *) pass="$pass$_c"; printf '*' ;;
+        esac
+    done
+    stty "$_stty" 2>/dev/null
+    unset _c _del _bs _cr _stty
+}
+
+# Nome que o jogo mostra depois do login do test_login (ele deixa a pagina
+# /user em _page), para provar que a conta entrou mesmo.
+mostra_logado() {
+    _nome=$(extract_username "$_page")
+    [ -n "$_nome" ] && printf "Logado no jogo como: ${WHITE}%s${RESET}\n" "$_nome"
+    unset _nome
 }
 
 # Le o servidor da conta nova em $srv. ENTER fica no BR (servidor 1).
@@ -146,7 +214,7 @@ escolher_servidor() {
 
 add_account() {
     clear
-    printf "${CYAN}=== Adicionar conta ===${RESET}\n"
+    titulo "Adicionar Conta"
     show_servers
     escolher_servidor || return
 
@@ -175,12 +243,9 @@ add_account() {
     rm -f "$HOME/.sls/status/${tag}_${user}.status" 2>/dev/null
 
     printf "Senha: "
-    # Ctrl+C na senha nao pode deixar o terminal sem eco.
-    trap 'stty echo 2>/dev/null; printf "\n"; exit 130' INT TERM
-    stty -echo 2>/dev/null
-    # IFS= : sem ele o read tira espacos do comeco e do fim da senha.
-    IFS= read -r pass
-    stty echo 2>/dev/null
+    # Ctrl+C na senha nao pode deixar o terminal sem eco (nem sem o ENTER).
+    trap 'stty echo icanon 2>/dev/null; printf "\n"; exit 130' INT TERM
+    ler_senha
     trap - INT TERM
     printf "\n"
     [ -z "$pass" ] && printf "${RED}Senha vazia.${RESET}\n" && sleep 2 && return
@@ -192,6 +257,7 @@ add_account() {
         printf "%s|%s|%s\n" "$srv" "$user" "$encoded" >> "$ACCOUNTS_FILE"
         chmod 600 "$ACCOUNTS_FILE" 2>/dev/null
         printf "${GREEN}[OK] Conta [%s] %s adicionada!${RESET}\n" "$tag" "$user"
+        mostra_logado
         aviso_subir
     else
         printf "${RED}Login nao confirmado automaticamente.${RESET}\n"
@@ -243,7 +309,7 @@ escolher_conta() {
 
 remove_account() {
     clear
-    printf "${CYAN}=== Remover conta ===${RESET}\n\n"
+    titulo "Remover Contas"
     escolher_conta || return
     tag=$(server_tag "$srv")
 
@@ -274,7 +340,10 @@ remove_account() {
             # conta removida saem SEMPRE; antes so com o "y" abaixo, e a senha
             # ficava em ~/.sls depois de a conta sair do accounts.conf. Logs
             # e marcadores ficam a criterio da pergunta.
-            rm -f "$acc_dir/cript_file" "$acc_dir/cookie.txt" 2>/dev/null
+            # O modo de batalha (opcao 6) sai junto: a conta recadastrada
+            # comeca no normal.
+            rm -f "$acc_dir/cript_file" "$acc_dir/cookie.txt" \
+                "$acc_dir/modo_batalha" 2>/dev/null
             printf "${GREEN}Removida.${RESET}\n"
             if [ -d "$acc_dir" ]; then
                 printf "Remover dados em %s? (y/n): " "$acc_dir"
@@ -289,7 +358,7 @@ remove_account() {
 
 test_account() {
     clear
-    printf "${CYAN}=== Testar login ===${RESET}\n\n"
+    titulo "Testar Login"
     escolher_conta || return
     tag=$(server_tag "$srv")
     url=$(server_url "$srv")
@@ -304,12 +373,253 @@ test_account() {
 
     if test_login "https://$url" "$luser" "$lpass"; then
         printf "${GREEN}[OK] Login confirmado.${RESET}\n"
+        mostra_logado
     else
         printf "${RED}[FALHOU] Login nao confirmado.${RESET}\n"
         printf "Nota: pode ser bloqueio de IP. O bot pode funcionar mesmo assim.\n"
     fi
     unset lpass
-    sleep 3
+    # ENTER em vez de 3s: da tempo de ler o nome com que a conta entrou.
+    printf "\nENTER para voltar..."
+    read -r _d
+}
+
+# ---- 5. Atualizar Repositorio ----------------------------------------------
+
+atualizar_menu() {
+    while true; do
+        clear
+        titulo "Atualizar Repositorio"
+        printf "   %b1%b - git pull pelo setup\n\n" "$A1" "$RESET"
+        printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
+        rodape
+        read -r _o
+        case "$_o" in
+            1) git_pull_setup ;;
+            0|'') return ;;
+        esac
+    done
+}
+
+# Puxa o que mudou no GitHub, como no README: para o bot, "git pull
+# --ff-only" e sobe de novo. Sem nada novo, nao para nada.
+git_pull_setup() {
+    clear
+    titulo "Atualizar Repositorio"
+    if ! command -v git > /dev/null 2>&1 || [ ! -d "$SLSDIR/.git" ]; then
+        printf "${RED}Sem git, ou %s nao e um clone do repositorio.${RESET}\n" "$SLSDIR"
+        sleep 3; return
+    fi
+
+    printf "Procurando atualizacao...\n"
+    if ! git -C "$SLSDIR" fetch --quiet 2>/dev/null; then
+        printf "${RED}Nao consegui falar com o GitHub. Confira a internet.${RESET}\n"
+        sleep 3; return
+    fi
+    _novos=$(git -C "$SLSDIR" rev-list --count HEAD..@{u} 2>/dev/null)
+    case "$_novos" in
+        ''|*[!0-9]*)
+            printf "${RED}O repositorio nao tem um ramo remoto para atualizar.${RESET}\n"
+            sleep 3; return ;;
+        0)
+            printf "${GREEN}Ja esta na versao mais nova.${RESET}\n"
+            sleep 2; return ;;
+    esac
+
+    printf "\n${GOLD}%s atualizacao(oes):${RESET}\n" "$_novos"
+    git -C "$SLSDIR" log --oneline --no-decorate HEAD..@{u} 2>/dev/null | head -n 10
+    printf "\n"
+
+    printf "Parando o bot...\n"
+    sh "$SLSDIR/stop.sh"
+
+    printf "\nAtualizando...\n"
+    if git -C "$SLSDIR" pull --ff-only; then
+        printf "${GREEN}[OK] Repositorio atualizado.${RESET}\n"
+    else
+        # Arquivo mudado a mao na pasta (ou historico diferente): o pull
+        # recusa e nada muda. O bot sobe de novo na versao que estava.
+        printf "${RED}Nao deu para atualizar: tem arquivo mudado na pasta.${RESET}\n"
+        git -C "$SLSDIR" status --short 2>/dev/null | head -n 10
+    fi
+    chmod +x "$SLSDIR"/*.sh 2>/dev/null
+
+    printf "\nSubindo o bot...\n"
+    sleep 2
+    # O play.sh fica com o terminal (painel); o setup termina aqui.
+    exec sh "$SLSDIR/play.sh"
+}
+
+# ---- 6. Modo de Batalha ----------------------------------------------------
+#
+# O modo fica por conta em ~/.sls/<TAG>_<nome>/modo_batalha: -cv (Caverna)
+# ou -cl (Coliseu); sem o arquivo, o cronograma normal. O play.sh le esse
+# arquivo ao subir cada conta (launch_worker), quando nao recebe um modo na
+# linha de comando.
+
+modo_nome() {
+    case "$1" in -cv) echo "Caverna" ;; -cl) echo "Coliseu" ;; *) echo "Normal" ;; esac
+}
+
+# Modo salvo da conta (vazio = normal).  $1 = pasta da conta
+modo_da_conta() {
+    _md=""
+    { read -r _md < "$1/modo_batalha"; } 2>/dev/null
+    case "$_md" in -cv|-cl) printf '%s' "$_md" ;; esac
+    unset _md
+}
+
+modo_menu() {
+    while true; do
+        clear
+        titulo "Modo de Batalha"
+        printf "   %b1%b - Caverna\n" "$A1" "$RESET"
+        printf "   %b2%b - Coliseu\n" "$A1" "$RESET"
+        printf "   %b3%b - Normal (todos os eventos)\n\n" "$A1" "$RESET"
+        printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
+        rodape
+        read -r _o
+        case "$_o" in
+            1) aplicar_modo -cv ;;
+            2) aplicar_modo -cl ;;
+            3) aplicar_modo "" ;;
+            0|'') return ;;
+        esac
+    done
+}
+
+# Para quem vai o modo $1: algumas contas ou todas.
+aplicar_modo() {
+    while true; do
+        clear
+        titulo "Modo $(modo_nome "$1")"
+        printf "   %b1%b - Escolher contas\n" "$A1" "$RESET"
+        printf "   %b2%b - Definir para todas\n\n" "$A1" "$RESET"
+        printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
+        rodape
+        read -r _o
+        case "$_o" in
+            1) escolher_contas "$1" || continue ;;
+            2) _escolhidas=$(contas_validas) ;;
+            0|'') return ;;
+            *) continue ;;
+        esac
+        if [ -z "$_escolhidas" ]; then
+            printf "${RED}Nenhuma conta cadastrada.${RESET}\n"; sleep 2; return
+        fi
+        gravar_modo "$1" "$_escolhidas"
+        unset _escolhidas
+        return
+    done
+}
+
+# Lista as contas com o modo de cada uma e le varios numeros ("1 3" ou
+# "1,3"). Deixa as linhas escolhidas em _escolhidas, na ordem do arquivo e
+# cada conta uma vez so. Volta 1 se cancelou ou se um numero nao existe.
+escolher_contas() {
+    clear
+    titulo "Modo $(modo_nome "$1")"
+    if [ -z "$(contas_validas)" ]; then
+        printf "${RED}Nenhuma conta.${RESET}\n"; sleep 2; return 1
+    fi
+    _n=1
+    contas_validas | while IFS='|' read -r srv user _enc; do
+        tag=$(server_tag "$srv")
+        printf "${GOLD}%d)${RESET} [%s] %-20s %s\n" "$_n" "$tag" "$user" \
+            "$(modo_nome "$(modo_da_conta "$HOME/.sls/${tag}_${user}")")"
+        _n=$((_n + 1))
+    done
+
+    printf "\nNumeros das contas, ex: 1 3 (0 = cancelar): "
+    read -r choice
+    choice=$(printf '%s' "$choice" | tr ',;' '  ')
+    case "$(printf '%s' "$choice" | tr -d ' ')" in ''|0) return 1 ;; esac
+    _escolhidas=" "
+    _total=$(contas_validas | wc -l | tr -d ' ')
+    for _c in $choice; do
+        case "$_c" in
+            *[!0-9]*|0) _c="" ;;
+            *) [ "$_c" -le "$_total" ] || _c="" ;;
+        esac
+        if [ -z "$_c" ]; then
+            printf "${RED}Numero invalido.${RESET}\n"; sleep 2
+            unset _total _c; _escolhidas=""; return 1
+        fi
+        _escolhidas="$_escolhidas$_c "
+    done
+    # Os numeros viram as linhas do accounts.conf (a mesma contas_validas
+    # da lista acima, para o numero da tela ser a conta certa).
+    _escolhidas=$(contas_validas | awk -v esc="$_escolhidas" \
+        'index(esc, " " NR " ") > 0')
+    unset _total _c _n
+}
+
+# Grava o modo $1 nas contas $2 (linhas do accounts.conf) e, com o bot no
+# ar, oferece reiniciar as que estao rodando para valer na hora.
+gravar_modo() {
+    clear
+    titulo "Modo $(modo_nome "$1")"
+    _vivos=""
+    _nv=0
+    while IFS='|' read -r srv user _enc; do
+        [ -n "$user" ] || continue
+        tag=$(server_tag "$srv")
+        acc_dir="$HOME/.sls/${tag}_${user}"
+        _antes=$(modo_da_conta "$acc_dir")
+        mkdir -p "$acc_dir" && chmod 700 "$acc_dir" 2>/dev/null
+        if [ -n "$1" ]; then
+            printf '%s\n' "$1" > "$acc_dir/modo_batalha"
+        else
+            rm -f "$acc_dir/modo_batalha"
+        fi
+        printf "${GREEN}[%s] %s: %s -> %s${RESET}\n" "$tag" "$user" \
+            "$(modo_nome "$_antes")" "$(modo_nome "$1")"
+        _pid=$(cat "$HOME/.sls/status/${tag}_${user}.pid" 2>/dev/null)
+        if worker_vivo "$_pid" "$acc_dir"; then
+            _vivos="$_vivos$_pid|$acc_dir
+"
+            _nv=$((_nv + 1))
+        fi
+    done <<FIM
+$2
+FIM
+
+    printf "\n"
+    if [ "$_nv" -eq 0 ]; then
+        if bot_no_ar; then
+            printf "Vale quando a conta subir.\n"
+        else
+            printf "Vale quando o bot subir: ${CYAN}./play.sh${RESET}\n"
+        fi
+    elif ! bot_no_ar; then
+        # Sem o painel do play.sh ninguem relancaria a conta derrubada.
+        printf "%s conta(s) rodando sem o painel. Para valer agora:\n" "$_nv"
+        printf "${CYAN}./play.sh --restart${RESET}\n"
+    else
+        printf "Reiniciar %s conta(s) agora para valer? (y/n): " "$_nv"
+        read -r _r
+        case "$_r" in
+            y|Y)
+                # O .pid fica: o painel ve o worker morto e o relanca ja no
+                # modo novo. Sem as marcas de relancamento ele nao espera a
+                # pausa de quem cai seguido (relanca_espera, panel.sh). Varias
+                # de uma vez nao fazem rajada: o login_lock (sls.sh) deixa uma
+                # conta autenticar por vez.
+                while IFS='|' read -r _pid acc_dir; do
+                    [ -n "$_pid" ] || continue
+                    rm -f "$acc_dir/.relancado" "$acc_dir/.relancado_n"
+                    kill -TERM "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null
+                done <<FIM
+$_vivos
+FIM
+                printf "Reiniciando: as contas voltam no modo novo, uma por vez.\n"
+                ;;
+            *) printf "Vale no proximo reinicio (${CYAN}./play.sh --restart${RESET}).\n" ;;
+        esac
+    fi
+    unset _antes _pid _r _vivos _nv
+    printf "\nENTER para voltar..."
+    read -r _d
 }
 
 # Loop principal
@@ -321,6 +631,8 @@ while true; do
         2) add_account ;;
         3) remove_account ;;
         4) test_account ;;
+        5) atualizar_menu ;;
+        6) modo_menu ;;
         0) printf "\nSaindo...\n"; exit 0 ;;
     esac
 done

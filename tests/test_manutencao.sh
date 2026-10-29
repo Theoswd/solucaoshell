@@ -6013,6 +6013,156 @@ _r=`( . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
 check "masmorra: golpe pelo attack/; com os golpes acabados o 'comprar' nao vira golpe" "[/clandungeon/attack/?r=9][]" "$_r"
 rm -rf "$_td76"; unset _td76 _t76 _r
 
+printf "\n=== 77. setup: menu novo, senha com *, modo de batalha e atualizar ===\n"
+_td77=`mktemp -d`
+# Funcoes do setup.sh sem o comeco (que acha a pasta pelo $0) e sem o laco
+# do menu; o contas.sh e o session_check.sh vem da lib/.
+{ printf '. "%s/contas.sh"\n. "%s/session_check.sh"\n' "$LIB" "$LIB"
+  sed -n '/^show_menu() {/,/^# Loop principal/p' "$ROOT/setup.sh"; } > "$_td77/setup_fn.sh"
+# Sem cor e sem terminal: largura fixa de 40 colunas.
+_fn77() { . "$_td77/setup_fn.sh"; clear() { :; }; sleep() { :; }; stty() { echo "24 40"; }
+          A1=; A2=; DIM=; WHITE=; GOLD=; RED=; GREEN=; CYAN=; RESET=; SLSDIR="$ROOT"; }
+
+# Menu principal: as linhas do modelo do dono, sem o "BR" fixo no titulo.
+_r=`( HOME="$_td77/h"; ACCOUNTS_FILE="$_td77/nada"; _fn77; show_menu )`
+_n=0
+for _l77 in "SLS - Gerenciador de Contas" "1 - Listar Contas" "2 - Adicionar Conta" \
+            "3 - Remover Contas" "4 - Testar Login" "5 - Atualizar Repositorio" \
+            "6 - Modo de Batalha" "0 - Sair"; do
+    printf '%s\n' "$_r" | grep -qF -- "$_l77" && _n=$((_n + 1))
+done
+check "setup: menu com as 8 linhas do modelo" 8 "$_n"
+check "setup: titulo do menu sem o 'BR' fixo" 0 "`printf '%s\n' "$_r" | grep -c 'Contas -'`"
+check "setup: menu le as opcoes 5 e 6" 2 \
+    "`grep -c -E '^        (5\) atualizar_menu|6\) modo_menu) ;;$' "$ROOT/setup.sh"`"
+
+# Titulo de tela centralizado: 40 colunas, 15 letras -> 12 espacos antes.
+_r=`( _fn77; titulo "Modo de Batalha" | sed -n 2p )`
+check "setup: titulo centralizado" "            Modo de Batalha" "$_r"
+_r=`( _fn77; printf '0\n' | atualizar_menu; printf '0\n' | modo_menu ) | grep -c -E '^ +(Atualizar Repositorio|Modo de Batalha)$'`
+check "setup: submenus Atualizar e Modo de Batalha com titulo centralizado" 2 "$_r"
+
+# Adicionar conta: servidores por extenso.
+_r=`( _fn77; show_servers )`
+printf '%s\n' "$_r" | grep -qF -- "1 - Servidor Brasileiro" && printf '%s\n' "$_r" | grep -qF -- "2 - Servidor Russo" \
+    && ok "setup: servidores 1 - Servidor Brasileiro, 2 - Servidor Russo" \
+    || bad "setup: nomes dos servidores ($_r)"
+
+# Senha: um * por tecla, backspace apaga, espaco fica, ENTER encerra.
+_bs77=`printf '\177'`
+_r=`( _fn77; stty() { [ "$1" = -g ] && echo modo; return 0; }
+      printf 'ab%sc d\n' "$_bs77" | { ler_senha > "$_td77/eco"; printf '[%s]' "$pass"; } )`
+check "senha: backspace apaga e o espaco fica" "[ac d]" "$_r"
+check "senha: aparece um * por tecla e o backspace limpa" "**`printf '\b \b'`***" "`cat "$_td77/eco"`"
+# Sem terminal (stty falha): a linha inteira, com os espacos das pontas.
+_r=`( _fn77; stty() { return 1; }
+      printf '%s\n' ' a\b ' | { ler_senha > /dev/null; printf '[%s]' "$pass"; } )`
+check "senha sem terminal: le a linha inteira" '[ a\b ]' "$_r"
+_r=`sed -n '/^add_account() {/,/^}/p' "$ROOT/setup.sh"`
+printf '%s\n' "$_r" | grep -q '^    ler_senha$' && ! printf '%s\n' "$_r" | grep -q 'IFS= read -r pass' \
+    && ok "setup: adicionar conta le a senha com *" || bad "setup: adicionar conta sem o ler_senha"
+
+# Testar login: mostra o nome com que o jogo recebeu a conta.
+_r=`( _fn77; _page="<div><a href='/user/123'>Ana</a></div>"; mostra_logado )`
+check "setup: login mostra o nome que o jogo devolveu" "Logado no jogo como: Ana" "$_r"
+check "setup: adicionar e testar mostram o nome logado" 2 "`grep -c '^ *mostra_logado$' "$ROOT/setup.sh"`"
+
+# play.sh: cada conta sobe no modo salvo; o modo da linha de comando vence.
+_lw77() { # $1=conteudo do modo_batalha (vazio = sem arquivo)  $2=RUN  $3=RUN_FLAG
+    ( _h="$_td77/lw"; rm -rf "$_h"; mkdir -p "$_h/.sls/BR_Ana" "$_h/.sls/status"
+      [ -n "$1" ] && printf '%s\n' "$1" > "$_h/.sls/BR_Ana/modo_batalha"
+      echo cred > "$_h/.sls/BR_Ana/cript_file"
+      HOME="$_h"; SLSDIR="$ROOT"; LIBDIR="$LIB"; STATUS_DIR="$_h/.sls/status"
+      RUN="$2"; RUN_FLAG="$3"; FORCE_RESTART=0; SETSID=""
+      . "$LIB/contas.sh"
+      eval "`sed -n '/^launch_worker() {/,/^}/p' "$ROOT/play.sh"`"
+      nohup() { for _a; do _u="$_a"; done; printf '%s' "$_u" > "$_h/modo"; }
+      launch_worker 1 Ana > /dev/null 2>&1; wait; cat "$_h/modo" )
+}
+check "play.sh: conta sem modo salvo sobe no normal"      "-boot" "`_lw77 '' -boot 0`"
+check "play.sh: conta em Caverna sobe com -cv"            "-cv"   "`_lw77 -cv -boot 0`"
+check "play.sh: conta em Coliseu sobe com -cl"            "-cl"   "`_lw77 -cl -boot 0`"
+check "play.sh: ./play.sh -cl vence o modo salvo"         "-cl"   "`_lw77 -cv -cl 1`"
+check "play.sh: arquivo de modo estranho e ignorado"      "-boot" "`_lw77 'rm -rf' -boot 0`"
+grep -q '^if \[ -n "\$RUN" \]; then RUN_FLAG=1; else RUN_FLAG=0; fi$' "$ROOT/play.sh" \
+    && ok "play.sh: marca quando o modo veio da linha de comando" || bad "play.sh: sem RUN_FLAG"
+
+# Modo de batalha: escolher contas (varios numeros) ou definir para todas.
+# $1 = entrada digitada no menu do modo  $2 = modo  -> modo de cada conta
+_md77() {
+    ( _h="$_td77/md"; rm -rf "$_h"; mkdir -p "$_h/.sls/status" "$_h/.sls/BR_Ana"
+      echo -cl > "$_h/.sls/BR_Ana/modo_batalha"
+      printf '# srv|usuario|cred\n1|Ana|YQ==\n1|Bia|Yg==\n2|Ivan|aQ==\n' > "$_h/acc.conf"
+      HOME="$_h"; ACCOUNTS_FILE="$_h/acc.conf"; _fn77; bot_no_ar() { return 1; }
+      printf "$1" | aplicar_modo "$2" > /dev/null 2>&1
+      for _a in BR_Ana BR_Bia RU_Ivan; do
+          printf '%s=%s ' "$_a" "`modo_nome "\`modo_da_conta "$_h/.sls/$_a"\`"`"
+      done )
+}
+check "modo: Caverna nas contas 1 e 3"            "BR_Ana=Caverna BR_Bia=Normal RU_Ivan=Caverna " "`_md77 '1\n1 3\n\n' -cv`"
+check "modo: numeros com virgula e repetidos"     "BR_Ana=Caverna BR_Bia=Caverna RU_Ivan=Normal " "`_md77 '1\n2,1,2\n\n' -cv`"
+check "modo: Coliseu definido para todas"         "BR_Ana=Coliseu BR_Bia=Coliseu RU_Ivan=Coliseu " "`_md77 '2\n\n' -cl`"
+check "modo: Normal para todas apaga os arquivos" "BR_Ana=Normal BR_Bia=Normal RU_Ivan=Normal " "`_md77 '2\n\n' ''`"
+check "modo: numero que nao existe nao muda nada" "BR_Ana=Coliseu BR_Bia=Normal RU_Ivan=Normal " "`_md77 '1\n1 9\n0\n' -cv`"
+check "modo: 0 cancela"                           "BR_Ana=Coliseu BR_Bia=Normal RU_Ivan=Normal " "`_md77 '1\n0\n0\n' -cv`"
+check "modo: Voltar no submenu nao muda nada"     "BR_Ana=Coliseu BR_Bia=Normal RU_Ivan=Normal " "`_md77 '0\n' -cv`"
+_r=`( _h="$_td77/ls"; mkdir -p "$_h/.sls/BR_Ana"; echo -cv > "$_h/.sls/BR_Ana/modo_batalha"
+      printf '1|Ana|YQ==\n1|Bia|Yg==\n' > "$_h/acc.conf"
+      HOME="$_h"; ACCOUNTS_FILE="$_h/acc.conf"; _fn77
+      printf '\n' | list_accounts | grep -c -E 'Ana .*\(Caverna\)|Bia .*\(' )`
+check "lista: mostra o modo so da conta fora do normal" 1 "$_r"
+check "remover conta apaga o modo de batalha dela" 1 \
+    "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh" | grep -c 'modo_batalha'`"
+
+# Com o painel no ar, o "y" derruba so os workers das contas escolhidas; o
+# .pid fica para o painel relancar no modo novo, sem a espera de quem cai
+# seguido.
+if [ -r "/proc/$$/cmdline" ]; then
+    _h77="$_td77/rs"; mkdir -p "$_h77/.sls/status" "$_h77/.sls/BR_Ana" "$_h77/.sls/BR_Bia"
+    printf '1|Ana|YQ==\n1|Bia|Yg==\n' > "$_h77/acc.conf"
+    sh -c 'sleep 30; :' "$_td77/lib/sls.sh" -boot "$_h77/.sls/BR_Ana" & _p77a=$!
+    sh -c 'sleep 30; :' "$_td77/lib/sls.sh" -boot "$_h77/.sls/BR_Bia" & _p77b=$!
+    sleep 1
+    echo $_p77a > "$_h77/.sls/status/BR_Ana.pid"; echo $_p77b > "$_h77/.sls/status/BR_Bia.pid"
+    echo 3 > "$_h77/.sls/BR_Ana/.relancado_n"; date +%s > "$_h77/.sls/BR_Ana/.relancado"
+    ( HOME="$_h77"; ACCOUNTS_FILE="$_h77/acc.conf"; _fn77; bot_no_ar() { return 0; }
+      printf '1\n1\ny\n\n' | aplicar_modo -cv ) > /dev/null 2>&1
+    sleep 1
+    _r=""
+    for _p in $_p77a $_p77b; do
+        case "`cut -d' ' -f3 /proc/$_p/stat 2>/dev/null`" in ''|Z) _r="$_r morto" ;; *) _r="$_r vivo" ;; esac
+    done
+    [ -f "$_h77/.sls/status/BR_Ana.pid" ] && _r="$_r pid" || _r="$_r sem_pid"
+    [ -f "$_h77/.sls/BR_Ana/.relancado_n" ] && _r="$_r espera" || _r="$_r sem_espera"
+    kill $_p77a $_p77b 2>/dev/null; wait $_p77a $_p77b 2>/dev/null
+    check "modo: reiniciar derruba so a conta escolhida e o painel a relanca" " morto vivo pid sem_espera" "$_r"
+    unset _h77 _p77a _p77b _p
+fi
+
+# Atualizar: sem novidade nao para o bot; com novidade para, puxa e sobe.
+if command -v git > /dev/null 2>&1; then
+    _g77="$_td77/git"; mkdir -p "$_g77"
+    ( cd "$_g77" && git init -q --bare origem.git && git clone -q origem.git trab
+      cd trab && git config user.email t@t && git config user.name t
+      printf 'echo PAROU >> "%s/log"\n' "$_g77" > stop.sh
+      printf 'echo SUBIU >> "%s/log"\n' "$_g77" > play.sh
+      git add . && git commit -qm um && git push -q origin HEAD
+      git clone -q "$_g77/origem.git" "$_g77/bot" ) > /dev/null 2>&1
+    _gp77() {
+        ( HOME="$_g77/h"; _fn77; SLSDIR="$_g77/bot"; git_pull_setup ) > /dev/null 2>&1 < /dev/null
+        tr '\n' ' ' < "$_g77/log" 2>/dev/null; rm -f "$_g77/log"
+    }
+    check "atualizar: sem nada novo, o bot nao para" "" "`_gp77`"
+    ( cd "$_g77/trab" && echo novo > novo.txt && git add novo.txt && git commit -qm dois \
+      && git push -q origin HEAD ) > /dev/null 2>&1
+    check "atualizar: para o bot, puxa e sobe de novo" "PAROU SUBIU " "`_gp77`"
+    [ -f "$_g77/bot/novo.txt" ] && ok "atualizar: o git pull trouxe o arquivo novo" \
+        || bad "atualizar: o arquivo novo nao chegou"
+    unset _g77
+fi
+
+rm -rf "$_td77"; unset _td77 _r _n _l77 _bs77
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

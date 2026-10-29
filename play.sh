@@ -50,6 +50,9 @@ for _arg in "$@"; do
     esac
 done
 unset _arg
+# Modo na linha de comando (./play.sh -cv) vale para todas as contas; sem
+# ele, cada conta usa o modo de batalha salvo pelo setup.sh (launch_worker).
+if [ -n "$RUN" ]; then RUN_FLAG=1; else RUN_FLAG=0; fi
 [ -z "$RUN" ] && RUN="-boot"
 
 GREEN='\033[32m'
@@ -182,6 +185,16 @@ launch_worker() {
     # inicio limpo (o cave.sh regrava em runtime se trocar de modo).
     rm -f "$lw_dir/runmode_file"
 
+    # Modo de batalha da conta (setup.sh, opcao 6): -cv ou -cl, so quando
+    # o play.sh subiu sem modo na linha de comando.
+    lw_run="$RUN"
+    if [ "$RUN_FLAG" != 1 ]; then
+        lw_modo=""
+        { read -r lw_modo < "$lw_dir/modo_batalha"; } 2>/dev/null
+        case "$lw_modo" in -cv|-cl) lw_run="$lw_modo" ;; esac
+        unset lw_modo
+    fi
+
     echo "starting" > "$lw_status"
 
     # 3<&- : quem chama le o accounts.conf pelo fd 3 (o laco daqui e o do
@@ -189,7 +202,7 @@ launch_worker() {
     # aberto no arquivo com as credenciais de TODAS as contas.
     nohup $SETSID sh "$LIBDIR/worker.sh" \
         "$lw_srv" "$lw_user" "$lw_tag" \
-        "https://${lw_host}" "$lw_dir" "$lw_status" "$RUN" \
+        "https://${lw_host}" "$lw_dir" "$lw_status" "$lw_run" \
         < /dev/null >> "$lw_log" 2>&1 3<&- &
 
     return 0

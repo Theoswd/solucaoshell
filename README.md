@@ -93,15 +93,27 @@ Os comandos funcionam de qualquer pasta.
 | Subir as contas e abrir o painel | `~/solucaoshell/play.sh` |
 | Parar todas as contas | `~/solucaoshell/stop.sh` |
 | Ver o painel sem mexer nas contas | `~/solucaoshell/status.sh` |
-| Cadastrar, listar, testar ou remover contas (servidor 1 = BR, 2 = RU) | `~/solucaoshell/setup.sh` |
+| Cadastrar, listar, testar ou remover contas (servidor 1 = Brasileiro, 2 = Russo) | `~/solucaoshell/setup.sh` |
+| Atualizar o bot pelo menu | `~/solucaoshell/setup.sh`, opção **5** |
+| Escolher Caverna, Coliseu ou Normal para algumas contas ou para todas | `~/solucaoshell/setup.sh`, opção **6** |
 | Derrubar e subir tudo de novo | `~/solucaoshell/play.sh --restart` |
 | Remover o bot e as contas cadastradas | `~/solucaoshell/uninstall.sh` |
 
 ### Atualizar
 
+No `setup.sh`, opção **5** e depois **1**: ele para o bot, puxa a atualização e sobe de novo. Se não tiver nada novo, nada para.
+
+Ou à mão:
+
 ```bash
 cd ~/solucaoshell && ./stop.sh && git pull --ff-only && ./play.sh
 ```
+
+### Modo de batalha
+
+No `setup.sh`, opção **6**: **1** Caverna, **2** Coliseu ou **3** Normal (todos os eventos do cronograma). Em seguida, **1** escolhe as contas (ex.: `1 3`) e **2** define para todas.
+
+O modo fica salvo por conta. Com o bot rodando, o setup oferece reiniciar as contas escolhidas para o modo valer na hora. Um modo passado na linha de comando, como `./play.sh -cv`, vale para todas as contas e tem prioridade sobre o modo salvo.
 
 ### Pausar sem deslogar
 
