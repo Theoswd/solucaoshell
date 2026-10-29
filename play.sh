@@ -184,6 +184,9 @@ launch_worker() {
     # Limpa o modo salvo para que a flag de linha de comando vença num
     # inicio limpo (o cave.sh regrava em runtime se trocar de modo).
     rm -f "$lw_dir/runmode_file"
+    # Aliados refeitos ao subir a conta: quem saiu do cla deixa de ser
+    # aliado ja, e nao so na volta de 12h (crono.sh, chave aliados3).
+    rm -f "$lw_dir/last_aliados3"
 
     # Modo de batalha da conta (setup.sh, opcao 6): -cv ou -cl, so quando
     # o play.sh subiu sem modo na linha de comando.

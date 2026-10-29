@@ -96,6 +96,7 @@ Os comandos funcionam de qualquer pasta.
 | Cadastrar, listar, testar ou remover contas (servidor 1 = Brasileiro, 2 = Russo) | `~/solucaoshell/setup.sh` |
 | Atualizar o bot pelo menu | `~/solucaoshell/setup.sh`, opção **5** |
 | Escolher Caverna, Coliseu ou Normal para algumas contas ou para todas | `~/solucaoshell/setup.sh`, opção **6** |
+| Adicionar ou remover aliados pelo ID do jogador ou do clã | `~/solucaoshell/setup.sh`, opção **7** |
 | Derrubar e subir tudo de novo | `~/solucaoshell/play.sh --restart` |
 | Remover o bot e as contas cadastradas | `~/solucaoshell/uninstall.sh` |
 
@@ -114,6 +115,15 @@ cd ~/solucaoshell && ./stop.sh && git pull --ff-only && ./play.sh
 No `setup.sh`, opção **6**: **1** Caverna, **2** Coliseu ou **3** Normal (todos os eventos do cronograma). Em seguida, **1** escolhe as contas (ex.: `1 3`) e **2** define para todas.
 
 O modo fica salvo por conta. Com o bot rodando, o setup oferece reiniciar as contas escolhidas para o modo valer na hora. Um modo passado na linha de comando, como `./play.sh -cv`, vale para todas as contas e tem prioridade sobre o modo salvo.
+
+### Aliados
+
+O bot não ataca aliados: troca de alvo quando cai num deles. São aliados:
+
+- quem é do mesmo clã da conta (automático);
+- os jogadores e clãs que você adicionar no `setup.sh`, opção **7**, pelo ID ou colando o link (`.../user/473431/` ou `.../clan/2092`).
+
+A lista é uma por servidor e vale para todas as contas dele. A lista de amigos do jogo não conta. O bot confere cada ID já logado e mostra o nome em **3 - Listar aliados**. A lista é refeita ao subir cada conta e a cada 12 horas: quem sai do clã e não está na lista volta a ser inimigo.
 
 ### Emoji
 

@@ -73,7 +73,8 @@ show_menu() {
     printf "   %b3%b - Remover Contas\n"  "$A1" "$RESET"
     printf "   %b4%b - Testar Login\n\n"  "$A1" "$RESET"
     printf "   %b5%b - Atualizar Repositorio\n" "$A1" "$RESET"
-    printf "   %b6%b - Modo de Batalha\n\n"     "$A1" "$RESET"
+    printf "   %b6%b - Modo de Batalha\n"       "$A1" "$RESET"
+    printf "   %b7%b - Adicionar Aliados\n\n"   "$A1" "$RESET"
     printf "   %b0%b - Sair\n\n"          "$DIM" "$RESET"
 
     # Aviso so quando o arquivo de contas nao esta no lugar padrao.
@@ -667,6 +668,199 @@ FIM
     read -r _d
 }
 
+# ---- 7. Adicionar Aliados --------------------------------------------------
+#
+# Lista de IDs por servidor, comum a todas as contas dele (lib/allies.sh):
+# ~/.sls/aliados_<TAG>.conf, linhas "j|ID" (jogador) ou "c|ID" (cla). O bot
+# confere cada ID ja logado e grava os nomes em ~/.sls/aliados_<TAG>.nomes,
+# que a lista daqui mostra. Os membros do cla de cada conta sao aliados sem
+# cadastro.
+
+servidor_nome() { case "$1" in 1) echo "Brasileiro" ;; 2) echo "Russo" ;; esac; }
+
+aliados_menu() {
+    while true; do
+        clear
+        titulo "Adicionar Aliados" "🤝"
+        printf "   %b1%b - Adicionar jogador (ID)\n" "$A1" "$RESET"
+        printf "   %b2%b - Adicionar cla (ID)\n" "$A1" "$RESET"
+        printf "   %b3%b - Listar aliados\n" "$A1" "$RESET"
+        printf "   %b4%b - Remover aliado\n\n" "$A1" "$RESET"
+        printf "   %b0%b - Voltar\n\n" "$DIM" "$RESET"
+        rodape
+        read -r _o
+        case "$_o" in
+            1) aliado_adicionar j ;;
+            2) aliado_adicionar c ;;
+            3) aliados_listar ;;
+            4) aliado_remover ;;
+            0|'') return ;;
+        esac
+    done
+}
+
+# O ID de um numero ou de um link colado (/user/ID/ ou /clan/ID) em _id.
+#   aliado_ler_id TIPO TEXTO   (TIPO j = jogador, c = cla; 1 = invalido)
+aliado_ler_id() {
+    _id=""
+    _in=$(printf '%s' "$2" | tr -d '[:space:][:cntrl:]')
+    case "$_in" in
+        */user/*)
+            if [ "$1" = c ]; then
+                printf "${RED}%sEsse e o link de um jogador: use a opcao 1.${RESET}\n" "$E_ERR"; return 1
+            fi
+            _in=${_in#*/user/} ;;
+        */clan/*)
+            if [ "$1" = j ]; then
+                printf "${RED}%sEsse e o link de um cla: use a opcao 2.${RESET}\n" "$E_ERR"; return 1
+            fi
+            _in=${_in#*/clan/} ;;
+    esac
+    _id=${_in%%[!0-9]*}
+    # Depois do numero so pode vir "/" ou "?" do link (ex.: 473431/?show=).
+    case "${_in#"$_id"}" in ''|/*|\?*) ;; *) _id="" ;; esac
+    case "$_id" in ''|0*) _id="" ;; esac
+    [ "${#_id}" -le 12 ] || _id=""
+    if [ -z "$_id" ]; then
+        printf "${RED}%sID invalido: %s${RESET}\n" "$E_ERR" "$2"; return 1
+    fi
+    unset _in
+}
+
+# Linhas validas da lista do servidor $1 (TAG), na ordem do arquivo.
+aliados_validos() {
+    # Sem a lista ainda: nada (o "<" de arquivo que nao existe reclama no dash).
+    [ -f "$HOME/.sls/aliados_$1.conf" ] || return 0
+    tr -d '\r ' < "$HOME/.sls/aliados_$1.conf" | grep -E '^[jc]\|[0-9]+$'
+}
+
+# Lista numerada do servidor $1 (TAG), com o que o bot achou de cada ID.
+aliados_linhas() {
+    aliados_validos "$1" | awk -F'|' -v nf="$HOME/.sls/aliados_$1.nomes" '
+        BEGIN {
+            while ((getline l < nf) > 0) {
+                split(l, c, "|"); k = c[1] "|" c[2]
+                if (c[1] == "j" || c[3] == "-") nome[k] = c[3]
+                else membros[k]++
+            }
+        }
+        {
+            k = $1 "|" $2; i++
+            if ($1 == "j") {
+                tipo = "Jogador"
+                d = (k in nome) ? (nome[k] == "-" ? "ID nao encontrado" : nome[k]) : "aguardando o bot"
+            } else {
+                tipo = "Cla    "
+                d = (k in membros) ? membros[k] " membro(s)" : ((k in nome) ? "ID nao encontrado" : "aguardando o bot")
+            }
+            printf "%d) %s %-10s %s\n", i, tipo, $2, d
+        }'
+}
+
+# Lista mudou: as contas do servidor $1 (TAG) refazem os aliados na proxima
+# volta, sem esperar as 12h (marca "aliados3" do crono.sh).
+aliados_avisar_bot() {
+    for _d in "$HOME/.sls/$1_"*/; do
+        [ -d "$_d" ] && rm -f "${_d}last_aliados3" 2>/dev/null
+    done
+    unset _d
+}
+
+aliado_adicionar() {
+    clear
+    if [ "$1" = j ]; then
+        titulo "Adicionar Jogador Aliado" "🥷"; _qual="jogador"; _ex="473431 ou o link .../user/473431/"
+    else
+        titulo "Adicionar Cla Aliado" "👑"; _qual="cla"; _ex="2092 ou o link .../clan/2092"
+    fi
+    show_servers
+    escolher_servidor || return
+    tag=$(server_tag "$srv")
+
+    printf "ID ou link do %s (ex.: %s): " "$_qual" "$_ex"
+    read -r _txt
+    aliado_ler_id "$1" "$_txt" || { sleep 2; return; }
+
+    _conf="$HOME/.sls/aliados_${tag}.conf"
+    mkdir -p "$HOME/.sls" && chmod 700 "$HOME/.sls" 2>/dev/null
+    if aliados_validos "$tag" | grep -qxF "$1|$_id"; then
+        printf "${GOLD}%sEsse %s ja esta na lista do servidor %s.${RESET}\n" \
+            "$E_AVISO" "$_qual" "$(servidor_nome "$srv")"
+        sleep 2; return
+    fi
+    printf '%s|%s\n' "$1" "$_id" >> "$_conf"
+    chmod 600 "$_conf" 2>/dev/null
+    aliados_avisar_bot "$tag"
+
+    printf "\n${GREEN}%s %s %s adicionado ao servidor %s.${RESET}\n" \
+        "$T_OK" "$_qual" "$_id" "$(servidor_nome "$srv")"
+    printf "O bot confere o ID ja logado e busca o nome na proxima volta.\n"
+    printf "Para ver o nome: 3 - Listar aliados.\n"
+    unset _qual _ex _txt _conf
+    printf "\nENTER para voltar..."
+    read -r _d
+}
+
+aliados_listar() {
+    clear
+    titulo "Aliados" "🤝"
+    _tem=0
+    for _s in 1 2; do
+        _t=$(server_tag "$_s")
+        [ -n "$(aliados_validos "$_t")" ] || continue
+        _tem=1
+        printf "${WHITE}Servidor %s${RESET}\n" "$(servidor_nome "$_s")"
+        aliados_linhas "$_t"
+        printf "\n"
+    done
+    [ "$_tem" = 1 ] || printf "Nenhum aliado cadastrado.\n\n"
+    printf "Os membros do cla de cada conta sao aliados sem cadastro.\n"
+    unset _tem _s _t
+    printf "\nENTER para voltar..."
+    read -r _d
+}
+
+aliado_remover() {
+    clear
+    titulo "Remover Aliado" "💣"
+    show_servers
+    escolher_servidor || return
+    tag=$(server_tag "$srv")
+    if [ -z "$(aliados_validos "$tag")" ]; then
+        printf "${RED}Nenhum aliado no servidor %s.${RESET}\n" "$(servidor_nome "$srv")"
+        sleep 2; return
+    fi
+    printf "\n"
+    aliados_linhas "$tag"
+    printf "\nNumero (0 = cancelar): "
+    read -r choice
+    _l=""
+    case "$choice" in
+        ''|0) return ;;
+        *[!0-9]*) ;;
+        *) _l=$(aliados_validos "$tag" | sed -n "${choice}p") ;;
+    esac
+    if [ -z "$_l" ]; then
+        printf "${RED}Invalido.${RESET}\n"; sleep 2; return
+    fi
+    case "$_l" in j*) _qual="jogador" ;; *) _qual="cla" ;; esac
+    printf "Remover o %s %s? (y/n): " "$_qual" "${_l#?|}"
+    read -r confirm
+    case "$confirm" in
+        y|Y)
+            _conf="$HOME/.sls/aliados_${tag}.conf"
+            # Compara a linha sem espaco e sem CR, como o aliados_validos.
+            awk -v l="$_l" '{ x = $0; gsub(/[\r ]/, "", x) } x != l' "$_conf" \
+                > "$_conf.tmp" && mv "$_conf.tmp" "$_conf"
+            aliados_avisar_bot "$tag"
+            printf "${GREEN}%s Removido: deixa de ser aliado na proxima volta de cada conta.${RESET}\n" "$T_OK"
+            ;;
+        *) printf "Cancelado.\n" ;;
+    esac
+    unset _l _qual _conf
+    sleep 2
+}
+
 emoji_perguntar
 carregar_icones
 
@@ -681,6 +875,7 @@ while true; do
         4) test_account ;;
         5) atualizar_menu ;;
         6) modo_menu ;;
+        7) aliados_menu ;;
         0) printf "\nSaindo...\n"; exit 0 ;;
     esac
 done

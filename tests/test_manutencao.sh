@@ -2269,7 +2269,7 @@ done
 
 rm -rf "$_td7"; unset _td7 _r _mods _m _BTN_OK _TROCA_OFF _TROCA_RND _NIVEL
 
-printf "\n=== 38. aliados: amigos + membros do mesmo cla, e o nome certo do alvo ===\n"
+printf "\n=== 38. aliados: membros do mesmo cla, e o nome certo do alvo ===\n"
 # =============================================================================
 #
 # Regra do dono: aliado e SO quem esta na lista de amigos e quem e do mesmo
@@ -2294,7 +2294,7 @@ printf '%s' "<a href='/user/444/'><img src='/images/icon/race/0.png' alt=''/>Ful
 # Marcacao da "Lista de amigos" real (13/09), com o link "Exclui" de cada amigo.
 printf '%s' "<a href='/mail/'><img src='/images/icon/mail.png' alt=''/></a><div class='block_zero'><img src='/images/icon/race/1-off.png' alt=''/> <a href='/user/555/'>Amigo Um</a>, <img src='/images/icon/level.png' alt=''/> 61 nível <span class='medium'>( <a href='/mail/555/'>Escrever</a> / <a href='/mail/friends/delete/555?r=91'>Exclui</a> )</span><br/><img src='/images/icon/race/0.png' alt=''/> <a href='/user/666/'>Amigo Dois</a>, <img src='/images/icon/level.png' alt=''/> 95 nível <span class='medium'>( <a href='/mail/666/'>Escrever</a> / <a href='/mail/friends/delete/666?r=92'>Exclui</a> )</span></div><a href='/user/777/'>Nao Amigo</a>" > "$_td8/amigos"
 _montar38() { # modo -> "allies|callies" (nomes separados por espaco)
-    ( TMP="$_td8/m$1"; URL="http://jogo"; CLD=999; export TMP URL CLD; rm -rf "$TMP"; mkdir -p "$TMP"
+    ( TMP="$_td8/m$1"; URL="http://jogo"; CLD=999; HOME="$_td8/h$1"; export TMP URL CLD HOME; rm -rf "$TMP"; mkdir -p "$TMP"
       SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       echo "Velho_Amigo" > "$TMP/allies.txt"
       run_curl_exec() { case "$1" in
@@ -2306,13 +2306,14 @@ _montar38() { # modo -> "allies|callies" (nomes separados por espaco)
       aliados_montar "$1" > /dev/null 2>&1
       printf '%s|%s' "`tr '\n' ' ' < "$TMP/allies.txt" | sed 's/ $//'`" "`tr '\n' ' ' < "$TMP/callies.txt" 2>/dev/null | sed 's/ $//'`" )
 }
-_todos="Amigo_Dois Amigo_Um Chefe_Grande Fulano_Silva beltrano_souza"
-check "aliados modo 1: amigos + cla em todas as batalhas" "$_todos|$_todos" "`_montar38 1`"
+# Regra do dono (29/10): a lista de amigos do jogo nao conta mais; o cla sim.
+_todos="Chefe_Grande Fulano_Silva beltrano_souza"
+check "aliados modo 1: cla em todas as batalhas, sem os amigos" "$_todos|$_todos" "`_montar38 1`"
 check "aliados modo 2: so Rei (allies)"                    "$_todos|"       "`_montar38 2`"
 check "aliados modo 3: so batalhas de cla (callies)"        "|$_todos"       "`_montar38 3`"
 
 # A lista de amigos traz o link "Exclui": nenhum pedido pode desfazer amizade.
-_r=$( TMP="$_td8/del"; URL="http://jogo"; CLD=999; export TMP URL CLD; mkdir -p "$TMP"
+_r=$( TMP="$_td8/del"; URL="http://jogo"; CLD=999; HOME="$_td8/hdel"; export TMP URL CLD HOME; mkdir -p "$TMP"
       SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       run_curl_exec() { echo "$1" >> "$TMP/pedidos"; case "$1" in
           */mail/friends) cat "$_td8/amigos" ;; */clan/999) cat "$_td8/cla_p1" ;; */clan/999//2) cat "$_td8/cla_p2" ;; esac; }
@@ -2323,21 +2324,18 @@ _r=$( TMP="$_td8/del"; URL="http://jogo"; CLD=999; export TMP URL CLD; mkdir -p 
       grep -c delete "$TMP/pedidos" )
 check "aliados: nunca pede o link 'Exclui' da lista de amigos" "0" "$_r"
 
-# Lista de amigos em duas paginas (paginacao real: 10 por pagina, links
-# /mail/friends/2 na 1 e /mail/friends/1 na 2).
-_r=$( TMP="$_td8/pag"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"
+# A lista de amigos nem e pedida.
+_r=$( TMP="$_td8/sem_amigos"; URL="http://jogo"; CLD=999; HOME="$_td8/hsa"; export TMP URL CLD HOME; mkdir -p "$TMP"
       SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
-      _p1="<img src='/images/icon/race/1.png' alt=''/> <a href='/user/901/'>Pagina Um</a>, 10 nível <span class='medium'>( <a href='/mail/901/'>Escrever</a> / <a href='/mail/friends/delete/901?r=5'>Excluir</a> )</span><div class='block_zero'>&#60;&#60; &#60; 1 <a href='/mail/friends/2'>2</a> <a href='/mail/friends/2'>&#62;</a> <a href='/mail/friends/2'>&#62;&#62;</a></div>"
-      _p2="<img src='/images/icon/race/1.png' alt=''/> <a href='/user/902/'>Pagina Dois</a>, 20 nível <span class='medium'>( <a href='/mail/902/'>Escrever</a> / <a href='/mail/friends/delete/902?r=6'>Excluir</a> )</span><div class='block_zero'><a href='/mail/friends/1'>&#60;&#60;</a> <a href='/mail/friends/1'>1</a> 2</div>"
       run_curl_exec() { echo "$1" >> "$TMP/pedidos"; case "$1" in
-          */mail/friends) printf '%s' "$_p1" ;; */mail/friends/2) printf '%s' "$_p2" ;; esac; }
+          */clan/999) cat "$_td8/cla_p1" ;; */clan/999//2) cat "$_td8/cla_p2" ;; esac; }
       time_exit() { wait "$!" 2>/dev/null; }
-      : > "$TMP/pedidos"
-      printf '%s|%s' "`aliados_amigos | tr '\n' ' ' | sed 's/ $//'`" "`sed 's,^http://jogo,,' "$TMP/pedidos" | tr '\n' ' ' | sed 's/ $//'`" )
-check "aliados: amigos das duas paginas, um pedido por pagina" "Pagina_Um Pagina_Dois|/mail/friends /mail/friends/2" "$_r"
+      : > "$TMP/pedidos"; aliados_montar 1 > /dev/null 2>&1
+      grep -c 'mail/friends' "$TMP/pedidos" )
+check "aliados: a lista de amigos nao e mais pedida" 0 "$_r"
 
 # Servidor mudo nao apaga a lista.
-_r=$( TMP="$_td8/mudo"; URL="http://jogo"; CLD=999; export TMP URL CLD; mkdir -p "$TMP"
+_r=$( TMP="$_td8/mudo"; URL="http://jogo"; CLD=999; HOME="$_td8/hmudo"; export TMP URL CLD HOME; mkdir -p "$TMP"
       SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       echo "Amigo_Antigo" > "$TMP/allies.txt"
       run_curl_exec() { :; }; time_exit() { wait "$!" 2>/dev/null; }
@@ -3096,16 +3094,17 @@ printf "\n=== 47. pagina que nao respondeu nao conta como feito ===\n"
 # =============================================================================
 _td12=`mktemp -d`
 
-# Aliados: amigos respondem, a pagina do cla nao.
-_al47() { # com_lista_antiga(sim|nao) -> "lista|rc"
-    ( TMP="$_td12/al$1"; URL="http://jogo"; CLD=999; export TMP URL CLD; rm -rf "$TMP"; mkdir -p "$TMP"
+# Aliados: a pagina do cla nao responde, ou a do perfil de um ID e cortada.
+_al47() { # com_lista_antiga(sim|nao|cortada) -> "lista|rc"
+    ( TMP="$_td12/al$1"; URL="http://jogo"; CLD=999; HOME="$_td12/h$1"; export TMP URL CLD HOME; rm -rf "$TMP" "$HOME"; mkdir -p "$TMP" "$HOME/.sls"
       SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
       [ "$1" = sim ] && printf 'Amigo_Um\nMembro_Cla\n' > "$TMP/aliados.txt" && cp "$TMP/aliados.txt" "$TMP/allies.txt"
       [ "$1" = cortada ] && printf 'Amigo_Velho\nMembro_Cla\n' > "$TMP/aliados.txt" && cp "$TMP/aliados.txt" "$TMP/allies.txt"
+      [ "$1" = cortada ] && echo 'j|5' > "$HOME/.sls/aliados_BR.conf"
       MODO="$1"
       run_curl_exec() { case "$1" in
-          */mail/friends) echo "<a href='/user/5/'>Amigo Um</a>, <a href='/mail/5/'>Escrever</a>"
-                          [ "$MODO" = cortada ] && return 56 ;;
+          */user/5/) echo "<title>Amigo Um</title><a href='/user/5?show=might'>Poder</a>"
+                     [ "$MODO" = cortada ] && return 56 ;;
           */clan/999) [ "$MODO" = cortada ] && echo "<a href='/user/9/'><img src='/r.png' alt=''/>Membro Cla, <span class='white'>Soldado</span>" ;;
           *) : ;; esac; return 0; }
       # Como o time_exit real: so o curl 28 conta como falha.
@@ -3114,8 +3113,8 @@ _al47() { # com_lista_antiga(sim|nao) -> "lista|rc"
       printf '%s|%s' "`tr '\n' ' ' < "$TMP/allies.txt" | sed 's/ $//'`" "$_rc" )
 }
 check "aliados: cla sem resposta mantem a lista com o cla" "Amigo_Um Membro_Cla|1" "`_al47 sim`"
-check "aliados: sem lista anterior, a parcial vale e pede nova tentativa" "Amigo_Um|1" "`_al47 nao`"
-check "aliados: pagina de amigos cortada (curl 56) mantem a lista" "Amigo_Velho Membro_Cla|1" "`_al47 cortada`"
+check "aliados: sem lista anterior e sem resposta, nova tentativa" "|1" "`_al47 nao 2>/dev/null`"
+check "aliados: perfil de um ID cortado (curl 56) mantem a lista" "Amigo_Velho Membro_Cla|1" "`_al47 cortada`"
 
 # Masmorra: um golpe e depois a rede cai -> nao conta como feita.
 _r=$( TMP="$_td12/ms"; CLD=999; export TMP CLD; mkdir -p "$TMP"
@@ -6244,6 +6243,126 @@ _a=`grep -n '^emoji_perguntar$' "$ROOT/play.sh" | cut -d: -f1`; _b=`grep -n '^\.
 unset _ep77 _tx77 _h _o _a _b _t
 
 rm -rf "$_td77"; unset _td77 _r _n _l77 _bs77
+
+printf "\n=== 78. aliados por ID: jogadores, clas aliados e o menu do setup ===\n"
+# Regra do dono (29/10): aliado = membro do cla da conta + jogador da lista
+# (ID) + membro de cla da lista (ID). Lista por servidor, comum as contas.
+# Marcacao real do perfil (/user/ID/, 29/10): <title> com o nome do DONO do
+# perfil, links "/user/ID?show=" do proprio ID e o cla em "/clan/ID'>".
+# ID que nao existe mostra o perfil da conta logada (links com o ID dela).
+_td78=`mktemp -d`
+_perfil78() { # ID NOME -> pagina de perfil logada
+    printf '%s' "<title>$2</title><img src='/images/icon/race/1.png' alt=''/> <b>$2</b> <img src='/images/icon/level.png' alt=''/> 91 nível<a href='/clan/2092'>Abyssal Millennium</a><a href='/user/$1?show=might'>Poder:</a><img src='/user/$1/?show=avatar&h=x'/><a href='/user/$1/?show=faith'>fe</a>"
+}
+_perfil78 3386065 "Abyssal Draco" > "$_td78/p_draco"
+# ID que nao existe: o jogo devolve o perfil da conta logada (473431).
+_perfil78 473431 "Grimlock" > "$_td78/p_proprio"
+# Sessao caida: pagina de visitante.
+printf '%s' "<title>Error 404: Page not found</title>" > "$_td78/p_visitante"
+printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><br/><a href='/user/72/'><img src='/images/icon/race/0.png' alt=''/>Aliado Dois, <span class='white'>General</span>" > "$_td78/c_777"
+printf '%s' "<a href='/user/81/'><img src='/images/icon/race/1.png' alt=''/>Meu Chefe, <span class='white'><span class='green'>Clã líder</span></span>" > "$_td78/c_999"
+
+# Ambiente de uma conta: $1 = pasta da conta, $2 = "pedidos" de saida.
+_conta78() {
+    TMP="$_td78/$1"; URL="http://jogo"; CLD=999; HOME="$_td78/home"; SLS_TAG=BR
+    export TMP URL CLD HOME SLS_TAG; mkdir -p "$TMP" "$HOME/.sls"
+    SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+    sleep() { :; }
+    run_curl_exec() { echo "$1" >> "$_td78/pedidos"; case "$1" in
+        */user/3386065/)  cat "$_td78/p_draco" ;;
+        */user/99999999/) cat "$_td78/p_proprio" ;;
+        */user/5555/)     cat "$_td78/p_visitante" ;;
+        */clan/777)       cat "$_td78/c_777" ;;
+        */clan/999)       cat "$_td78/c_999" ;;
+        *) : ;; esac; }
+    time_exit() { wait "$!" 2>/dev/null; }
+}
+
+# Nome pelo perfil; ID que nao existe; sessao caida nao e "nao existe".
+_r=`( _conta78 a; printf '[%s]' "\`_aliado_jogador 3386065\`"; printf '[%s]' "\`_aliado_jogador 99999999\`"
+      _aliado_jogador 5555 > /dev/null && printf '[viva]' || printf '[caiu]' )`
+check "perfil: nome do dono do perfil, ID inexistente vazio, sessao caida falha" "[Abyssal Draco][][caiu]" "$_r"
+
+# Lista do servidor: jogador valido, jogador inexistente e cla aliado.
+printf 'j|3386065\nj|99999999\nc|777\n' > "$_td78/home/.sls/aliados_BR.conf"
+: > "$_td78/pedidos"
+_r=`( _conta78 a; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: cla da conta + jogador da lista + membros do cla aliado" \
+    "Abyssal_Draco Aliado_Dois Aliado_Um Meu_Chefe " "$_r"
+check "aliados: ID inexistente anotado como nao encontrado" "j|99999999|-" \
+    "`grep '^j|99999999|' "$_td78/home/.sls/aliados_BR.nomes"`"
+# Segunda conta do mesmo servidor: usa os nomes ja buscados, sem pedir os perfis.
+: > "$_td78/pedidos"
+_r=`( _conta78 b; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: a outra conta reusa os nomes (so pede o proprio cla)" \
+    "Abyssal_Draco Aliado_Dois Aliado_Um Meu_Chefe |0" "$_r|`grep -c -E '/user/|/clan/777' "$_td78/pedidos"`"
+# O setup tirou o jogador da lista: sai na hora, mesmo com os nomes guardados.
+printf 'j|99999999\nc|777\n' > "$_td78/home/.sls/aliados_BR.conf"
+_r=`( _conta78 c; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: jogador tirado da lista deixa de ser aliado" "Aliado_Dois Aliado_Um Meu_Chefe " "$_r"
+# Lista mudou depois da ultima busca (.conf mais novo): busca de novo.
+sleep 1; printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/pedidos"
+_r=`( _conta78 d; aliados_montar 1 > /dev/null 2>&1; grep -c '/user/3386065/' "$_td78/pedidos" )`
+check "aliados: lista mudou no setup, o perfil e buscado de novo" 1 "$_r"
+# Quem sai do cla aliado deixa de ser aliado na volta seguinte.
+printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span>" > "$_td78/c_777"
+printf 'c|777\n' > "$_td78/home/.sls/aliados_BR.conf"
+_r=`( _conta78 e; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: quem saiu do cla aliado vira inimigo" "Aliado_Um Meu_Chefe " "$_r"
+# Servidor russo usa a lista dele.
+printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/home/.sls/aliados_RU.conf"
+_r=`( _conta78 f; SLS_TAG=RU; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: conta RU nao usa a lista do BR" "Meu_Chefe " "$_r"
+# Ao subir a conta o play.sh apaga a marca: a lista e refeita na hora.
+check "play.sh: ao subir a conta, refaz os aliados" 1 \
+    "`sed -n '/^launch_worker() {/,/^}/p' "$ROOT/play.sh" | grep -c 'rm -f "\$lw_dir/last_aliados3"'`"
+check "crono: chave nova aliados3 (quem atualizar refaz a lista ja)" "1 0" \
+    "`grep -c 'ativ_liberada aliados3 720' "$LIB/crono.sh"` `grep -c 'aliados2' "$LIB/crono.sh"`"
+
+# ---- setup: 7 - Adicionar Aliados
+{ printf '. "%s/contas.sh"\n. "%s/session_check.sh"\n' "$LIB" "$LIB"
+  sed -n '/^show_menu() {/,/^# Loop principal/p' "$ROOT/setup.sh"; } > "$_td78/setup_fn.sh"
+_fn78() { HOME="$_td78/sh"; mkdir -p "$HOME/.sls"; . "$_td78/setup_fn.sh"
+          clear() { :; }; sleep() { :; }; stty() { echo "24 40"; }
+          A1=; A2=; DIM=; WHITE=; GOLD=; RED=; GREEN=; CYAN=; RESET=; SLSDIR="$ROOT"
+          SLS_EMOJI=0; carregar_icones; }
+_r=`( _fn78; ACCOUNTS_FILE="$_td78/nada"; show_menu ) | grep -c '7 - Adicionar Aliados'`
+check "setup: menu com 7 - Adicionar Aliados" 1 "$_r"
+_r=`( _fn78; printf '\n' | aliados_listar ) 2>&1 | grep -c -i 'cannot open\|No such'`
+check "setup: listar sem lista nenhuma nao mostra erro de arquivo" 0 "$_r"
+_r=""
+for _e78 in "473431" " 473431 " "https://furiadetitas.net/user/473431/" "https://furiadetitas.net/user/473431?show=might" \
+            "47a" "" "0123" "https://furiadetitas.net/clan/2092"; do
+    _r="$_r`( _fn78; aliado_ler_id j "$_e78" > /dev/null && printf '%s' "$_id" || printf 'x' )` "
+done
+check "setup: ID de jogador pelo numero ou pelo link; o resto recusa" \
+    "473431 473431 473431 473431 x x x x " "$_r"
+_r=`( _fn78; aliado_ler_id c "https://furiadetitas.net/clan/2092" > /dev/null && printf '%s ' "$_id"
+      aliado_ler_id c "https://furiadetitas.net/user/1/" > /dev/null || printf 'recusa' )`
+check "setup: ID de cla pelo link; link de jogador na opcao de cla recusa" "2092 recusa" "$_r"
+
+# Adicionar: grava na lista do servidor e avisa so as contas dele.
+mkdir -p "$_td78/sh/.sls/BR_Ana" "$_td78/sh/.sls/RU_Ivan"
+date +%s > "$_td78/sh/.sls/BR_Ana/last_aliados3"; date +%s > "$_td78/sh/.sls/RU_Ivan/last_aliados3"
+( _fn78; printf '1\n473431\n\n' | aliado_adicionar j; printf '\nhttps://x/clan/2092\n\n' | aliado_adicionar c
+  printf '1\n473431\n' | aliado_adicionar j ) > /dev/null 2>&1
+check "setup: adicionar grava j|ID e c|ID, sem repetir" "j|473431 c|2092 " \
+    "`tr '\n' ' ' < "$_td78/sh/.sls/aliados_BR.conf"`"
+_r=""; [ -f "$_td78/sh/.sls/BR_Ana/last_aliados3" ] && _r="BR_marca" || _r="BR_refaz"
+[ -f "$_td78/sh/.sls/RU_Ivan/last_aliados3" ] && _r="$_r RU_marca" || _r="$_r RU_refaz"
+check "setup: lista do BR mudou, so as contas BR refazem" "BR_refaz RU_marca" "$_r"
+
+# Listar: o nome que o bot achou, ID nao encontrado e quem ainda espera.
+printf 'j|473431\nc|2092\nj|99999999\nj|5\n' > "$_td78/sh/.sls/aliados_BR.conf"
+printf 'j|473431|Grimlock\nc|2092|Abyssal Draco\nc|2092|Outro\nj|99999999|-\n' > "$_td78/sh/.sls/aliados_BR.nomes"
+_r=`( _fn78; aliados_linhas BR ) | sed 's/  */ /g' | tr '\n' ';'`
+check "setup: lista com nome, membros, nao encontrado e aguardando" \
+    "1) Jogador 473431 Grimlock;2) Cla 2092 2 membro(s);3) Jogador 99999999 ID nao encontrado;4) Jogador 5 aguardando o bot;" "$_r"
+# Remover o numero 2 (o cla).
+( _fn78; printf '1\n2\ny\n' | aliado_remover ) > /dev/null 2>&1
+check "setup: remover tira so a linha escolhida" "j|473431 j|99999999 j|5 " \
+    "`tr '\n' ' ' < "$_td78/sh/.sls/aliados_BR.conf"`"
+rm -rf "$_td78"; unset _td78 _r _e78; unset -f _perfil78 _conta78 _fn78
 
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
