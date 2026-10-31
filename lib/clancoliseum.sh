@@ -204,10 +204,7 @@ clancoliseum_start() {
     full_atualizar "$full_ram"
     # Inscricao: a batalha fica anotada para o worker relancado voltar a ela.
     batalha_marcar clancoliseum
-    (
-      run_curl_exec "$URL/clancoliseum/enterFight" > "$src_ram"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clancoliseum enterFight "$src_ram"
     printf "Clan coliseum will be started...\n"
 
     # Ate :x9:50-:x9:59, escalonado por conta (janela_alvo, em info.sh).

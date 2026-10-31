@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.127"
+versionNum="3.9.128"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -35,6 +35,34 @@ time_exit() {
     fi
     unset _te_rc
     return 0
+}
+
+# Inscricao num evento: EVENTO ACAO [PAGINA] (ex.: king enterGame,
+# clanfight enterFight); a pagina que voltou fica em PAGINA ($TMP/SRC).
+# No servidor russo o botao traz o codigo da sessao, /king/enterGame/?r=N e
+# /clanfight/enterFight/?r=N (paginas reais de 31/10/2026), e com o endereco
+# fixo as 7 contas RU ficaram de fora do Rei das 22:30. La o link vem da
+# pagina do evento, como no apply_event do Vale; sem o botao (ja inscrita,
+# luta em andamento) vai o endereco fixo. O BR segue no fixo, sem a leitura.
+# O link e relido a cada inscricao e vale qualquer forma com a acao, para o
+# codigo ou um id de torneio que mude (/clanfight/enterFight/?r=N, ou como
+# o Torneio de Equipe do BR, /clancommand/?enterFight=<id>).
+evento_inscrever() {
+  _ei_pg=${3:-$TMP/SRC}
+  _ei_url="/$1/$2"
+  if [ "${SLS_TAG:-BR}" = RU ]; then
+    (
+      run_curl_exec "$URL/$1/" > "$_ei_pg"
+    ) </dev/null > /dev/null 2>&1 &
+    time_exit 17
+    _ei_link=`grep -o -E "href='/$1/[^' >]*$2[^' >]*" "$_ei_pg" 2>/dev/null | sed -n '1{s/^href=.//;s/&amp;/\&/g;p;}'`
+    [ -n "$_ei_link" ] && _ei_url=$_ei_link
+  fi
+  (
+    run_curl_exec "${URL}${_ei_url}" > "$_ei_pg"
+  ) </dev/null > /dev/null 2>&1 &
+  time_exit 17
+  unset _ei_pg _ei_url _ei_link
 }
 
 # O ULTIMO PEDIDO NEM CHEGOU AO SERVIDOR? (curl 6, 7 ou 35, ou 28 sem a

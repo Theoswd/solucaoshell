@@ -6367,6 +6367,55 @@ check "setup: remover tira so a linha escolhida" "j|473431 j|99999999 j|5 " \
     "`tr '\n' ' ' < "$_td78/sh/.sls/aliados_BR.conf"`"
 rm -rf "$_td78"; unset _td78 _r _e78; unset -f _perfil78 _conta78 _fn78
 
+printf "\n=== 79. servidor russo: inscricao nos eventos pelo link da pagina ===\n"
+# Pagina real do Rei no tiwar.ru (31/10/2026, fora da batalha): o botao
+# "Подать заявку" e /king/enterGame/?r=N. Com o endereco fixo as contas RU
+# ficaram de fora do Rei das 22:30 (pagina "Битва в самом разгаре!" so com
+# "Обновить"). No Torneio dos Clas o botao e /clanfight/enterFight/?r=N
+# (link passado pelo dono, mesmo codigo de sessao).
+_td79=`mktemp -d`
+printf '%s\n' "<div class='block_zero'><img src='/images/icon/race/0.png' alt=''/><img src='/images/icon/race/1.png' alt=''/> Титаны: <b>14</b><br/>Битва начнется через: <span id='time_49291000'>13 ч 41 мин</span><br/></div><div class='dot-line'></div><div class='block_zero'><a class='btn' href='/king/enterGame/?r=14908899'><span class='end'><span class='label'><img src='/images/icon/hit.png' alt=''/> Подать заявку</span></span></a></div>" > "$_td79/king_aberto"
+printf '%s\n' "<div class='block_zero'><span class='blue'>Битва в самом разгаре!</span><br/><img src='/images/icon/race/0.png' alt=''/><img src='/images/icon/race/1.png' alt=''/> Титаны: <b>9</b><br/></div><div class='dot-line'></div><div class='block_zero'><a class='btn' href='/king/'><span class='end'><span class='label'>Обновить</span></span></a></div>" > "$_td79/king_sem_botao"
+printf '%s\n' "<div class='block_zero'><a class='btn' href='/clanfight/enterFight/?r=14908899'><span class='end'><span class='label'>Подать заявку</span></span></a></div>" > "$_td79/clanfight_aberto"
+#   _ins79 SIGLA EVENTO ACAO PAGINA_DO_EVENTO [ARQUIVO] -> "pedidos | resposta"
+_ins79() {
+    ( TMP="$_td79/c"; rm -rf "$TMP"; mkdir -p "$TMP"; URL=http://jogo; SLS_PACING=0; SLS_TAG=$1; _pg79=$4
+      export TMP URL SLS_PACING SLS_TAG
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl_exec() { _p=${1#http://jogo}; printf '%s ' "$_p" >> "$TMP/req"
+                        case "$_p" in /*/) cat "$_td79/$_pg79" ;; *) echo "resposta $_p" ;; esac; }
+      evento_inscrever "$2" "$3" $5
+      printf '%s| %s' "`cat "$TMP/req"`" "`cat "${5:-$TMP/SRC}"`" )
+}
+check "Rei RU: le /king/ e inscreve pelo link com ?r=" \
+    "/king/ /king/enterGame/?r=14908899 | resposta /king/enterGame/?r=14908899" "`_ins79 RU king enterGame king_aberto`"
+check "Rei RU: sem o botao (ja inscrita, luta em andamento) vai o endereco fixo" \
+    "/king/ /king/enterGame | resposta /king/enterGame" "`_ins79 RU king enterGame king_sem_botao`"
+check "Torneio dos Clas RU: link com ?r=, pagina no arquivo pedido" \
+    "/clanfight/ /clanfight/enterFight/?r=14908899 | resposta /clanfight/enterFight/?r=14908899" \
+    "`_ins79 RU clanfight enterFight clanfight_aberto "$_td79/pg"`"
+# Id de torneio que muda, como o Torneio de Equipe do BR: vale qualquer link
+# do evento com a acao, relido a cada vez (o &amp; vira &); o link de fechar
+# o resultado, sem a acao, fica de fora.
+printf '%s\n' "<a class='btn' href='/clanfight/?close=reward'>x</a><a class='btn' href='/clanfight/?enterFight=5531&amp;r=14908899'><span class='end'><span class='label'>Подать заявку</span></span></a>" > "$_td79/clanfight_id"
+check "Torneio dos Clas RU: link com id do torneio (?enterFight=N&r=N)" \
+    "/clanfight/ /clanfight/?enterFight=5531&r=14908899 | resposta /clanfight/?enterFight=5531&r=14908899" \
+    "`_ins79 RU clanfight enterFight clanfight_id`"
+check "BR: so o endereco fixo, sem ler a pagina, como antes" \
+    "/king/enterGame | resposta /king/enterGame /clanfight/enterFight | resposta /clanfight/enterFight" \
+    "`_ins79 BR king enterGame king_aberto` `_ins79 BR clanfight enterFight clanfight_aberto`"
+# Os modulos: toda inscricao passa pelo evento_inscrever, nenhuma com o
+# endereco fixo no run_curl_exec (os Altares, que lutaram no russo com o
+# fetch_page, e a 1a do flagfight ficam como estavam).
+_r=""
+for _m79 in "king 2" "clanfight 2" "clandmg 3" "clancoliseum 1" "flagfight 1"; do
+    set -- $_m79
+    _r="$_r$1=`grep -c '^ *evento_inscrever ' "$LIB/$1.sh"`/`grep -c 'run_curl_exec "$URL/[a-z]*/enter' "$LIB/$1.sh"` "
+done
+check "modulos: inscricoes pelo evento_inscrever, sem endereco fixo no run_curl_exec" \
+    "king=2/0 clanfight=2/0 clandmg=3/0 clancoliseum=1/0 flagfight=1/0 " "$_r"
+rm -rf "$_td79"; unset _td79 _r _m79
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

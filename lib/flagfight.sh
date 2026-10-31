@@ -187,10 +187,7 @@ flagfight_start() {
     # Espera ate :14:30, so dentro da janela (espera_janela, em info.sh).
     espera_janela 1000 `janela_alvo 1400`
 
-    (
-      run_curl_exec "$URL/flagfight/enterFight" > "$src_ram"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever flagfight enterFight "$src_ram"
     link_acao "$src_ram" flagfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"

@@ -227,18 +227,12 @@ clandmgfight_start() {
     time_exit 17
     # Inscricao: a batalha fica anotada para o worker relancado voltar a ela.
     batalha_marcar clandmgfight
-    (
-      run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clandmgfight enterFight
     printf "The clan duel will be started...\n"
     # Espera ate :29:30, so dentro da janela (espera_janela); atrasada, segue
     # direto para a inscricao (o duelo aceita entrada durante :3x).
     espera_janela 2500 `janela_alvo 2900`
-    (
-      run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clandmgfight enterFight
     link_acao "$TMP/SRC" clandmgfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"
@@ -260,10 +254,7 @@ clandmgfight_start() {
   09:3[0-9]|09:4[0-4]|21:3[0-9]|21:4[0-4])
     printf "The clan duel will be started...\n"
     batalha_marcar clandmgfight
-    (
-      run_curl_exec "$URL/clandmgfight/enterFight" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clandmgfight enterFight
     link_acao "$TMP/SRC" clandmgfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"

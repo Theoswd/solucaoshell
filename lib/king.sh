@@ -300,17 +300,11 @@ king_start() {
     # Inscrita, a conta ja esta comprometida com o evento: a batalha fica
     # anotada para o worker relancado voltar a ela (batalha_retomar).
     batalha_marcar king
-    (
-      run_curl_exec "$URL/king/enterGame" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever king enterGame
     printf "King of the Immortals will be started...\n"
     # Ate :29:50-:29:59, escalonado por conta (janela_alvo, em info.sh).
     espera_janela 2500 `janela_alvo 2950 10`
-    (
-      run_curl_exec "$URL/king/enterGame" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever king enterGame
     printf "\nKing\n%s\n" "$URL"
     link_acao "$TMP/SRC" king > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n%s\n" "`cat "$TMP/ACCESS"`"
