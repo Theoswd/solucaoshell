@@ -212,18 +212,12 @@ clanfight_start() {
     time_exit 17
     # Inscricao: a batalha fica anotada para o worker relancado voltar a ela.
     batalha_marcar clanfight
-    (
-      run_curl_exec "$URL/clanfight/enterFight" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clanfight enterFight
     printf "The clan tournament will be started...\n"
     # Espera ate :59:30, so dentro da janela (espera_janela), escalonado por
     # conta em :59:00-:59:29 (janela_alvo).
     espera_janela 5500 `janela_alvo 5900`
-    (
-      run_curl_exec "$URL/clanfight/enterFight" > "$TMP/SRC"
-    ) </dev/null > /dev/null 2>&1 &
-    time_exit 17
+    evento_inscrever clanfight enterFight
     link_acao "$TMP/SRC" clanfight > "$TMP/ACCESS" 2>/dev/null
     printf " Entering...\n"
     printf " Waiting...\n"
