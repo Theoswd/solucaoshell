@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.128"
+versionNum="3.9.129"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -1249,6 +1249,8 @@ janela_alvo() { # MMSS_base [VAO] -> MMSS
 # ja virou e ficou abaixo de DE —, sai na hora (esperar o relogio MOSTRAR
 # uma hora prenderia por uma hora quem chega atrasado).
 espera_janela() {
+    # Na espera depois da inscricao a lista de aliados e refeita (allies.sh).
+    type aliados_antes_da_luta > /dev/null 2>&1 && aliados_antes_da_luta "$1" "$2"
     while :; do
         _ej=`date +%M%S`
         while :; do case "$_ej" in 0?*) _ej=${_ej#0} ;; *) break ;; esac; done

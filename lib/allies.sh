@@ -8,7 +8,8 @@
 #    - o jogador da lista (ID do jogador), cadastrado a mao no setup.sh.
 #  A lista de amigos do jogo NAO conta mais. Quem sai do cla e nao esta na
 #  lista individual vira inimigo na atualizacao seguinte: a lista e refeita
-#  do zero ao subir a conta (play.sh) e a cada 12h.
+#  do zero ao subir a conta (play.sh), a cada 12h e na espera depois da
+#  inscricao de cada batalha do cronograma (aliados_antes_da_luta).
 #
 #  Lista de IDs, uma por servidor e comum a todas as contas dele (o setup.sh
 #  grava, opcao 7):  ~/.sls/aliados_<TAG>.conf   linhas "j|ID" ou "c|ID".
@@ -54,6 +55,11 @@ _aliados_membros() {
     _ac_d="$TMP/aliados_pag"; mkdir -p "$_ac_d" 2>/dev/null
     rm -f "$_ac_d"/cla_* 2>/dev/null
     _aliado_pagina "/clan/${_ac_id}" "$_ac_d/cla_1" || { unset _ac_id _ac_d; return 1; }
+    # Sessao caida (ou pagina que nao e do jogo) sem membros nao e "cla que
+    # nao existe": conta como pagina que nao veio, como no _aliado_jogador.
+    if [ "`sessao_estado "$_ac_d/cla_1"`" != viva ]; then
+        : > "$TMP/aliados.falha"; unset _ac_id _ac_d; return 1
+    fi
     _ac_n=`grep -o -E "/clan/${_ac_id}//?[0-9]+'" "$_ac_d/cla_1" 2>/dev/null \
         | sed "s,.*/,,; s,',," | sort -n | tail -n 1`
     case "$_ac_n" in ''|*[!0-9]*) _ac_n=1 ;; esac
@@ -84,7 +90,8 @@ _aliados_membros() {
 
 # MEMBROS DO CLA DA CONTA (CLD): o cla dela e sempre aliado.
 aliados_cla() {
-    [ -n "$CLD" ] || clan_id 2>/dev/null
+    # O clan_id avisa "Conta sem cla" no stdout, que aqui e a lista de nomes.
+    [ -n "$CLD" ] || clan_id > /dev/null 2>&1
     if [ -z "$CLD" ]; then
         # /clan sem resposta nao e o mesmo que estar sem cla.
         [ -f "$TMP/CLD" ] || : > "$TMP/aliados.falha"
@@ -133,7 +140,9 @@ _aliados_arquivos() {
 # servidor dividem o trabalho: a que pega a trava consulta todos os IDs; as
 # outras esperam por ela e leem o resultado. Vale por ALIADOS_CACHE_MIN,
 # ou ate o setup.sh mudar a lista (o .conf fica mais novo que a marca).
-ALIADOS_CACHE_MIN=60
+# 10 min: as contas que se inscrevem juntas dividem a busca, e a batalha
+# seguinte (30 min depois) ja busca de novo os nomes.
+ALIADOS_CACHE_MIN=10
 aliados_ids_resolver() {
     _aliados_arquivos
     [ -s "$_al_conf" ] || return 0
@@ -259,6 +268,25 @@ allies_refresh() {
     aliados_montar "$_ar"
     _ar=$?
     return $_ar
+}
+
+# ANTES DE CADA BATALHA DO CRONOGRAMA (pedido do dono, 06/11): na espera
+# depois da inscricao (espera_janela, em info.sh) a lista e refeita, para a
+# luta ja ter o nome novo de quem trocou de nome ou de cla. So com folga de
+# ALIADOS_FOLGA_SEG ate a hora de entrar: a lista nao pode atrasar a entrada.
+ALIADOS_FOLGA_SEG=120
+aliados_antes_da_luta() { # DE ATE (MMSS, os mesmos da espera_janela)
+    _apl=`date +%M%S`
+    while :; do case "$_apl" in 0?*) _apl=${_apl#0} ;; *) break ;; esac; done
+    # Fora da janela a espera nem acontece: nada a fazer.
+    if [ "$_apl" -ge "$1" ] && [ "$_apl" -lt "$2" ]; then
+        _apl=$(( $2 / 100 * 60 + $2 % 100 - (_apl / 100 * 60 + _apl % 100) ))
+        if [ "$_apl" -ge "$ALIADOS_FOLGA_SEG" ] && allies_refresh 2>/dev/null; then
+            ativ_marcar aliados3
+        fi
+    fi
+    unset _apl
+    return 0
 }
 
 # O alvo da vez e aliado?
