@@ -1107,6 +1107,8 @@ for _e in "$ROOT"/* "$ROOT"/.[!.]*; do
     case "$(basename "$_e")" in
         .git|.gitattributes|.gitignore|LICENSE|README.md|CLAUDE.md|lib|tests) ;;
         play.sh|setup.sh|status.sh|stop.sh|uninstall.sh) ;;
+        # As contas do aparelho: o setup grava aqui (contas.sh), fora do git.
+        accounts.conf|accounts.conf.*) ;;
         *) _sobra="$_sobra $(basename "$_e")" ;;
     esac
 done
