@@ -90,7 +90,7 @@ Os comandos funcionam de qualquer pasta.
 
 | Para | Comando |
 |---|---|
-| Subir as contas e abrir o painel | `~/solucaoshell/play.sh` |
+| Subir as contas e abrir o painel | `~/solucaoshell/play.sh` (ou `setup.sh`, opção **8**) |
 | Parar todas as contas | `~/solucaoshell/stop.sh` |
 | Ver o painel sem mexer nas contas | `~/solucaoshell/status.sh` |
 | Cadastrar, listar, testar ou remover contas (servidor 1 = Brasileiro, 2 = Russo) | `~/solucaoshell/setup.sh` |

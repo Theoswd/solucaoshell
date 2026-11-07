@@ -38,7 +38,8 @@ server_tag() { case "$1" in 1) echo "BR" ;; 2) echo "RU" ;; esac; }
 # funcao para lista, contagem e escolha por numero (um filtro diferente
 # desalinharia o numero da tela com a conta).
 contas_validas() {
-    tr -d '\r' < "$ACCOUNTS_FILE" 2>/dev/null | grep -E '^[0-9]+\|[^|]'
+    # O 2> antes do <: sem o arquivo, o erro do "<" tambem fica calado.
+    tr -d '\r' 2>/dev/null < "$ACCOUNTS_FILE" | grep -E '^[0-9]+\|[^|]'
 }
 
 # O PID ainda e um worker deste bot, vivo?  $2 = pasta da conta (opcional)

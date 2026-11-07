@@ -1107,6 +1107,8 @@ for _e in "$ROOT"/* "$ROOT"/.[!.]*; do
     case "$(basename "$_e")" in
         .git|.gitattributes|.gitignore|LICENSE|README.md|CLAUDE.md|lib|tests) ;;
         play.sh|setup.sh|status.sh|stop.sh|uninstall.sh) ;;
+        # As contas do aparelho: o setup grava aqui (contas.sh), fora do git.
+        accounts.conf|accounts.conf.*) ;;
         *) _sobra="$_sobra $(basename "$_e")" ;;
     esac
 done
@@ -2289,7 +2291,7 @@ check "alvo_nome: o nome do ALVO (do &nbsp;), nao o proprio nem o rodape" "Fulan
 check "alvo_nome: pagina sem alvo nao inventa nome"                        ""           "`_f38 alvo_nome "$_td8/sem_alvo"`"
 
 # Membros do cla: pagina 1 + paginas pelos links do jogo (/clan/ID//N).
-printf '%s' "<a href='/user/111/'><img src='/images/icon/race/1.png' alt=''/>Chefe Grande, <span class='white'><span class='green'>Clã líder</span></span><br/><a href='/user/222/'><img src='/images/icon/race/1-off.png' alt=''/>beltrano souza, <span class='white'>General</span><br/><a href='/user/333/'>Visitante Sem Cargo</a> <a href='/clan/999//2'>2</a>" > "$_td8/cla_p1"
+printf '%s' "<a href='/user/111/'><img src='/images/icon/race/1.png' alt=''/>Chefe Grande, <span class='white'><span class='green'>Clã líder</span></span><br/><a href='/user/222/'><img src='/images/icon/race/1-off.png' alt=''/>beltrano souza, <span class='white'>General</span><br/><a href='/user/333/'>Visitante Sem Cargo</a> <a href='/clan/999//2'>2</a><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td8/cla_p1"
 printf '%s' "<a href='/user/444/'><img src='/images/icon/race/0.png' alt=''/>Fulano Silva, <span class='white'>Soldado</span>" > "$_td8/cla_p2"
 # Marcacao da "Lista de amigos" real (13/09), com o link "Exclui" de cada amigo.
 printf '%s' "<a href='/mail/'><img src='/images/icon/mail.png' alt=''/></a><div class='block_zero'><img src='/images/icon/race/1-off.png' alt=''/> <a href='/user/555/'>Amigo Um</a>, <img src='/images/icon/level.png' alt=''/> 61 nível <span class='medium'>( <a href='/mail/555/'>Escrever</a> / <a href='/mail/friends/delete/555?r=91'>Exclui</a> )</span><br/><img src='/images/icon/race/0.png' alt=''/> <a href='/user/666/'>Amigo Dois</a>, <img src='/images/icon/level.png' alt=''/> 95 nível <span class='medium'>( <a href='/mail/666/'>Escrever</a> / <a href='/mail/friends/delete/666?r=92'>Exclui</a> )</span></div><a href='/user/777/'>Nao Amigo</a>" > "$_td8/amigos"
@@ -3105,7 +3107,7 @@ _al47() { # com_lista_antiga(sim|nao|cortada) -> "lista|rc"
       run_curl_exec() { case "$1" in
           */user/5/) echo "<title>Amigo Um</title><a href='/user/5?show=might'>Poder</a>"
                      [ "$MODO" = cortada ] && return 56 ;;
-          */clan/999) [ "$MODO" = cortada ] && echo "<a href='/user/9/'><img src='/r.png' alt=''/>Membro Cla, <span class='white'>Soldado</span>" ;;
+          */clan/999) [ "$MODO" = cortada ] && echo "<a href='/user/9/'><img src='/r.png' alt=''/>Membro Cla, <span class='white'>Soldado</span><script>jsInterface.event(\"user=1;level=1\")</script>" ;;
           *) : ;; esac; return 0; }
       # Como o time_exit real: so o curl 28 conta como falha.
       time_exit() { wait "$!" 2>/dev/null; [ $? = 28 ] && return 1; return 0; }
@@ -6038,6 +6040,13 @@ check "setup: opcoes 1 a 7 em sequencia, sem linha em branco no meio" "4 - Testa
     "`printf '%s\n' "$_r" | grep -A1 '4 - Testar Login' | sed 's/^ *//' | tr '\n' '|' | sed 's/|$//'`"
 check "setup: menu le as opcoes 5 e 6" 2 \
     "`grep -c -E '^        (5\) atualizar_menu|6\) modo_menu) ;;$' "$ROOT/setup.sh"`"
+# Italico no menu (pedido do dono, 07/11): liga na entrada, cada cor volta ao
+# italico, e a saida devolve o terminal ao normal.
+_r=`printf '0\n' | HOME="$_td77/h" sh "$ROOT/setup.sh" 2>&1 | od -An -c | tr -d ' \n'`
+_ri=""; case "$_r" in 033\[3m*) _ri="liga" ;; esac
+case "$_r" in *033\[0m033\[3m*) _ri="$_ri volta" ;; esac
+case "$_r" in *Saindo...\\n033\[0m) _ri="$_ri sai_normal" ;; esac
+check "setup: italico no menu, cores voltam ao italico, saida normal" "liga volta sai_normal" "$_ri"
 
 # Titulo de tela centralizado: 40 colunas, 15 letras -> 12 espacos antes.
 _r=`( _fn77; titulo "Modo de Batalha" | sed -n 2p )`
@@ -6262,8 +6271,8 @@ _perfil78 3386065 "Abyssal Draco" > "$_td78/p_draco"
 _perfil78 473431 "Grimlock" > "$_td78/p_proprio"
 # Sessao caida: pagina de visitante.
 printf '%s' "<title>Error 404: Page not found</title>" > "$_td78/p_visitante"
-printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><br/><a href='/user/72/'><img src='/images/icon/race/0.png' alt=''/>Aliado Dois, <span class='white'>General</span>" > "$_td78/c_777"
-printf '%s' "<a href='/user/81/'><img src='/images/icon/race/1.png' alt=''/>Meu Chefe, <span class='white'><span class='green'>Clã líder</span></span>" > "$_td78/c_999"
+printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><br/><a href='/user/72/'><img src='/images/icon/race/0.png' alt=''/>Aliado Dois, <span class='white'>General</span><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td78/c_777"
+printf '%s' "<a href='/user/81/'><img src='/images/icon/race/1.png' alt=''/>Meu Chefe, <span class='white'><span class='green'>Clã líder</span></span><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td78/c_999"
 
 # Ambiente de uma conta: $1 = pasta da conta, $2 = "pedidos" de saida.
 _conta78() {
@@ -6308,10 +6317,46 @@ sleep 1; printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/
 _r=`( _conta78 d; aliados_montar 1 > /dev/null 2>&1; grep -c '/user/3386065/' "$_td78/pedidos" )`
 check "aliados: lista mudou no setup, o perfil e buscado de novo" 1 "$_r"
 # Quem sai do cla aliado deixa de ser aliado na volta seguinte.
-printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span>" > "$_td78/c_777"
+printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td78/c_777"
 printf 'c|777\n' > "$_td78/home/.sls/aliados_BR.conf"
 _r=`( _conta78 e; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
 check "aliados: quem saiu do cla aliado vira inimigo" "Aliado_Um Meu_Chefe " "$_r"
+# Sessao caiu na pagina do cla aliado: nao e "cla que nao existe". Os nomes
+# guardados ficam e nao sai marca nova (antes gravava c|777|- e o cla
+# inteiro perdia a protecao ate a volta de 12h).
+cp "$_td78/c_777" "$_td78/c_777.ok"
+printf '%s' "<form><input name='pass'/></form><script>jsInterface.event(\"user=0\")</script>" > "$_td78/c_777"
+sleep 1; printf 'c|777\n' > "$_td78/home/.sls/aliados_BR.conf"
+_r=`( _conta78 g; aliados_montar 1 > /dev/null 2>&1; printf '%s|%s' "$?" "\`tr '\n' ' ' < "$TMP/allies.txt"\`" )`
+check "aliados: sessao caida no cla aliado nao apaga o cla" "1|Aliado_Um Meu_Chefe |c|777|Aliado Um" \
+    "$_r|`tr '\n' ' ' < "$_td78/home/.sls/aliados_BR.nomes" | sed 's/ $//'`"
+mv "$_td78/c_777.ok" "$_td78/c_777"
+# Conta sem cla: o aviso do clan_id nao vira nome na lista.
+printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"
+_r=`( _conta78 h; CLD=""; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
+      run_curl_exec() { case "$1" in
+          */user/3386065/) cat "$_td78/p_draco" ;;
+          */clan) echo "<div>Sem cla</div><script>jsInterface.event(\"user=473431;level=91\")</script>" ;;
+          *) : ;; esac; }
+      aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
+check "aliados: conta sem cla nao grava o aviso do clan_id como aliado" "Abyssal_Draco " "$_r"
+# Antes de cada batalha do cronograma: lista refeita na espera depois da
+# inscricao, so com folga de 120s ate a entrada (nunca atrasa a luta).
+_apl78() { # MMSS_agora DE ATE -> "refez|marcou" ou "-"
+    ( TMP="$_td78/apl"; export TMP; mkdir -p "$TMP"; . "$LIB/allies.sh" > /dev/null 2>&1
+      date() { case "$1" in +%M%S) echo "$_A" ;; *) command date "$@" ;; esac; }
+      allies_refresh() { printf 'refez'; return 0; }; ativ_marcar() { printf '|%s' "$1"; }
+      _A="$1"; aliados_antes_da_luta "$2" "$3"; printf '.' )
+}
+check "aliados antes da luta: inscrito em :55:30, Torneio entra em :59 -> refaz" "refez|aliados3." "`_apl78 5530 5500 5900`"
+check "aliados antes da luta: so 80s ate a entrada -> nao atrasa a luta" "." "`_apl78 5810 5500 5900`"
+check "aliados antes da luta: Rei em :25:05 (minuto com zero) -> refaz" "refez|aliados3." "`_apl78 2505 2500 2950`"
+check "aliados antes da luta: fora da janela -> nada" "." "`_apl78 0005 5500 5900`"
+_r=$( TMP="$_td78/apl2"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
+      _n=0; date() { case "$1" in +%M%S) echo "$_A" ;; *) command date "$@" ;; esac; }
+      sleep() { _A=$((_A + 100)); }; aliados_antes_da_luta() { _n=$((_n + 1)); }
+      _A=5530; espera_janela 5500 5900; echo "$_n" )
+check "espera_janela: refaz os aliados uma vez so, antes de esperar" 1 "$_r"
 # Servidor russo usa a lista dele.
 printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/home/.sls/aliados_RU.conf"
 _r=`( _conta78 f; SLS_TAG=RU; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
@@ -6331,6 +6376,18 @@ _fn78() { HOME="$_td78/sh"; mkdir -p "$HOME/.sls"; . "$_td78/setup_fn.sh"
           SLS_EMOJI=0; carregar_icones; }
 _r=`( _fn78; ACCOUNTS_FILE="$_td78/nada"; show_menu ) | grep -c '7 - Adicionar Aliados'`
 check "setup: menu com 7 - Adicionar Aliados" 1 "$_r"
+# ---- setup: 8 - Iniciar Bot (o setup da lugar ao play.sh)
+_r=`( _fn78; ACCOUNTS_FILE="$_td78/nada"; show_menu ) | grep -c '8 - Iniciar Bot'`
+check "setup: menu com 8 - Iniciar Bot, lido pelo laco" "1 1" "$_r `grep -c '^        8) iniciar_bot ;;$' "$ROOT/setup.sh"`"
+mkdir -p "$_td78/raiz8"
+printf 'echo PLAY\n' > "$_td78/raiz8/play.sh"; printf 'echo STATUS\n' > "$_td78/raiz8/status.sh"
+printf '1|Ana|YQ==\n' > "$_td78/contas8"
+_ib78() { # arquivo_de_contas bot_no_ar(0|1) -> o que abriu
+    ( _fn78; SLSDIR="$_td78/raiz8"; ACCOUNTS_FILE="$1"; _no_ar="$2"
+      bot_no_ar() { return "$_no_ar"; }
+      iniciar_bot; echo MENU ) 2>&1 | tail -n 1; }
+check "setup: iniciar sem conta volta ao menu; parado abre o play.sh; no ar so o painel" \
+    "MENU PLAY STATUS" "`_ib78 "$_td78/nada" 1` `_ib78 "$_td78/contas8" 1` `_ib78 "$_td78/contas8" 0`"
 _r=`( _fn78; printf '\n' | aliados_listar ) 2>&1 | grep -c -i 'cannot open\|No such'`
 check "setup: listar sem lista nenhuma nao mostra erro de arquivo" 0 "$_r"
 _r=""
