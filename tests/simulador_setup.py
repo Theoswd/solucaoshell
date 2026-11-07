@@ -436,7 +436,7 @@ def bateria(amb):
     tela = t.esperar('Opcao:')
     for l in ('SLS - Gerenciador de Contas', '1 - Listar Contas', '2 - Adicionar Conta',
               '3 - Remover Contas', '4 - Testar Login', '5 - Atualizar Repositorio',
-              '6 - Modo de Batalha', '7 - Adicionar Aliados', '0 - Sair'):
+              '6 - Modo de Batalha', '7 - Adicionar Aliados', '8 - Iniciar Bot', '0 - Sair'):
         checar('menu: ' + l, l in tela)
     # Titulo centralizado: 44 colunas.
     lt = [l for l in tela.splitlines() if 'Gerenciador' in l][0]

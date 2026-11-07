@@ -6040,6 +6040,13 @@ check "setup: opcoes 1 a 7 em sequencia, sem linha em branco no meio" "4 - Testa
     "`printf '%s\n' "$_r" | grep -A1 '4 - Testar Login' | sed 's/^ *//' | tr '\n' '|' | sed 's/|$//'`"
 check "setup: menu le as opcoes 5 e 6" 2 \
     "`grep -c -E '^        (5\) atualizar_menu|6\) modo_menu) ;;$' "$ROOT/setup.sh"`"
+# Italico no menu (pedido do dono, 07/11): liga na entrada, cada cor volta ao
+# italico, e a saida devolve o terminal ao normal.
+_r=`printf '0\n' | HOME="$_td77/h" sh "$ROOT/setup.sh" 2>&1 | od -An -c | tr -d ' \n'`
+_ri=""; case "$_r" in 033\[3m*) _ri="liga" ;; esac
+case "$_r" in *033\[0m033\[3m*) _ri="$_ri volta" ;; esac
+case "$_r" in *Saindo...\\n033\[0m) _ri="$_ri sai_normal" ;; esac
+check "setup: italico no menu, cores voltam ao italico, saida normal" "liga volta sai_normal" "$_ri"
 
 # Titulo de tela centralizado: 40 colunas, 15 letras -> 12 espacos antes.
 _r=`( _fn77; titulo "Modo de Batalha" | sed -n 2p )`
@@ -6369,6 +6376,18 @@ _fn78() { HOME="$_td78/sh"; mkdir -p "$HOME/.sls"; . "$_td78/setup_fn.sh"
           SLS_EMOJI=0; carregar_icones; }
 _r=`( _fn78; ACCOUNTS_FILE="$_td78/nada"; show_menu ) | grep -c '7 - Adicionar Aliados'`
 check "setup: menu com 7 - Adicionar Aliados" 1 "$_r"
+# ---- setup: 8 - Iniciar Bot (o setup da lugar ao play.sh)
+_r=`( _fn78; ACCOUNTS_FILE="$_td78/nada"; show_menu ) | grep -c '8 - Iniciar Bot'`
+check "setup: menu com 8 - Iniciar Bot, lido pelo laco" "1 1" "$_r `grep -c '^        8) iniciar_bot ;;$' "$ROOT/setup.sh"`"
+mkdir -p "$_td78/raiz8"
+printf 'echo PLAY\n' > "$_td78/raiz8/play.sh"; printf 'echo STATUS\n' > "$_td78/raiz8/status.sh"
+printf '1|Ana|YQ==\n' > "$_td78/contas8"
+_ib78() { # arquivo_de_contas bot_no_ar(0|1) -> o que abriu
+    ( _fn78; SLSDIR="$_td78/raiz8"; ACCOUNTS_FILE="$1"; _no_ar="$2"
+      bot_no_ar() { return "$_no_ar"; }
+      iniciar_bot; echo MENU ) 2>&1 | tail -n 1; }
+check "setup: iniciar sem conta volta ao menu; parado abre o play.sh; no ar so o painel" \
+    "MENU PLAY STATUS" "`_ib78 "$_td78/nada" 1` `_ib78 "$_td78/contas8" 1` `_ib78 "$_td78/contas8" 0`"
 _r=`( _fn78; printf '\n' | aliados_listar ) 2>&1 | grep -c -i 'cannot open\|No such'`
 check "setup: listar sem lista nenhuma nao mostra erro de arquivo" 0 "$_r"
 _r=""

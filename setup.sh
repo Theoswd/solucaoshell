@@ -51,6 +51,14 @@ DIM='[2m'
 WHITE='[1;37m'
 RESET='[0m'
 
+# ITALICO EM TODO O MENU (pedido do dono, 07/11). As cores somam ao italico;
+# o RESET volta ao italico, nao ao texto normal. O NORMAL devolve o terminal
+# como estava: na saida do setup (trap EXIT) e antes de cada exec, que nao
+# passa pelo trap.
+ITALICO='[3m'
+NORMAL="$RESET"
+RESET="$NORMAL$ITALICO"
+
 show_menu() {
     clear
     medir_tela
@@ -74,7 +82,8 @@ show_menu() {
     printf "   %b4%b - Testar Login\n"    "$A1" "$RESET"
     printf "   %b5%b - Atualizar Repositorio\n" "$A1" "$RESET"
     printf "   %b6%b - Modo de Batalha\n"       "$A1" "$RESET"
-    printf "   %b7%b - Adicionar Aliados\n\n"   "$A1" "$RESET"
+    printf "   %b7%b - Adicionar Aliados\n"     "$A1" "$RESET"
+    printf "   %b8%b - Iniciar Bot\n\n"         "$A1" "$RESET"
     printf "   %b0%b - Sair\n\n"          "$DIM" "$RESET"
 
     # Aviso so quando o arquivo de contas nao esta no lugar padrao.
@@ -496,6 +505,7 @@ git_pull_setup() {
     printf "\n%sSubindo o bot...\n" "$E_SOBE"
     sleep 2
     # O play.sh fica com o terminal (painel); o setup termina aqui.
+    printf '%s' "$NORMAL"
     exec sh "$SLSDIR/play.sh"
 }
 
@@ -864,6 +874,27 @@ aliado_remover() {
     sleep 2
 }
 
+# ---- 8. Iniciar Bot --------------------------------------------------------
+#
+# O setup da lugar ao play.sh, que sobe as contas e fica no painel. Com o bot
+# ja no ar, o play.sh tomaria o painel de outro terminal: abre o status.sh,
+# que so mostra o painel.
+iniciar_bot() {
+    if [ -z "$(contas_validas)" ]; then
+        printf "\n${RED}Nenhuma conta cadastrada: use a opcao 2 - Adicionar Conta.${RESET}\n"
+        sleep 2; return
+    fi
+    if bot_no_ar; then
+        printf "\nO bot ja esta rodando. Abrindo o painel...\n%s" "$NORMAL"
+        exec sh "$SLSDIR/status.sh"
+    fi
+    printf '%s' "$NORMAL"
+    exec sh "$SLSDIR/play.sh"
+}
+
+trap 'printf "%s" "$NORMAL"' EXIT
+printf '%s' "$ITALICO"
+
 emoji_perguntar
 carregar_icones
 
@@ -879,6 +910,7 @@ while true; do
         5) atualizar_menu ;;
         6) modo_menu ;;
         7) aliados_menu ;;
+        8) iniciar_bot ;;
         0) printf "\nSaindo...\n"; exit 0 ;;
     esac
 done
