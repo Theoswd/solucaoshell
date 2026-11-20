@@ -13,13 +13,11 @@ blessing_url_bloqueada() {
                 return 0
                 ;;
             *'/trade/exchange/gold/'*)
-                # No russo (tiwar.ru) este link COMPRA prata gastando ouro;
-                # no BR e a troca prata -> ouro de todo dia (trade.sh).
-                if [ "${SLS_TAG:-BR}" = RU ]; then
-                    _BL_MOTIVO="Cambio ouro->prata"
-                    unset _bl_arg
-                    return 0
-                fi
+                # Nos dois servidores este link COMPRA prata gastando ouro; a
+                # troca prata -> ouro e o silver/ (trade.sh).
+                _BL_MOTIVO="Cambio ouro->prata"
+                unset _bl_arg
+                return 0
                 ;;
         esac
     done

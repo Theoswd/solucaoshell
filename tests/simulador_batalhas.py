@@ -211,7 +211,7 @@ class Luta:
                 "<img src='/images/icon/silver.png' alt='s'/> 408,1M<br/>" % hp)
 
     def rodape(self):
-        return "<script>jsInterface.event(\"user=473431;level=91\")</script>"
+        return "<script>jsInterface.event(\"user=482917;level=91\")</script>"
 
     def pagina(self, sid):
         t = self.atualizar()

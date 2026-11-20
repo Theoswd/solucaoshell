@@ -32,10 +32,14 @@ export URL UR TMP TMP_COOKIE
 # Fuso do servidor da conta. Todo o cronograma le o relogio local: as
 # janelas dos eventos, a troca e a Liga do dia, o coliseu da madrugada e o
 # dia 1. O russo (tiwar.ru) roda no horario de Moscou, o do proprio servidor
-# (cronograma_ru, em run.sh).
+# (cronograma_ru, em run.sh); o BR no de Brasilia.
+# Fuso fixo (POSIX), sem depender do banco de fusos (tzdata): sem ele um nome
+# como "Europe/Moscow" vira UTC calado. Sem horario de verao em Moscou desde
+# 2014 e em Brasilia desde 2019; se o Brasil voltar a ter, mudar aqui e no
+# painel (panel.sh, BRT_TZ).
 case "$SLS_TAG" in
-    RU) export TZ="Europe/Moscow" ;;
-    *)  export TZ="America/Bahia" ;;
+    RU) export TZ="MSK-3" ;;
+    *)  export TZ="<-03>3" ;;
 esac
 
 mkdir -p "$TMP"
@@ -69,7 +73,7 @@ for _lib in \
     clancoliseum.sh clancommand.sh king.sh undying.sh trade.sh career.sh \
     cave.sh allies.sh check.sh league.sh clanquest.sh \
     specialevent.sh function.sh \
-    blessing.sh
+    blessing.sh bossfight.sh
 do
     [ -f "$LIBDIR/$_lib" ] && . "$LIBDIR/$_lib"
 done

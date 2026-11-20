@@ -141,6 +141,9 @@ cq_assumir() {
 #   Interpretada por: ... Ajudante: ... <a href='/lab/alchemy/'>Vá lá</a>
 #   <a href='/clan/ID/quest/delete/7/?r=N'>Cancelar missão</a>
 #
+# No RU (pagina de 20/11/2026) e "Прогресс: 5 из 15", "Награда" e
+# "Перейти к выполнению".
+#
 # Devolve 1 (e nada imprime) quando a missao nao esta com a conta ou acabou.
 cq_falta() {
     cq_pagina || return 1
@@ -148,14 +151,14 @@ cq_falta() {
         /^a [^>]*\/quest\/delete\/[0-9]+\// {
             n = $0; sub(/.*\/quest\/delete\//, "", n); sub(/\/.*/, "", n)
             if (n == id) {
-                p = txt; sub(/.*Progresso: */, "", p)
-                feito = p + 0; sub(/^[0-9]+ *de */, "", p); alvo = p + 0
+                p = txt; sub(/.*(Progresso|Прогресс): */, "", p)
+                feito = p + 0; sub(/^[0-9]+ *(de|из) */, "", p); alvo = p + 0
                 if (vai && alvo > feito) { print alvo - feito; ok = 1 }
                 exit
             }
             txt = ""; vai = 0; next
         }
-        /Trof/ { vai = 0 }
+        /Trof|Награда/ { vai = 0 }
         /^a / && !/\/user\/|\/clan\// { vai = 1 }
         { l = $0; sub(/^[^>]*>/, " ", l); gsub(/[ \t\r]+/, " ", l); txt = txt l }
         END { exit !ok }'

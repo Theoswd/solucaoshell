@@ -15,9 +15,11 @@ FILTRO_EV="$1"
 FILTRO_CONTA="$2"
 BASE="${SLS_HOME:-$HOME/.sls}"
 
-for _d in "$BASE"/BR_*; do
+# Contas BR e RU; a russa aparece com a sigla, como no painel.
+for _d in "$BASE"/BR_* "$BASE"/RU_*; do
     [ -d "$_d" ] || continue
-    _c=${_d##*/BR_}
+    _c=${_d##*/}
+    case "$_c" in RU_*) _c="[RU] ${_c#RU_}" ;; *) _c=${_c#BR_} ;; esac
     if [ -n "$FILTRO_CONTA" ]; then
         case "$_c" in *"$FILTRO_CONTA"*) ;; *) continue ;; esac
     fi
@@ -79,4 +81,5 @@ for _d in "$BASE"/BR_*; do
         }'
 done | sort -t'|' -k1,1 -k2,2 | awk -F'|' '
     $1 != ultimo { if (NR > 1) print ""; print "== " $1; ultimo = $1 }
-    { printf "  %-18s %s\n", $2, $3 }'
+    { printf "  %-18s %s\n", $2, $3 }
+    END { if (NR == 0) print "Nenhuma batalha nos logs das contas ainda." }'

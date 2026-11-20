@@ -579,10 +579,11 @@ tarefas_livres() {
         ativ_marcar torneq
     fi
 
-    # --- Arena, sempre tomando antes a missao do cla que ela completa
+    # --- Arena, sempre tomando antes a missao do cla que ela completa. No
+    # RU a energia e do chefe, e a arena so com missao dela (energia_ru).
     liga_fora_da_inscricao || return 0
     if arena_liberada; then
-        arena_duel
+        if [ "${SLS_TAG:-BR}" = RU ]; then energia_ru; else arena_duel; fi
         arena_marcar
     fi
 

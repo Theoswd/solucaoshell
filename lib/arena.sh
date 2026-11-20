@@ -37,22 +37,15 @@ arena_duel() {
         sleep 0.6s
     done
 
-    # Sem ataque: nem mochila nem missao (nada mudou nelas).
+    # Sem ataque: nem missao (nada mudou nela).
     if [ "$count" -eq 0 ]; then
         printf "Arena ok\n"
         return 0
     fi
 
-    fetch_page "/inv/bag/"
-    SELL=`grep -o -E '(/inv/bag/sellAll/1/[?]r[=][0-9]+)' "$TMP/SRC" | sed -n '1p'`
-    # Sem nada a vender o fetch_page "" pediria a HOME (e o painel piscaria
-    # "Pagina Principal").
-    if [ -n "$SELL" ]; then
-        fetch_page "$SELL"
-        printf "Sell all items ok\n"
-    else
-        printf "Nada a vender na mochila\n"
-    fi
+    # Sem "vender tudo": o link /inv/bag/sellAll/ nao existe mais (paginas
+    # reais de 20/11/2026). No BR o jogo vende sozinho pela opcao "Vender:
+    # raro+/comum+" da mochila; no RU nao ha mochila (/inv/bag/ da 404).
 
     checkQuest 3 end
     checkQuest 4 end
@@ -61,6 +54,8 @@ arena_duel() {
 }
 
 arena_fullmana() {
+    # RU: a energia que sobra vai para o chefe (regra do dono, bossfight.sh).
+    if [ "${SLS_TAG:-BR}" = RU ]; then bossfight_func; return; fi
     printf "energy arena ...\n"
     (
         run_curl_exec "${URL}/arena/quit" | sed "s/href='/\n/g" | grep 'attack/1' | head -n1 | awk -F/ '{ print $5 }' | tr -cd '[:digit:]' > "$TMP/ARENA"

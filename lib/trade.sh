@@ -1,13 +1,16 @@
 # TROCA PRATA -> OURO, UMA VEZ POR DIA.
 #
 # Unico ponto do bot que mexe com ouro, no sentido de GANHAR (paga em prata).
-#   /trade/exchange/gold/1?r=N       1800 prata ->   1 ouro
-#   /trade/exchange/gold/10?r=N     18000 prata ->  10 ouro
-#   /trade/exchange/gold/100?r=N   180000 prata -> 100 ouro
+# Nos DOIS servidores (paginas reais: tiwar.ru 26/10, furiadetitas.net 20/11):
+#   /trade/exchange/silver/N?r=R   prata -> N ouro  ("Troca 8'190 -> 10")
+#   /trade/exchange/gold/N?r=R     N ouro -> prata  ("Comprar 18200 para 10")
+# O gold/ GASTA ouro e fica barrado no HTTP (blessing.sh). O BR clicava nele
+# achando que era prata -> ouro: ate a 3.9.132 a troca do BR gastava ouro.
+# Os lotes sao 1, 10 e "tudo o que o nivel deixa" (91 no nivel 91), com o
+# custo em prata escrito no proprio botao.
 #
 # So usa um lote se o saldo aguentar essa mesma troca, uma por dia, durante
-# FUNC_trade_dias (padrao 365): lote 100 pede 65.700.000 de prata, lote 10
-# 6.570.000, lote 1 657.000; abaixo disso nao troca.
+# FUNC_trade_dias (padrao 365); abaixo disso nao troca.
 #
 # UMA OLHADA POR DIA: $TMP/last_trade guarda a data, gravada a cada pagina
 # lida, trocando ou nao. Sem saldo legivel, o dia fica em aberto.
@@ -20,17 +23,10 @@
 # mexem): subiu o lote, a troca saiu; igual, tenta de novo (duas tentativas
 # no dia); ouro ilegivel ou abreviado, nao arrisca e da o dia por feito.
 
-# SERVIDOR RUSSO (tiwar.ru): O CAMBIO E INVERTIDO.
-#   /trade/exchange/silver/N?r=R   prata -> N ouro   ("Обменять 6'724 -> 41")
-#   /trade/exchange/gold/N?r=R     N ouro -> prata   ("Купить 41000 за 100")
-# O link que no BR GANHA ouro, no russo GASTA ouro. Os lotes russos sao 1, 10
-# e "tudo o que o nivel deixa" (41 no nivel 41), com o custo em prata escrito
-# no proprio botao. A regra e a mesma do BR: o maior lote cuja prata aguente
-# essa troca uma vez por dia durante FUNC_trade_dias. E o gold/ fica barrado
-# no HTTP para conta russa (blessing.sh).
-#
-#   trade_lote_ru PRATA DIAS  ->  _lote e _cl (vazios: nenhum lote cabe)
-trade_lote_ru() {
+# O maior lote silver/N cuja prata aguente essa troca uma vez por dia durante
+# FUNC_trade_dias, com o custo lido do botao.
+#   trade_lote PRATA DIAS  ->  _lote e _cl (vazios: nenhum lote cabe)
+trade_lote() {
     set -- `awk -v p="$1" -v d="$2" -v q="'" '
         { t = t $0 " " }
         END {
@@ -127,14 +123,7 @@ func_trade() {
     _prata=`valor_num "$_pr"`
     case "$_prata" in ''|*[!0-9]*) _prata=0 ;; esac
 
-    if [ "${SLS_TAG:-BR}" = RU ]; then
-        trade_lote_ru "$_prata" "$_dias"
-    elif [ "$_prata" -ge $((180000 * _dias)) ]; then _lote=100
-    elif [ "$_prata" -ge $((18000  * _dias)) ]; then _lote=10
-    elif [ "$_prata" -ge $((1800   * _dias)) ]; then _lote=1
-    else
-        _lote=""
-    fi
+    trade_lote "$_prata" "$_dias"
     if [ -z "$_lote" ]; then
         printf "Trade: prata insuficiente para trocar com seguranca (%s)\n" "$_pr"
         [ -n "$_pr" ] && printf %s "$_hoje" > "$TMP/last_trade" 2>/dev/null
@@ -143,8 +132,6 @@ func_trade() {
         return 0
     fi
 
-    [ "${SLS_TAG:-BR}" = RU ] || \
-        _cl=`grep -o -E "/trade/exchange/gold/${_lote}[?]r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -z "$_cl" ]; then
         printf "Trade: lote de %s indisponivel agora\n" "$_lote"
         printf %s "$_hoje" > "$TMP/last_trade" 2>/dev/null

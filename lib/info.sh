@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.131"
+versionNum="3.9.132"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -1472,9 +1472,10 @@ fetch_train_stats() {
     _fx=`printf '%s' "$_t" | grep -o -E ': [0-9]+' | sed -n '5s/: //p'`
     [ -n "$_fx" ] && FIXMP=$_fx
     unset _fx
-    # Teto de energia, com o sufixo K/M. Mesma regra do status_ler: entre o
-    # rotulo e o numero vem "</span> <span class='white'>".
-    ACC_ENE=`printf '%s' "$_t" | grep -o -E "Energia:?[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
+    # Teto de energia, com o sufixo K/M; rotulo do BR ou do RU (Энергия).
+    # Mesma regra do status_ler: entre o rotulo e o numero vem
+    # "</span> <span class='white'>".
+    ACC_ENE=`printf '%s' "$_t" | grep -o -E "(Energia|Энергия):?[^0-9]{0,40}[0-9][0-9.,']{0,14}[KMBkmb]?" | grep -o -E "[0-9][0-9.,']{0,14}[KMBkmb]?$" | head -n1`
     # Pagina com o HP maximo e sem a energia: a falta e da pagina, nao da rede.
     _FT_SEM_ENE=0
     [ -z "$ACC_ENE" ] && [ "$_ft_hp" = 1 ] && _FT_SEM_ENE=1
@@ -1502,9 +1503,9 @@ player_stats() {
     echo "$PLAYER_STRENGTH"
 }
 
-# Le a agenda oficial do jogo em /fights/ e grava em ~/.sls/agenda.
-# O /fights/ lista, sob cada evento, o HORARIO ABSOLUTO e uma descricao
-# livre (ignorada):
+# Le a agenda oficial do jogo em /fights/timetable/ e grava em ~/.sls/agenda.
+# O /fights/ so traz a contagem ("Para iniciar: 02:31"); o cronograma lista,
+# sob cada evento, o HORARIO ABSOLUTO e uma descricao livre (ignorada):
 #
 #   Vale dos Imortais
 #   10:00 BRT - Tempo para o inicio 1 hora
@@ -1518,7 +1519,7 @@ atualiza_agenda() {
     _ag="$HOME/.sls/agenda"
 
     SLS_MAXTIME=17
-    _pg=`run_curl "${URL}/fights/" 2>/dev/null`
+    _pg=`run_curl "${URL}/fights/timetable/" 2>/dev/null`
     unset SLS_MAXTIME
     [ -n "$_pg" ] || return 1
 

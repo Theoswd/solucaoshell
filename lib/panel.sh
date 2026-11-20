@@ -515,8 +515,12 @@ painel_render() {
     '
 }
 
+# Hora de Brasilia, fixa como a do worker BR (sls.sh): sem tzdata, um nome
+# de fuso viraria UTC.
+BRT_TZ='<-03>3'
+
 # Agenda de eventos, extraida do case de horarios do run.sh.
-# Horarios em America/Bahia (BRT), que e o fuso usado pelos workers.
+# Horarios de Brasilia (BRT), que e o fuso usado pelos workers BR.
 EVENTOS="0030|Caverna
 0245|Coliseu
 0925|Evento especial
@@ -648,7 +652,7 @@ proximo_evento() {
             _pe_idade=$(( $(date +%s) - $(stat -c %Y "$_pe_ag" 2>/dev/null || echo 0) ))
             [ "$_pe_idade" -lt 7200 ] && _pe_agenda=`cat "$_pe_ag"`
         fi
-        _hhmm_min "`TZ=America/Bahia date +%H%M`"
+        _hhmm_min "`TZ=$BRT_TZ date +%H%M`"
         _pe_ai=$_HM
     fi
     [ "$_pe_ai" -lt 0 ] && _pe_ai=0
@@ -1015,7 +1019,7 @@ case "$PANEL_LOG_LINHAS" in ''|*[!0-9]*) PANEL_LOG_LINHAS=2 ;; esac
 # garantia, a cada 30 redesenhos.
 painel_relogio() {
     if [ -z "$_PE_BAHIA" ] || [ $(( _agora_ep - ${_PE_BAHIA_EM:-0} )) -ge 3600 ]; then
-        set -- `TZ=America/Bahia date '+%s %H %M %S'`
+        set -- `TZ=$BRT_TZ date '+%s %H %M %S'`
         _PE_BAHIA=$(( ${2#0} * 3600 + ${3#0} * 60 + ${4#0} - $1 % 86400 + 86400 ))
         _PE_BAHIA_EM="$_agora_ep"
     fi
