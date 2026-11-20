@@ -1,6 +1,6 @@
 # CRONOGRAMA DO SERVIDOR RUSSO (tiwar.ru), EM HORARIO DE MOSCOU.
 #
-# Tabela propria do russo: o worker da conta RU roda com TZ=Europe/Moscow
+# Tabela propria do russo: o worker da conta RU roda com TZ=MSK-3
 # (sls.sh), entao estes horarios sao os do servidor. Lidos do
 # /fights/timetable/ em 26/10/2026 (inicio da batalha, em MSK):
 #

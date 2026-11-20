@@ -121,7 +121,7 @@ O modo fica salvo por conta. Com o bot rodando, o setup oferece reiniciar as con
 O bot não ataca aliados: troca de alvo quando cai num deles. São aliados:
 
 - quem é do mesmo clã da conta (automático);
-- os jogadores e clãs que você adicionar no `setup.sh`, opção **7**, pelo ID ou colando o link (`.../user/473431/` ou `.../clan/2092`).
+- os jogadores e clãs que você adicionar no `setup.sh`, opção **7**, pelo ID ou colando o link (`.../user/482917/` ou `.../clan/2671`).
 
 A lista é uma por servidor e vale para todas as contas dele. A lista de amigos do jogo não conta. O bot confere cada ID já logado e mostra o nome em **3 - Listar aliados**. A lista é refeita ao subir cada conta e a cada 12 horas: quem sai do clã e não está na lista volta a ser inimigo.
 

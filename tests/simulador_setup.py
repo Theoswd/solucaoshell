@@ -53,17 +53,17 @@ ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
 
 # Contas do jogo: (servidor, nome) -> senha, id, cla
 CONTAS = {
-    ('BR', 'Grimlock'):      {'senha': 's3nha forte&%', 'id': 473431,  'cla': 2092},
-    ('BR', 'Abyssal Draco'): {'senha': 'draco123',      'id': 3386065, 'cla': 2092},
+    ('BR', 'Gaviao'):      {'senha': 'p4sso livre&%', 'id': 482917,  'cla': 2671},
+    ('BR', 'Alfa Rubro'): {'senha': 'rubro123',      'id': 3091574, 'cla': 2671},
     ('RU', 'Ivan'):          {'senha': 'privet',        'id': 9001,    'cla': 5},
 }
 # Jogadores (com e sem conta no bot) por servidor: id -> [nome, cla]
 JOGADORES = {
-    'BR': {473431: ['Grimlock', 2092], 3386065: ['Abyssal Draco', 2092],
+    'BR': {482917: ['Gaviao', 2671], 3091574: ['Alfa Rubro', 2671],
            555: ['Fulano Silva', 777], 556: ['Ciclano', 777], 600: ['Sem Cla', None]},
     'RU': {9001: ['Ivan', 5], 9002: ['Boris', 5]},
 }
-CLAS = {'BR': {2092: 'Abyssal Millennium', 777: 'Outro Cla'}, 'RU': {5: 'Medvedi'}}
+CLAS = {'BR': {2671: 'Alfa Legiao', 777: 'Outro Cla'}, 'RU': {5: 'Medvedi'}}
 
 SESSOES = {}          # sid -> (servidor, id)
 PEDIDOS = []          # (servidor, metodo, caminho)
@@ -452,10 +452,10 @@ def bateria(amb):
            'Adicionar Conta' in tela and '1 - Servidor Brasileiro' in tela and '2 - Servidor Russo' in tela)
     t.linha('')
     t.esperar('Usuario (furiadetitas.net): ')
-    t.linha('Grimlock')
+    t.linha('Gaviao')
     t.esperar('Senha: ')
-    # Digita com um erro e apaga: "s3nha fortX" <backspace> "e&%"
-    t.mandar('s3nha fortX'); time.sleep(0.4)
+    # Digita com um erro e apaga: "p4sso livrX" <backspace> "e&%"
+    t.mandar('p4sso livrX'); time.sleep(0.4)
     t.mandar('\x7f'); time.sleep(0.2)
     t.mandar('e&%'); time.sleep(0.3)
     for _ in range(5):
@@ -467,34 +467,34 @@ def bateria(amb):
     checar('a senha em si nao aparece na tela', 'fort' not in eco)
     t.linha('')
     tela = t.esperar('Opcao:', 30)
-    checar('login confirmado e conta adicionada', 'Conta [BR] Grimlock adicionada!' in tela, tela[-400:])
-    checar('mostra o nome com que o jogo recebeu a conta', 'Logado no jogo como: Grimlock' in tela)
+    checar('login confirmado e conta adicionada', 'Conta [BR] Gaviao adicionada!' in tela, tela[-400:])
+    checar('mostra o nome com que o jogo recebeu a conta', 'Logado no jogo como: Gaviao' in tela)
     checar('bot parado: diz para rodar o ./play.sh', 'Para comecar a jogar: ./play.sh' in tela)
-    checar('o jogo recebeu a senha exata (espaco, & e %)', ('BR', 'Grimlock', 's3nha forte&%') in LOGINS)
-    linha = [l for l in ler(conf).splitlines() if l.startswith('1|Grimlock|')]
+    checar('o jogo recebeu a senha exata (espaco, & e %)', ('BR', 'Gaviao', 'p4sso livre&%') in LOGINS)
+    linha = [l for l in ler(conf).splitlines() if l.startswith('1|Gaviao|')]
     dec = base64.b64decode(linha[0].split('|', 2)[2]).decode() if linha else ''
-    checar('accounts.conf guarda login e senha certos', dec == 'login=Grimlock&pass=s3nha forte&%', dec)
+    checar('accounts.conf guarda login e senha certos', dec == 'login=Gaviao&pass=p4sso livre&%', dec)
     checar('accounts.conf com permissao 600', oct(os.stat(conf).st_mode & 0o777) == '0o600')
 
     # Senha errada: nao salva com "n".
     t.linha('2'); t.esperar('Servidor [1]: '); t.linha('1')
-    t.esperar('Usuario'); t.linha('Abyssal Draco')
+    t.esperar('Usuario'); t.linha('Alfa Rubro')
     t.esperar('Senha: '); t.linha('errada')
     tela = t.esperar('(y/n): ', 30)
     checar('senha errada: login nao confirmado, pergunta se salva', 'Login nao confirmado' in tela)
     t.linha('n')
     tela = t.esperar('Opcao:')
-    checar("'n': conta nao salva", 'Conta nao salva' in tela and 'Abyssal Draco' not in ler(conf))
+    checar("'n': conta nao salva", 'Conta nao salva' in tela and 'Alfa Rubro' not in ler(conf))
     # Agora certa (nome com espaco).
     t.linha('2'); t.esperar('Servidor [1]: '); t.linha('1')
-    t.esperar('Usuario'); t.linha('Abyssal Draco')
-    t.esperar('Senha: '); t.linha('draco123')
+    t.esperar('Usuario'); t.linha('Alfa Rubro')
+    t.esperar('Senha: '); t.linha('rubro123')
     tela = t.esperar('Opcao:', 30)
-    checar('nome com espaco adicionado', 'Conta [BR] Abyssal Draco adicionada!' in tela and
-           'Logado no jogo como: Abyssal Draco' in tela)
+    checar('nome com espaco adicionado', 'Conta [BR] Alfa Rubro adicionada!' in tela and
+           'Logado no jogo como: Alfa Rubro' in tela)
     # Recusas.
     for nome, msg in (('a|b', 'Nome nao pode conter |'), ('a/b', 'Nome nao pode conter /'),
-                      ('', 'Usuario vazio'), ('Grimlock', 'Conta [BR] Grimlock ja existe')):
+                      ('', 'Usuario vazio'), ('Gaviao', 'Conta [BR] Gaviao ja existe')):
         t.linha('2'); t.esperar('Servidor [1]: '); t.linha('1')
         t.esperar('Usuario'); t.linha(nome)
         tela = t.esperar('Opcao:')
@@ -516,15 +516,15 @@ def bateria(amb):
     t.linha('1')
     tela = t.esperar('ENTER para voltar...')
     checar('lista as 3 contas com servidor', all(x in tela for x in
-           ('[BR] Grimlock', '[BR] Abyssal Draco', '[RU] Ivan')))
+           ('[BR] Gaviao', '[BR] Alfa Rubro', '[RU] Ivan')))
     t.linha(); t.esperar('Opcao:')
     t.linha('4')
     tela = t.esperar('Numero (0 = cancelar): ')
-    checar('testar login lista as contas numeradas', '2) [BR] Abyssal Draco' in tela)
+    checar('testar login lista as contas numeradas', '2) [BR] Alfa Rubro' in tela)
     t.linha('2')
     tela = t.esperar('ENTER para voltar...', 30)
     checar('testar login: confirmado e com o nome do jogo',
-           'Login confirmado' in tela and 'Logado no jogo como: Abyssal Draco' in tela)
+           'Login confirmado' in tela and 'Logado no jogo como: Alfa Rubro' in tela)
     t.linha(); t.esperar('Opcao:')
     t.linha('4'); t.esperar('Numero'); t.linha('0')
     t.esperar('Opcao:')
@@ -541,11 +541,11 @@ def bateria(amb):
     checar('Caverna: escolher contas ou todas', '1 - Escolher contas' in tela and '2 - Definir para todas' in tela)
     t.linha('1')
     tela = t.esperar('(0 = cancelar): ')
-    checar('lista as contas com o modo atual', '1) [BR] Grimlock' in tela and 'Normal' in tela)
+    checar('lista as contas com o modo atual', '1) [BR] Gaviao' in tela and 'Normal' in tela)
     t.linha('1 3')
     tela = t.esperar('ENTER para voltar...')
-    checar('Caverna nas contas 1 e 3', '[BR] Grimlock: Normal -> Caverna' in tela and
-           '[RU] Ivan: Normal -> Caverna' in tela and 'Abyssal Draco:' not in tela)
+    checar('Caverna nas contas 1 e 3', '[BR] Gaviao: Normal -> Caverna' in tela and
+           '[RU] Ivan: Normal -> Caverna' in tela and 'Alfa Rubro:' not in tela)
     checar('bot parado: vale quando o bot subir', 'Vale quando o bot subir' in tela)
     t.linha(); t.esperar('Opcao:')
     t.linha('2'); t.esperar('Opcao:'); t.linha('2')
@@ -561,9 +561,9 @@ def bateria(amb):
     checar('numero que nao existe e recusado', 'Numero invalido' in tela)
     t.linha('0'); t.esperar('Opcao:')
     t.linha('0'); t.esperar('Opcao:')
-    checar('arquivos: Grimlock e Draco em -cl, Ivan sem modo',
-           ler(sls + '/BR_Grimlock/modo_batalha').strip() == '-cl' and
-           ler(sls + '/BR_Abyssal Draco/modo_batalha').strip() == '-cl' and
+    checar('arquivos: Gaviao e Rubro em -cl, Ivan sem modo',
+           ler(sls + '/BR_Gaviao/modo_batalha').strip() == '-cl' and
+           ler(sls + '/BR_Alfa Rubro/modo_batalha').strip() == '-cl' and
            not os.path.exists(sls + '/RU_Ivan/modo_batalha'))
     t.linha('1')
     tela = t.esperar('ENTER para voltar...')
@@ -574,18 +574,18 @@ def bateria(amb):
     # ---------------------------------------------------------------- play.sh
     secao('6. play.sh sobe cada conta no modo salvo')
     bot = Terminal(amb, './play.sh', amb.env(), cols=100)
-    ok = esperar_ate(lambda: all(subidas(amb, c) for c in ('BR_Grimlock', 'BR_Abyssal Draco', 'RU_Ivan')), 90)
+    ok = esperar_ate(lambda: all(subidas(amb, c) for c in ('BR_Gaviao', 'BR_Alfa Rubro', 'RU_Ivan')), 90)
     checar('as 3 contas subiram', ok)
-    checar('Grimlock e Draco em -cl, Ivan no normal (-boot)',
-           [s[1] for s in subidas(amb, 'BR_Grimlock')] == ['-cl'] and
-           [s[1] for s in subidas(amb, 'BR_Abyssal Draco')] == ['-cl'] and
+    checar('Gaviao e Rubro em -cl, Ivan no normal (-boot)',
+           [s[1] for s in subidas(amb, 'BR_Gaviao')] == ['-cl'] and
+           [s[1] for s in subidas(amb, 'BR_Alfa Rubro')] == ['-cl'] and
            [s[1] for s in subidas(amb, 'RU_Ivan')] == ['-boot'],
-           str([subidas(amb, c) for c in ('BR_Grimlock', 'BR_Abyssal Draco', 'RU_Ivan')]))
+           str([subidas(amb, c) for c in ('BR_Gaviao', 'BR_Alfa Rubro', 'RU_Ivan')]))
 
     # ---------------------------------------------------------------- modo com o bot no ar
     secao('7. Modo de batalha com o bot no ar')
-    pid_draco = subidas(amb, 'BR_Abyssal Draco')[-1][0]
-    pid_grim = subidas(amb, 'BR_Grimlock')[-1][0]
+    pid_rubro = subidas(amb, 'BR_Alfa Rubro')[-1][0]
+    pid_gav = subidas(amb, 'BR_Gaviao')[-1][0]
     t = setup(amb)
     t.esperar('Opcao:')
     t.linha('6'); t.esperar('Opcao:'); t.linha('1'); t.esperar('Opcao:'); t.linha('1')
@@ -595,12 +595,12 @@ def bateria(amb):
     t.linha('y')
     tela = t.esperar('ENTER para voltar...')
     checar('avisa que reinicia', 'Reiniciando' in tela)
-    ok = esperar_ate(lambda: len(subidas(amb, 'BR_Abyssal Draco')) >= 2, 90)
+    ok = esperar_ate(lambda: len(subidas(amb, 'BR_Alfa Rubro')) >= 2, 90)
     checar('o painel relancou a conta', ok)
-    checar('a conta voltou no modo novo (-cv)', subidas(amb, 'BR_Abyssal Draco')[-1][1] == '-cv',
-           str(subidas(amb, 'BR_Abyssal Draco')))
-    checar('o worker antigo morreu', not vivo(pid_draco))
-    checar('a outra conta nao foi mexida', vivo(pid_grim) and len(subidas(amb, 'BR_Grimlock')) == 1)
+    checar('a conta voltou no modo novo (-cv)', subidas(amb, 'BR_Alfa Rubro')[-1][1] == '-cv',
+           str(subidas(amb, 'BR_Alfa Rubro')))
+    checar('o worker antigo morreu', not vivo(pid_rubro))
+    checar('a outra conta nao foi mexida', vivo(pid_gav) and len(subidas(amb, 'BR_Gaviao')) == 1)
     t.linha(); t.esperar('Opcao:'); t.linha('0'); t.esperar('Opcao:')
 
     # ---------------------------------------------------------------- aliados
@@ -658,14 +658,14 @@ def bateria(amb):
                            timeout=120)
         montar.saida = (r.stdout + r.stderr)[-600:]
         return r.stdout.split('@@', 1)[-1].split()
-    nomes = montar('BR_Grimlock', 'BR', 'Grimlock', 's3nha forte&%')
+    nomes = montar('BR_Gaviao', 'BR', 'Gaviao', 'p4sso livre&%')
     checar('cla da conta + jogador 600 + membros do cla 777',
-           nomes == ['Abyssal_Draco', 'Ciclano', 'Fulano_Silva', 'Grimlock', 'Sem_Cla'],
+           nomes == ['Alfa_Rubro', 'Ciclano', 'Fulano_Silva', 'Gaviao', 'Sem_Cla'],
            str(nomes) + ' | ' + montar.saida + ' | ' + str(PEDIDOS[n_pedidos:][-12:]))
     checar('ID 99999999 (nao existe) anotado como nao encontrado',
            'j|99999999|-' in ler(sls + '/aliados_BR.nomes'))
     n = len(PEDIDOS)
-    nomes2 = montar('BR_Abyssal Draco', 'BR', 'Abyssal Draco', 'draco123')
+    nomes2 = montar('BR_Alfa Rubro', 'BR', 'Alfa Rubro', 'rubro123')
     perfis = [p for p in PEDIDOS[n:] if re.match(r'^/user/\d+/', p[2])]
     checar('a outra conta BR reusa os nomes (nao pede os perfis de novo)', nomes2 == nomes and not perfis,
            str(perfis))
@@ -677,22 +677,22 @@ def bateria(amb):
     checar('listar: ID nao encontrado', re.search(r'Jogador 99999999 +ID nao encontrado', tela) is not None)
     checar('listar: membros do cla', re.search(r'Cla +777 +2 membro\(s\)', tela) is not None)
     t.linha(); t.esperar('Opcao:')
-    # Draco sai do cla 2092 e nao esta na lista: vira inimigo.
-    JOGADORES['BR'][3386065][1] = None
-    nomes3 = montar('BR_Grimlock', 'BR', 'Grimlock', 's3nha forte&%')
+    # Rubro sai do cla 2671 e nao esta na lista: vira inimigo.
+    JOGADORES['BR'][3091574][1] = None
+    nomes3 = montar('BR_Gaviao', 'BR', 'Gaviao', 'p4sso livre&%')
     checar('quem saiu do cla (e nao esta na lista) deixa de ser aliado, o resto fica',
-           'Abyssal_Draco' not in nomes3 and 'Grimlock' in nomes3 and 'Sem_Cla' in nomes3,
+           'Alfa_Rubro' not in nomes3 and 'Gaviao' in nomes3 and 'Sem_Cla' in nomes3,
            str(nomes3))
-    JOGADORES['BR'][3386065][1] = 2092
+    JOGADORES['BR'][3091574][1] = 2671
     # Remover o jogador 600.
     t.linha('4'); t.esperar('Servidor [1]: '); t.linha('1')
     tela = t.esperar('(0 = cancelar): ')
     t.linha('1'); t.esperar('(y/n): '); t.linha('y')
     tela = t.esperar('Opcao:')
     checar('remover aliado', 'Removido' in tela and ler(sls + '/aliados_BR.conf').split() == ['j|99999999', 'c|777'])
-    nomes4 = montar('BR_Grimlock', 'BR', 'Grimlock', 's3nha forte&%')
+    nomes4 = montar('BR_Gaviao', 'BR', 'Gaviao', 'p4sso livre&%')
     checar('removido sai da lista do worker, o resto fica',
-           'Sem_Cla' not in nomes4 and 'Fulano_Silva' in nomes4 and 'Grimlock' in nomes4, str(nomes4))
+           'Sem_Cla' not in nomes4 and 'Fulano_Silva' in nomes4 and 'Gaviao' in nomes4, str(nomes4))
     t.linha('0'); t.esperar('Opcao:')
 
     # ---------------------------------------------------------------- remover conta
@@ -714,14 +714,14 @@ def bateria(amb):
 
     # ---------------------------------------------------------------- atualizar
     secao('11. Atualizar repositorio')
-    pid_grim = subidas(amb, 'BR_Grimlock')[-1][0]
+    pid_gav = subidas(amb, 'BR_Gaviao')[-1][0]
     t.linha('5')
     tela = t.esperar('Opcao:')
     checar('submenu Atualizar com git pull pelo setup', 'Atualizar Repositorio' in tela and
            '1 - git pull pelo setup' in tela)
     t.linha('1')
     tela = t.esperar('Opcao:', 30)
-    checar('sem nada novo: avisa e nao para o bot', 'Ja esta na versao mais nova' in tela and vivo(pid_grim))
+    checar('sem nada novo: avisa e nao para o bot', 'Ja esta na versao mais nova' in tela and vivo(pid_gav))
     # Uma atualizacao nova no "GitHub".
     outro = os.path.join(amb.dir, 'dev')
     sh("git clone -q %s %s && cd %s && echo '<!-- simulador -->' >> README.md && "
@@ -732,11 +732,11 @@ def bateria(amb):
     checar('mostra a atualizacao nova', '1 atualizacao(oes)' in tela and 'Simulador: atualizacao de teste' in tela)
     checar('para o bot e atualiza', 'Parando o bot' in tela and 'Repositorio atualizado' in tela)
     checar('o git pull trouxe a mudanca', '<!-- simulador -->' in ler(amb.bot + '/README.md'))
-    checar('o bot antigo parou', esperar_ate(lambda: not vivo(pid_grim), 15))
-    ok = esperar_ate(lambda: len(subidas(amb, 'BR_Grimlock')) >= 2 and len(subidas(amb, 'BR_Abyssal Draco')) >= 3, 90)
-    checar('o play.sh subiu de novo as contas', ok, str([subidas(amb, c) for c in ('BR_Grimlock', 'BR_Abyssal Draco')]))
-    checar('cada conta voltou no modo salvo (Grimlock -cl, Draco -cv)',
-           subidas(amb, 'BR_Grimlock')[-1][1] == '-cl' and subidas(amb, 'BR_Abyssal Draco')[-1][1] == '-cv')
+    checar('o bot antigo parou', esperar_ate(lambda: not vivo(pid_gav), 15))
+    ok = esperar_ate(lambda: len(subidas(amb, 'BR_Gaviao')) >= 2 and len(subidas(amb, 'BR_Alfa Rubro')) >= 3, 90)
+    checar('o play.sh subiu de novo as contas', ok, str([subidas(amb, c) for c in ('BR_Gaviao', 'BR_Alfa Rubro')]))
+    checar('cada conta voltou no modo salvo (Gaviao -cl, Rubro -cv)',
+           subidas(amb, 'BR_Gaviao')[-1][1] == '-cl' and subidas(amb, 'BR_Alfa Rubro')[-1][1] == '-cv')
     t.fechar()
     bot.fechar()
     subprocess.run(['sh', amb.bot + '/stop.sh'], env=amb.env(), capture_output=True, timeout=30)

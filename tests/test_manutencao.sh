@@ -895,7 +895,7 @@ else
     bad "function.sh: $_ck chave(s) de gasto de ouro ainda nos padroes"
 fi
 # A troca PRATA -> OURO continua, uma vez por dia.
-if grep -q '/trade/exchange/gold/' "$LIB/trade.sh" && grep -q 'last_trade' "$LIB/trade.sh"; then
+if grep -q '/trade/exchange/silver/' "$LIB/trade.sh" && grep -q 'last_trade' "$LIB/trade.sh"; then
     ok "trade.sh: troca PRATA -> OURO, uma vez por dia (marcador last_trade)"
 else
     bad "trade.sh: troca diaria prata->ouro ausente"
@@ -3186,7 +3186,7 @@ check "sabio: os dois baus e a missao na mesma passagem" "2" "$_r"
 # Troca: clique sem resposta nao marca o dia.
 _r=$( TMP="$_td12/tr"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
       fetch_page() { case "$1" in
-          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a>" > "$TMP/SRC" ;;
+          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/silver/100?r=4'><img src='/images/icon/silver.png' alt=''/>81'900 -> 100</a>" > "$TMP/SRC" ;;
           *) : > "$TMP/SRC"; return 1 ;; esac; }
       func_trade > /dev/null 2>&1
       [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
@@ -3520,6 +3520,18 @@ _r=$( TMP="$_td20/cq"; CLD=777; export TMP CLD; mkdir -p "$TMP"; . "$LIB/clanque
       _cqpg53 "$TMP/CQUEST"; cq_pagina() { :; }
       for _m in 2 7 8 5 3; do printf '%s=%s ' "$_m" "$(cq_falta $_m || echo nao)"; done )
 check "cq_falta: so a missao com 'Va la' e por concluir" "2=nao 7=2 8=nao 5=5 3=nao " "$_r"
+# RU: estrutura da pagina real de 20/11/2026 (tiwar.ru), nomes trocados.
+_cqru() {
+    cat > "$1" <<'EOF'
+<a class='grey' href='/common/clantournament/'>Подробней о турнире</a></div><div class='block_zero'><b class='dgreen'>Легендарный гладиатор</b><br/><span class='medium'>Победи 15 раз в лиге<br/><span class='blue'>Прогресс:</span> 5 из 15</span><span class='blue'>Награда:</span> <img src='/images/icon/gold.png' alt='Золота'/> 1 732<br/>Выполняет: <a href='/user/1/'>Outro</a> (осталось: 22ч 24мин)<br/>Помогает: <a href='/user/3/'>Eu</a><div class='center'><a class='btn' href='/league/?quest_t=clanquest&quest_id=2&qz=Z'><span class='label'>Перейти к выполнению</span></a></div><div class='center'><a class='grey' href='/clan/777/quest/delete/2/?r=9'>Отменить задание</a></div><div class='center'><a class='grey' href='/clan/777/quest/deleteHelp/2/?r=9'>Отменить помощь</a></div></div>
+<div class='block_zero'><b class='dgreen'>Гладиатор</b><br/>Проведи 20 боев в лиге<br/><span class='blue'>Прогресс:</span> 6 из 20</span><span class='blue'>Награда:</span> 1 549<br/>Выполняет: <a href='/user/1/'>Outro</a><br/>Помогает: <a href='/user/2/'>Mais</a><div class='center'><a class='grey' href='/clan/777/quest/delete/1/?r=9'>Отменить задание</a></div></div>
+<div class='block_zero'><b class='dgreen'>Воин арены</b><br/>Проведи 75 боев на арене<br/>Будет доступно через: 3ч 47мин</div>
+EOF
+}
+_r=$( TMP="$_td20/cqru"; CLD=777; export TMP CLD; mkdir -p "$TMP"; . "$LIB/clanquest.sh" > /dev/null 2>&1
+      _cqru "$TMP/CQUEST"; cq_pagina() { :; }
+      for _m in 2 1 3; do printf '%s=%s ' "$_m" "$(cq_falta $_m || echo nao)"; done )
+check "cq_falta RU: Прогресс/из/Награда" "2=10 1=nao 3=nao " "$_r"
 grep -q 'checkQuest 5 apply || cq_ativa 5' "$LIB/cave.sh" \
     && ok "caverna: missao 5 ja ativa tambem acelera" \
     || bad "caverna: missao 5 tomada antes nunca acelera"
@@ -3576,6 +3588,16 @@ check "liga sem luta: uma leitura, sem missao do cla e sem /train" "/league/ " "
 check "liga com uma luta: a leitura da contagem serve para escolher e coletar" \
     "/league/ cq_antes /train /league/ /league/fight/302/?r=7 /league/ cq2end cq1end " "`_liga53 1`"
 
+# Agenda pelo /fights/timetable/ (trecho da pagina real de 20/11/2026); o
+# /fights/ so tem a contagem regressiva e nao da horario nenhum.
+_r=$( HOME="$_td20/ag"; TMP="$HOME/t"; URL=http://jogo; export HOME TMP URL; mkdir -p "$HOME/.sls" "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1
+      run_curl() { case "$1" in
+          */fights/timetable/) echo "<div class='menuList'><li><a href='/altars/?from=fights'><img src='/images/icon/cw.png' alt=''/>Altares dos Deuses</a></li></div><div class='block_zero'><span class='dgreen'>14:00 BRT - Tempo para o início 2 min</span><br/><span class='dgreen'>21:00 BRT - Tempo para o início 7 horas</span><br/></div><div class='menuList'><li><a href='/undying/?from=fights'>Vale dos Imortais<span class='green'> (+)</span></a></li></div><div class='block_zero'><span class='grey'>10:00 BRT - A batalha teve lugar</span><br/></div>" ;;
+          *) echo "<a href='/altars/?from=fights'>Altares dos Deuses<br/><span>Para iniciar: 02:31</span></a>" ;;
+      esac; }
+      atualiza_agenda > /dev/null 2>&1; tr '\n' ' ' < "$HOME/.sls/agenda" )
+check "agenda: horarios do /fights/timetable/" "1000|Vale dos Imortais 1400|Altares dos Deuses 2100|Altares dos Deuses " "$_r"
 grep -q 'find "$HOME/.sls/agenda" -mmin -25' "$LIB/crono.sh" \
     && ok "agenda: baixada por uma conta vale para as outras" \
     || bad "agenda: cada conta pede a sua"
@@ -3648,12 +3670,18 @@ _r=$( TMP="$_td20/tr"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$T
       ACC_LVL=40; parse_status "icon/level.png' alt=''/> 41"; fetch_train_stats
       printf '%s %s' "$(wc -l < "$TMP/req" | tr -d ' ')" "$FIXHP" )
 check "/train: uma leitura por hora fora das lutas, e outra ao subir de nivel" "1 2 5000" "$_r"
+# /train do RU (pagina real de 20/11/2026): rotulo "Энергия".
+_r=$( TMP="$_td20/trru"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
+      run_curl() { echo "<span class='white'>5000</span> (5000) <img src='/images/icon/mana.png' alt=''/> Энергия: 2100 <span class='grey'></span>"; }
+      FIXHP=""; ACC_ENE=""; fetch_train_stats; printf '%s' "$ACC_ENE" )
+check "/train RU: energia lida do rotulo Энергия" "2100" "$_r"
 
 # Troca: resposta de login nao gasta o dia.
 _r=$( TMP="$_td20/td"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
       FUNC_trade_dias=1
       fetch_page() { case "$1" in
-          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 2'000'000 <a href='/trade/exchange/gold/100?r=3'>x</a>$VIVA53" > "$TMP/SRC" ;;
+          /trade/exchange) echo "<img src='/images/icon/silver.png' alt='s'/> 2'000'000 <a href='/trade/exchange/silver/100?r=3'><img src='/images/icon/silver.png' alt=''/>81'900 -> 100</a>$VIVA53" > "$TMP/SRC" ;;
           *) echo "$LOGIN53" > "$TMP/SRC" ;;
           esac; }
       func_trade > /dev/null 2>&1; [ -f "$TMP/last_trade" ] && printf 'marcou' || printf 'em_aberto' )
@@ -3762,7 +3790,7 @@ check "painel ao vivo: HP do Coliseu do Cla e das Bandeiras (USH)" "HP 4200 (-80
 # Painel: HP e energia maximos sao os da propria conta (maior valor lido no
 # cabecalho), nao os do /train. Capturas de 10/10: nivel 45 com 731 | 1555.
 _r=$( TMP="$_td20/mx"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
-      FIXHP=""; ACC_ENE=""; ACC=Draco
+      FIXHP=""; ACC_ENE=""; ACC=Rubro
       _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
       _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
       parse_status "`_pg 45 731 1555`";  printf '%s ' "`_st`"
@@ -3775,7 +3803,7 @@ check "painel: maximo de HP e energia e o da conta, recomeca ao subir de nivel" 
 # Com o /train lido, o teto dele vale desde a primeira leitura; abaixo do
 # valor ja visto, vale o visto (nunca mais de 100%).
 _r=$( TMP="$_td20/mx2"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
-      ACC=Draco
+      ACC=Rubro
       _pg() { printf "<img src='/images/icon/level.png' alt=''/> %s <img src='/images/icon/health.png' alt='hp'/> %s <img src='/images/icon/mana.png' alt='mp'/> <span class='white'>%s</span>" "$1" "$2" "$3"; }
       _st() { cut -d'|' -f2,4,9 "$TMP/stats"; }
       FIXHP=4061; ACC_ENE=1555; parse_status "`_pg 45 731 900`"; printf '%s ' "`_st`"
@@ -3924,13 +3952,13 @@ check "alvo cinza calculado uma vez por pagina (sete modulos)" "1 1 1 1 1 1 1" \
 # Hora de Brasilia do rodape: diferenca para o epoch lida uma vez por hora.
 _r=$( HOME="$_td20/pr78"; mkdir -p "$HOME/.sls"; export HOME
       . "$LIB/panel.sh" > /dev/null 2>&1
-      _a=`TZ=America/Bahia date '+%H %M'`; _agora_ep=`date +%s`; painel_relogio
-      _b=`TZ=America/Bahia date '+%H %M'`
+      _a=`TZ=$BRT_TZ date '+%H %M'`; _agora_ep=`date +%s`; painel_relogio
+      _b=`TZ=$BRT_TZ date '+%H %M'`
       _m=$(( (_agora_ep + _PE_BAHIA) % 86400 / 60 ))
       for _x in "$_a" "$_b"; do set -- $_x
           [ $(( ${1#0} * 60 + ${2#0} )) = "$_m" ] && { echo igual; exit; }; done
       echo "diferente ($_m x $_a/$_b)" )
-check "painel: minuto de Brasilia sem date por redesenho = TZ=America/Bahia date" igual "$_r"
+check "painel: minuto de Brasilia sem date por redesenho = TZ=$BRT_TZ date" igual "$_r"
 # Agenda: lida uma vez e relida quando o arquivo muda.
 _r=$( HOME="$_td20/pr78"; export HOME
       . "$LIB/panel.sh" > /dev/null 2>&1
@@ -4050,6 +4078,13 @@ check "batalhas.sh: ultima batalha de cada evento, por conta" "== Rei
 check "batalhas.sh: filtro por evento e por conta" "== Rei
  Bia 16:25 1 acoes HPmin 50 trocas 0 fogo 0 em andamento (ou sem fim no log)" \
     "`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas Rei Bia | sed 's/  */ /g'`"
+# Conta russa entra no resumo (antes so BR_*), com a sigla como no painel; sem
+# batalha nenhuma, um aviso em vez de tela vazia.
+mkdir -p "$_td20/bt/RU_Ivan" "$_td20/bt0/BR_Ana"
+printf '%s\n' "https://jogo 22:25" "King of the Immortals will be started..." "Em batalha - HP: 700" "King ok" > "$_td20/bt/RU_Ivan/sls.log"
+check "batalhas.sh: conta RU com a sigla; sem batalha, aviso" "== Rei
+ [RU] Ivan 22:25 1 acoes HPmin 700 trocas 0 fogo 0 -|Nenhuma batalha nos logs das contas ainda." \
+    "`SLS_HOME="$_td20/bt" sh "$ROOT/status.sh" -batalhas Rei Ivan | sed 's/  */ /g'`|`SLS_HOME="$_td20/bt0" sh "$ROOT/status.sh" -batalhas`"
 
 # ---- 3.9.83: defeitos das batalhas (revisao de 12/10), sem mudar estrategia
 # Luta de volta zera a contagem do "fora": a 2a transicao da luta nao encerra
@@ -4344,7 +4379,7 @@ _st87() {
     ( TMP="$_td20/st87_$1"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"; : > "$TMP/req"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       _cab() { printf "<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 90 <img src='/images/icon/gold.png' alt='g'/> %s <img src='/images/icon/silver.png' alt='s'/> 408,1M" "$1"; }
-      printf '%s' "<title>Grimlock</title>`_cab 396` <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
+      printf '%s' "<title>Gaviao</title>`_cab 396` <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
       case "$1" in
           igual)   _cab 396 > "$TMP/REST" ;;
           difere)  _cab 397 > "$TMP/REST" ;;
@@ -4453,7 +4488,7 @@ _r=`( TMP="$_td20/st88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
       printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
-      run_curl() { printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>"; }
+      run_curl() { printf '%s' "<title>Gaviao</title>$_cab <script>jsInterface.event(\"user=5\")</script>"; }
       fetch_train_stats() { :; }; messages_info() { :; }
       ACC_LVL=90; atualiza_stats > /dev/null 2>&1
       [ -f "$TMP/last_train" ] && printf 'ficou' || printf 'apagado'; printf ' %s|%s' "$ACC_LVL" "${HOME_STATS:--}" )`
@@ -4493,7 +4528,7 @@ check "Coliseu: pagina do jogo sem luta trava o minuto, como na 3.9.87" 1 "`_cs8
 _r=`( TMP="$_td20/lv88"; URL=http://jogo; export TMP URL; mkdir -p "$TMP"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/session_check.sh" > /dev/null 2>&1; . "$LIB/crono.sh" > /dev/null 2>&1
       _cab="<img src='/images/icon/health.png' alt='hp'/> 900 <img src='/images/icon/mana.png' alt='mp'/> 80 <img src='/images/icon/level.png' alt='lvl'/> 91 <img src='/images/icon/gold.png' alt='g'/> 396 <img src='/images/icon/silver.png' alt='s'/> 408,1M"
-      printf '%s' "<title>Grimlock</title>$_cab <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
+      printf '%s' "<title>Gaviao</title>$_cab <script>jsInterface.event(\"user=5\")</script>" > "$TMP/user"
       printf '%s' "$_cab" > "$TMP/REST"; date +%s > "$TMP/.home_ok"; date +%s > "$TMP/last_train"
       run_curl() { cat "$TMP/user"; }; fetch_train_stats() { :; }; messages_info() { :; }
       ACC_LVL=90; atualiza_stats > /dev/null 2>&1
@@ -4598,7 +4633,45 @@ _ar96() {
 }
 check "arena sem ataque: so a arena, sem pagina de missao" "/arena/ " "`_ar96 sem`"
 check "arena com ataque: missao (ajuda ou toma), arena relida e luta" \
-    "/arena/ missao:arena /arena/ /arena/attack/1/?r=7 /inv/bag/ checkQuest:3:end checkQuest:4:end " "`_ar96 com`"
+    "/arena/ missao:arena /arena/ /arena/attack/1/?r=7 checkQuest:3:end checkQuest:4:end " "`_ar96 com`"
+# Chefe (RU, regra do dono de 20/11/2026). Botoes da pagina real:
+# "Все удары" (?usemana=1) e "1 УДАР" (?attack=1), aspas duplas e & cru.
+#   _bf96 cena -> pedidos
+_bf96() {
+    ( TMP="$_td20/bf96_$1"; CLD=777; SLS_TAG=RU; export TMP CLD SLS_TAG; mkdir -p "$TMP"; : > "$TMP/req"
+      . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/arena.sh" > /dev/null 2>&1; . "$LIB/bossfight.sh" > /dev/null 2>&1
+      C=$1; sleep() { :; }
+      arena_duel() { echo arena >> "$TMP/req"; }
+      cq_antes() { echo "missao:$1" >> "$TMP/req"; [ "$C" = toma ]; }
+      cq_ativa() { echo "ativa:$1" >> "$TMP/req"; [ "$C" = ativa ] && [ "$1" = 4 ]; }
+      fetch_page() { echo "$1" >> "$TMP/req"
+          case "$C:$1" in
+              *:/bossfight/\?*) echo "golpe" > "$TMP/SRC" ;;
+              umgolpe:/bossfight/) echo '<a href="/bossfight/?attack=1&r=5" class="nbtn1"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
+              ouro:/bossfight/) echo '<a href="/bossfight/?attack=1&r=5"><img src="/images/icon/gold.png"/> 5</a>' > "$TMP/SRC" ;;
+              vazio:/bossfight/) echo "Добыча снаряжения" > "$TMP/SRC" ;;
+              *:/bossfight/) echo '<a href="/bossfight/?usemana=1&r=5" class="nbtn1"><span>Все удары</span></a> <a href="/bossfight/?attack=1&r=5"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
+          esac; }
+      case "$C" in
+          cheia) arena_fullmana > /dev/null 2>&1 ;;
+          *) energia_ru > /dev/null 2>&1 ;;
+      esac
+      tr '\n' ' ' < "$TMP/req" )
+}
+check "RU: missao de arena do cla tomada/ajudada -> arena" "missao:arena arena " "`_bf96 toma`"
+check "RU: missao de arena ja com a conta -> arena" "missao:arena ativa:3 ativa:4 arena " "`_bf96 ativa`"
+check "RU: sem missao de arena -> todos os golpes no chefe" \
+    "missao:arena ativa:3 ativa:4 /bossfight/ /bossfight/?usemana=1&r=5 " "`_bf96 nada`"
+check "RU: chefe sem 'Все удары' -> 1 golpe" \
+    "missao:arena ativa:3 ativa:4 /bossfight/ /bossfight/?attack=1&r=5 " "`_bf96 umgolpe`"
+check "RU: golpe que cobra ouro nao e clicado" "missao:arena ativa:3 ativa:4 /bossfight/ " "`_bf96 ouro`"
+check "RU: chefe sem golpe na tela" "missao:arena ativa:3 ativa:4 /bossfight/ " "`_bf96 vazio`"
+check "RU: energia cheia antes do Vale vai para o chefe" "/bossfight/ /bossfight/?usemana=1&r=5 " "`_bf96 cheia`"
+grep -q 'if \[ "${SLS_TAG:-BR}" = RU \]; then energia_ru; else arena_duel; fi' "$LIB/crono.sh" \
+    && ok "cronograma: RU passa a vez da arena pela energia_ru" \
+    || bad "cronograma: RU chama a arena direto"
+grep -q 'bossfight.sh' "$LIB/sls.sh" \
+    && ok "sls.sh carrega o bossfight.sh" || bad "sls.sh nao carrega o bossfight.sh"
 check "elixir usado (bau) nao pega a missao de fazer elixir" 0 \
     "`sed -n '/^start() {/,/^}/p' "$LIB/crono.sh" | grep -c 'cq_antes elixir'`"
 # Atividades so no intervalo entre os eventos (regra do dono): todo minuto de
@@ -5098,8 +5171,8 @@ _tr62() { # _tr62 "CLIQUES" [PASSAGENS] [ouro_inicial] [pagina_viva=1]
           /trade/exchange)
               read -r _o < "$TMP/ouro"
               [ -f "$TMP/sem_pagina" ] && { : > "$TMP/SRC"; return 1; }
-              echo "<img src='/images/icon/gold.png' alt='g'/> $_o <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a>$_viva" > "$TMP/SRC" ;;
-          /trade/exchange/gold/*)
+              echo "<img src='/images/icon/gold.png' alt='g'/> $_o <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/silver/100?r=4'><img src='/images/icon/silver.png' alt=''/>81'900 -> 100</a>$_viva" > "$TMP/SRC" ;;
+          /trade/exchange/silver/*)
               # A marca ja tem de estar em disco quando o pedido sai.
               cat "$TMP/trade_pendente" >> "$TMP/marca_no_clique" 2>/dev/null
               read -r _r < "$TMP/cliques_roteiro"; set -- $_r; _c=$1; shift; echo "$*" > "$TMP/cliques_roteiro"
@@ -5124,7 +5197,7 @@ check "troca: ouro abreviado (1,2K) nao enxerga o lote -> nao repete" \
 _r=$( TMP="$_td62t/m"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
       fetch_page() { case "$1" in
-          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 77 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 77 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/silver/100?r=4'><img src='/images/icon/silver.png' alt=''/>81'900 -> 100</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
           *) cat "$TMP/trade_pendente" > "$TMP/marca"; : > "$TMP/SRC"; return 1 ;; esac; }
       func_trade > /dev/null 2>&1; cat "$TMP/marca" )
 check "troca: a marca pendente vai para o disco ANTES do clique (worker morto no meio)" \
@@ -5134,7 +5207,7 @@ _r=$( TMP="$_td62t/o"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=1
       echo "19990101 10 100 2" > "$TMP/trade_pendente"; : > "$TMP/cl"
       fetch_page() { case "$1" in
-          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 10 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/gold/100?r=4'>x</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
+          /trade/exchange) echo "<img src='/images/icon/gold.png' alt='g'/> 10 <img src='/images/icon/silver.png' alt='s'/> 999,9M <a href='/trade/exchange/silver/100?r=4'><img src='/images/icon/silver.png' alt=''/>81'900 -> 100</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
           *) echo x >> "$TMP/cl"; echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;; esac; }
       func_trade > /dev/null 2>&1; printf '%s ' "`wc -l < "$TMP/cl" | tr -d ' '`"
       echo "`date +%Y%m%d` 10 100 1" > "$TMP/trade_pendente"; rm -f "$TMP/last_trade"; : > "$TMP/cl"
@@ -5870,19 +5943,30 @@ _cambio73() { # PRATA_DA_CONTA -> pagina em $1/SRC
     printf "%s\n" "<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 41 | <img src='/images/icon/gold.png' alt='g'/> 2'548 | <img src='/images/icon/silver.png' alt='s'/> $2</div><script>jsInterface.event(\"user=5;level=41\")</script>"
     } > "$1/SRC"
 }
-# trade_lote_ru: o maior lote que aguenta FUNC_trade_dias trocas iguais.
+# trade_lote: o maior lote que aguenta FUNC_trade_dias trocas iguais.
 _r=""
 for _c73 in "71'217 365" "999,9M 365" "6'724 1" "6'723 1" "1'000 365"; do
     set -- $_c73
     _v=`( TMP="$_td73"; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1
-          _cambio73 "$TMP" "$1"; trade_lote_ru "$(valor_num "$1")" "$2"; printf '%s=%s' "${_lote:--}" "${_cl:--}" )`
+          _cambio73 "$TMP" "$1"; trade_lote "$(valor_num "$1")" "$2"; printf '%s=%s' "${_lote:--}" "${_cl:--}" )`
     _r="$_r$_v "
 done
 check "cambio RU: lote por prata e dias (71217/365, 999,9M/365, 6724/1, 6723/1, 1000/365)" \
     "1=/trade/exchange/silver/1?r=72 41=/trade/exchange/silver/41?r=71 41=/trade/exchange/silver/41?r=71 10=/trade/exchange/silver/10?r=73 -=- " "$_r"
 
-# func_trade inteiro: conta RU troca pelo silver/ e nunca pede o gold/; a
-# conta BR, com a pagina do BR, continua no gold/ de sempre.
+# Pagina real do cambio do BR (furiadetitas.net, 20/11/2026, nivel 91): o
+# mesmo desenho do russo. "Comprar Prata" (gold/N) GASTA ouro.
+_cambio_br() { # PRATA_DA_CONTA -> pagina em $1/SRC
+    {
+    printf "%s" "<a href='/trade/exchange/silver/91?r=81'><img src='/images/icon/arrow.png' alt=''/>Troca <span class='white'><img src='/images/icon/silver.png' alt=''/>74'529 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>91</span></a>"
+    printf "%s" "<a href='/trade/exchange/silver/1?r=82'><img src='/images/icon/arrow.png' alt=''/>Troca <span class='white'><img src='/images/icon/silver.png' alt=''/>819 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>1</span></a>"
+    printf "%s" "<a href='/trade/exchange/silver/10?r=83'><img src='/images/icon/arrow.png' alt=''/>Troca <span class='white'><img src='/images/icon/silver.png' alt=''/>8'190 <span class='blue'>-&#62;</span> <img src='/images/icon/gold.png' alt=''/>10</span></a>"
+    printf "%s" "<a href='/trade/exchange/gold/1?r=84'><img src='/images/icon/arrow.png' alt=''/>Comprar <span class='white'><img src='/images/icon/silver.png' alt=''/>1820 para <img src='/images/icon/gold.png' alt=''/>1</span></a>"
+    printf "%s" "<a href='/trade/exchange/gold/100?r=85'><img src='/images/icon/arrow.png' alt=''/>Comprar <span class='white'><img src='/images/icon/silver.png' alt=''/>182000 para <img src='/images/icon/gold.png' alt=''/>100</span></a>"
+    printf "%s\n" "<div class='center'><img src='/images/icon/level.png' alt='lvl'/> 91 | <img src='/images/icon/gold.png' alt='g'/> 2'343 | <img src='/images/icon/silver.png' alt='s'/> $2</div><script>jsInterface.event(\"user=5;level=91\")</script>"
+    } > "$1/SRC"
+}
+# func_trade inteiro: as duas contas trocam pelo silver/ e nunca pedem o gold/.
 _tr73() { # TAG PAGINA(ru|br) PRATA
     ( TMP="$_td73/$1"; rm -rf "$TMP"; mkdir -p "$TMP"; export TMP; URL=http://jogo; SLS_TAG="$1"
       . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/trade.sh" > /dev/null 2>&1; FUNC_trade_dias=365
@@ -5890,7 +5974,7 @@ _tr73() { # TAG PAGINA(ru|br) PRATA
       fetch_page() { echo "$1" >> "$TMP/pedidos"; case "$1" in
           /trade/exchange)
               if [ "$_PG73" = ru ]; then _cambio73 "$TMP" "$_PR73"
-              else echo "<img src='/images/icon/gold.png' alt='g'/> 50 <img src='/images/icon/silver.png' alt='s'/> $_PR73 <a href='/trade/exchange/gold/100?r=4'>x</a><a href='/trade/exchange/gold/1?r=5'>y</a><script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC"; fi ;;
+              else _cambio_br "$TMP" "$_PR73"; fi ;;
           *) echo "<script>jsInterface.event(\"user=5;level=40\")</script>" > "$TMP/SRC" ;;
           esac; }
       _PG73="$2"; _PR73="$3"; func_trade > /dev/null 2>&1
@@ -5899,21 +5983,22 @@ _tr73() { # TAG PAGINA(ru|br) PRATA
 check "cambio RU: troca prata -> ouro pelo silver/ (nunca o gold/)" \
     "/trade/exchange /trade/exchange/silver/41?r=71 " "`_tr73 RU ru 999,9M`"
 check "cambio RU: prata curta, so olha a pagina" "/trade/exchange " "$(_tr73 RU ru "1'000")"
-check "cambio BR: igual a antes (gold/100 com prata alta)" "/trade/exchange /trade/exchange/gold/100?r=4 " "`_tr73 BR br 999,9M`"
-check "cambio BR: igual a antes (gold/1 com prata media)" "/trade/exchange /trade/exchange/gold/1?r=5 " "`_tr73 BR br 700000`"
+check "cambio BR: prata alta troca pelo silver/91 (nunca o gold/, que gasta ouro)" "/trade/exchange /trade/exchange/silver/91?r=81 " "`_tr73 BR br 999,9M`"
+check "cambio BR: prata media troca pelo silver/1" "/trade/exchange /trade/exchange/silver/1?r=82 " "`_tr73 BR br 700000`"
+check "cambio BR: prata curta, so olha a pagina" "/trade/exchange " "`_tr73 BR br 200000`"
 
-# Trava no HTTP: conta russa nao pede o gold/ nem por engano.
+# Trava no HTTP: nenhuma conta pede o gold/ nem por engano.
 _r=`( . "$LIB/blessing.sh" > /dev/null 2>&1
       for _t in RU BR; do SLS_TAG=$_t
           for _u in https://tiwar.ru/trade/exchange/gold/100?r=1 https://tiwar.ru/trade/exchange/silver/41?r=1 https://x/effshop/blessing/; do
               blessing_url_bloqueada -s "$_u" && printf 'B' || printf '.'
           done; printf ' '
       done )`
-check "trava HTTP: RU barra gold/ e bencao, BR so a bencao" "B.B ..B " "$_r"
+check "trava HTTP: RU e BR barram o gold/ (compra prata com ouro) e a bencao" "B.B B.B " "$_r"
 _r=`( TMP="$_td73"; SLS_TAG=RU; . "$LIB/blessing.sh" > /dev/null 2>&1; _rc_run() { echo PEDIU; }
       run_curl -s "https://tiwar.ru/trade/exchange/gold/1?r=2"; echo "rc=$?"; cut -d'|' -f2 "$TMP/blessing_blocked.log" )`
 check "trava HTTP: o pedido nao sai e o log diz o motivo" "rc=1 Cambio ouro->prata" "`echo $_r`"
-rm -rf "$_td73"; unset _td73 _c73 _v _r; unset -f _cambio73 _tr73
+rm -rf "$_td73"; unset _td73 _c73 _v _r; unset -f _cambio73 _cambio_br _tr73
 
 printf "\n=== 74. servidor russo: cronograma proprio em horario de Moscou ===\n"
 # O sls_play com cada funcao que ele chama trocada por um eco do nome, nos
@@ -5975,16 +6060,24 @@ printf "\n=== 75. servidor russo: relogio de Moscou no worker ===\n"
 _td75=`mktemp -d`
 sed -n '/^case "\$SLS_TAG" in$/,/^esac$/p' "$LIB/sls.sh" > "$_td75/tz.sh"
 _r=`for _t75 in BR RU ""; do ( SLS_TAG="$_t75"; unset TZ; . "$_td75/tz.sh"; printf '%s ' "$TZ" ); done`
-check "fuso: BR e sem sigla em America/Bahia, RU em Europe/Moscow" "America/Bahia Europe/Moscow America/Bahia " "$_r"
-# O relogio do worker russo e UTC+3 (o rodape do tiwar.ru, 18:36 com 15:36 UTC).
-_r=`( SLS_TAG=RU; . "$_td75/tz.sh"; _u=\`date -u +%s\`; _l=\`date -d "@$_u" +%H 2>/dev/null\`
+check "fuso: BR e sem sigla em Brasilia fixo, RU em Moscou fixo" "<-03>3 MSK-3 <-03>3 " "$_r"
+# O relogio do worker russo e UTC+3 (o rodape do tiwar.ru, 18:36 com 15:36
+# UTC) e o do BR UTC-3, mesmo sem banco de fusos (tzdata).
+#   _tz75 SIGLA DESLOCAMENTO -> ok | sem_date_d | "HH x esperado"
+_tz75() {
+    ( SLS_TAG=$1; . "$_td75/tz.sh"; _u=`date -u +%s`; _l=`date -d "@$_u" +%H 2>/dev/null`
       [ -n "$_l" ] || { echo sem_date_d; exit 0; }
-      _e=$(( ( _u / 3600 + 3 ) % 24 )); [ "${_l#0}" = "$_e" ] && echo 3 || echo "$_l x $_e" )`
-case "$_r" in
-    3)          ok "fuso: o relogio da conta russa e UTC+3" ;;
-    sem_date_d) ok "fuso: date -d indisponivel aqui, nada a medir" ;;
-    *)          bad "fuso: o relogio da conta russa nao e UTC+3 ($_r)" ;;
-esac
+      _e=$(( ( _u / 3600 + 24 + $2 ) % 24 )); [ "${_l#0}" = "$_e" ] && echo ok || echo "$_l x $_e" )
+}
+for _t75 in "RU +3" "BR -3"; do
+    set -- $_t75; _r=`_tz75 $1 $2`
+    case "$_r" in
+        ok)         ok "fuso: o relogio da conta $1 e UTC$2" ;;
+        sem_date_d) ok "fuso: date -d indisponivel aqui, nada a medir ($1)" ;;
+        *)          bad "fuso: o relogio da conta $1 nao e UTC$2 ($_r)" ;;
+    esac
+done
+unset -f _tz75
 grep -q '^export TZ="America/Bahia"$' "$LIB/sls.sh" && bad "sls.sh: fuso fixo do BR ainda vale para todo servidor" \
     || ok "sls.sh: o fuso vem da sigla do servidor"
 rm -rf "$_td75"; unset _td75 _t75 _r
@@ -6123,6 +6216,21 @@ _r=`( _h="$_td77/ls"; mkdir -p "$_h/.sls/BR_Ana"; echo -cv > "$_h/.sls/BR_Ana/mo
       HOME="$_h"; ACCOUNTS_FILE="$_h/acc.conf"; _fn77
       printf '\n' | list_accounts | grep -c -E 'Ana .*\(Caverna\)|Bia .*\(' )`
 check "lista: mostra o modo so da conta fora do normal" 1 "$_r"
+# Servidor desconhecido: a lista numera como a escolha (contas_validas) e o
+# marca; o modo de batalha o pula (sem pasta "~/.sls/_Nome").
+_r=`( _h="$_td77/sd"; mkdir -p "$_h/.sls"
+      printf '#comentario\n1|Ana|YQ==\nlixo\n3|Zed|Yg==\n2|Ivan|Yw==\n' > "$_h/acc.conf"
+      HOME="$_h"; ACCOUNTS_FILE="$_h/acc.conf"; _fn77
+      printf '\n' | list_accounts | grep -E '^[0-9]\)' | tr -s ' ' | tr '\n' ';'
+      printf '2\n\n' | aplicar_modo -cv > /dev/null 2>&1
+      ls "$_h/.sls" | tr '\n' ' ' )`
+check "lista: numero igual ao da escolha, servidor desconhecido marcado; modo pula a linha" \
+    "1) [BR] Ana furiadetitas.net;2) [?] Zed servidor 3 desconhecido;3) [RU] Ivan tiwar.ru;BR_Ana RU_Ivan " "$_r"
+# Entrada fechada: o setup sai (antes redesenhava o menu sem parar).
+_r=`( HOME="$_td77/eof"; mkdir -p "$HOME/.sls"; echo 0 > "$HOME/.sls/emoji"
+      if command -v timeout > /dev/null 2>&1; then timeout 10 sh "$ROOT/setup.sh" < /dev/null > /dev/null 2>&1; echo $?
+      else echo 0; fi )`
+check "setup: entrada fechada sai do menu" 0 "$_r"
 check "remover conta apaga o modo de batalha dela" 1 \
     "`sed -n '/^remove_account() {/,/^}/p' "$ROOT/setup.sh" | grep -c 'modo_batalha'`"
 
@@ -6264,11 +6372,11 @@ printf "\n=== 78. aliados por ID: jogadores, clas aliados e o menu do setup ===\
 # ID que nao existe mostra o perfil da conta logada (links com o ID dela).
 _td78=`mktemp -d`
 _perfil78() { # ID NOME -> pagina de perfil logada
-    printf '%s' "<title>$2</title><img src='/images/icon/race/1.png' alt=''/> <b>$2</b> <img src='/images/icon/level.png' alt=''/> 91 nível<a href='/clan/2092'>Abyssal Millennium</a><a href='/user/$1?show=might'>Poder:</a><img src='/user/$1/?show=avatar&h=x'/><a href='/user/$1/?show=faith'>fe</a>"
+    printf '%s' "<title>$2</title><img src='/images/icon/race/1.png' alt=''/> <b>$2</b> <img src='/images/icon/level.png' alt=''/> 91 nível<a href='/clan/2671'>Alfa Legiao</a><a href='/user/$1?show=might'>Poder:</a><img src='/user/$1/?show=avatar&h=x'/><a href='/user/$1/?show=faith'>fe</a>"
 }
-_perfil78 3386065 "Abyssal Draco" > "$_td78/p_draco"
-# ID que nao existe: o jogo devolve o perfil da conta logada (473431).
-_perfil78 473431 "Grimlock" > "$_td78/p_proprio"
+_perfil78 3091574 "Alfa Rubro" > "$_td78/p_rubro"
+# ID que nao existe: o jogo devolve o perfil da conta logada (482917).
+_perfil78 482917 "Gaviao" > "$_td78/p_proprio"
 # Sessao caida: pagina de visitante.
 printf '%s' "<title>Error 404: Page not found</title>" > "$_td78/p_visitante"
 printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><br/><a href='/user/72/'><img src='/images/icon/race/0.png' alt=''/>Aliado Dois, <span class='white'>General</span><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td78/c_777"
@@ -6281,7 +6389,7 @@ _conta78() {
     SLS_PACING=0; . "$LIB/info.sh" > /dev/null 2>&1; . "$LIB/allies.sh" > /dev/null 2>&1
     sleep() { :; }
     run_curl_exec() { echo "$1" >> "$_td78/pedidos"; case "$1" in
-        */user/3386065/)  cat "$_td78/p_draco" ;;
+        */user/3091574/)  cat "$_td78/p_rubro" ;;
         */user/99999999/) cat "$_td78/p_proprio" ;;
         */user/5555/)     cat "$_td78/p_visitante" ;;
         */clan/777)       cat "$_td78/c_777" ;;
@@ -6291,30 +6399,30 @@ _conta78() {
 }
 
 # Nome pelo perfil; ID que nao existe; sessao caida nao e "nao existe".
-_r=`( _conta78 a; printf '[%s]' "\`_aliado_jogador 3386065\`"; printf '[%s]' "\`_aliado_jogador 99999999\`"
+_r=`( _conta78 a; printf '[%s]' "\`_aliado_jogador 3091574\`"; printf '[%s]' "\`_aliado_jogador 99999999\`"
       _aliado_jogador 5555 > /dev/null && printf '[viva]' || printf '[caiu]' )`
-check "perfil: nome do dono do perfil, ID inexistente vazio, sessao caida falha" "[Abyssal Draco][][caiu]" "$_r"
+check "perfil: nome do dono do perfil, ID inexistente vazio, sessao caida falha" "[Alfa Rubro][][caiu]" "$_r"
 
 # Lista do servidor: jogador valido, jogador inexistente e cla aliado.
-printf 'j|3386065\nj|99999999\nc|777\n' > "$_td78/home/.sls/aliados_BR.conf"
+printf 'j|3091574\nj|99999999\nc|777\n' > "$_td78/home/.sls/aliados_BR.conf"
 : > "$_td78/pedidos"
 _r=`( _conta78 a; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
 check "aliados: cla da conta + jogador da lista + membros do cla aliado" \
-    "Abyssal_Draco Aliado_Dois Aliado_Um Meu_Chefe " "$_r"
+    "Alfa_Rubro Aliado_Dois Aliado_Um Meu_Chefe " "$_r"
 check "aliados: ID inexistente anotado como nao encontrado" "j|99999999|-" \
     "`grep '^j|99999999|' "$_td78/home/.sls/aliados_BR.nomes"`"
 # Segunda conta do mesmo servidor: usa os nomes ja buscados, sem pedir os perfis.
 : > "$_td78/pedidos"
 _r=`( _conta78 b; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
 check "aliados: a outra conta reusa os nomes (so pede o proprio cla)" \
-    "Abyssal_Draco Aliado_Dois Aliado_Um Meu_Chefe |0" "$_r|`grep -c -E '/user/|/clan/777' "$_td78/pedidos"`"
+    "Alfa_Rubro Aliado_Dois Aliado_Um Meu_Chefe |0" "$_r|`grep -c -E '/user/|/clan/777' "$_td78/pedidos"`"
 # O setup tirou o jogador da lista: sai na hora, mesmo com os nomes guardados.
 printf 'j|99999999\nc|777\n' > "$_td78/home/.sls/aliados_BR.conf"
 _r=`( _conta78 c; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
 check "aliados: jogador tirado da lista deixa de ser aliado" "Aliado_Dois Aliado_Um Meu_Chefe " "$_r"
 # Lista mudou depois da ultima busca (.conf mais novo): busca de novo.
-sleep 1; printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/pedidos"
-_r=`( _conta78 d; aliados_montar 1 > /dev/null 2>&1; grep -c '/user/3386065/' "$_td78/pedidos" )`
+sleep 1; printf 'j|3091574\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/pedidos"
+_r=`( _conta78 d; aliados_montar 1 > /dev/null 2>&1; grep -c '/user/3091574/' "$_td78/pedidos" )`
 check "aliados: lista mudou no setup, o perfil e buscado de novo" 1 "$_r"
 # Quem sai do cla aliado deixa de ser aliado na volta seguinte.
 printf '%s' "<a href='/user/71/'><img src='/images/icon/race/1.png' alt=''/>Aliado Um, <span class='white'>Soldado</span><script>jsInterface.event(\"user=1;level=1\")</script>" > "$_td78/c_777"
@@ -6332,14 +6440,14 @@ check "aliados: sessao caida no cla aliado nao apaga o cla" "1|Aliado_Um Meu_Che
     "$_r|`tr '\n' ' ' < "$_td78/home/.sls/aliados_BR.nomes" | sed 's/ $//'`"
 mv "$_td78/c_777.ok" "$_td78/c_777"
 # Conta sem cla: o aviso do clan_id nao vira nome na lista.
-printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"
+printf 'j|3091574\n' > "$_td78/home/.sls/aliados_BR.conf"
 _r=`( _conta78 h; CLD=""; . "$LIB/crono.sh" > /dev/null 2>&1; . "$LIB/clanid.sh" > /dev/null 2>&1
       run_curl_exec() { case "$1" in
-          */user/3386065/) cat "$_td78/p_draco" ;;
-          */clan) echo "<div>Sem cla</div><script>jsInterface.event(\"user=473431;level=91\")</script>" ;;
+          */user/3091574/) cat "$_td78/p_rubro" ;;
+          */clan) echo "<div>Sem cla</div><script>jsInterface.event(\"user=482917;level=91\")</script>" ;;
           *) : ;; esac; }
       aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
-check "aliados: conta sem cla nao grava o aviso do clan_id como aliado" "Abyssal_Draco " "$_r"
+check "aliados: conta sem cla nao grava o aviso do clan_id como aliado" "Alfa_Rubro " "$_r"
 # Antes de cada batalha do cronograma: lista refeita na espera depois da
 # inscricao, so com folga de 120s ate a entrada (nunca atrasa a luta).
 _apl78() { # MMSS_agora DE ATE -> "refez|marcou" ou "-"
@@ -6358,7 +6466,7 @@ _r=$( TMP="$_td78/apl2"; export TMP; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/nu
       _A=5530; espera_janela 5500 5900; echo "$_n" )
 check "espera_janela: refaz os aliados uma vez so, antes de esperar" 1 "$_r"
 # Servidor russo usa a lista dele.
-printf 'j|3386065\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/home/.sls/aliados_RU.conf"
+printf 'j|3091574\n' > "$_td78/home/.sls/aliados_BR.conf"; : > "$_td78/home/.sls/aliados_RU.conf"
 _r=`( _conta78 f; SLS_TAG=RU; aliados_montar 1 > /dev/null 2>&1; tr '\n' ' ' < "$TMP/allies.txt" )`
 check "aliados: conta RU nao usa a lista do BR" "Meu_Chefe " "$_r"
 # Ao subir a conta o play.sh apaga a marca: a lista e refeita na hora.
@@ -6391,36 +6499,36 @@ check "setup: iniciar sem conta volta ao menu; parado abre o play.sh; no ar so o
 _r=`( _fn78; printf '\n' | aliados_listar ) 2>&1 | grep -c -i 'cannot open\|No such'`
 check "setup: listar sem lista nenhuma nao mostra erro de arquivo" 0 "$_r"
 _r=""
-for _e78 in "473431" " 473431 " "https://furiadetitas.net/user/473431/" "https://furiadetitas.net/user/473431?show=might" \
-            "47a" "" "0123" "https://furiadetitas.net/clan/2092"; do
+for _e78 in "482917" " 482917 " "https://furiadetitas.net/user/482917/" "https://furiadetitas.net/user/482917?show=might" \
+            "47a" "" "0123" "https://furiadetitas.net/clan/2671"; do
     _r="$_r`( _fn78; aliado_ler_id j "$_e78" > /dev/null && printf '%s' "$_id" || printf 'x' )` "
 done
 check "setup: ID de jogador pelo numero ou pelo link; o resto recusa" \
-    "473431 473431 473431 473431 x x x x " "$_r"
-_r=`( _fn78; aliado_ler_id c "https://furiadetitas.net/clan/2092" > /dev/null && printf '%s ' "$_id"
+    "482917 482917 482917 482917 x x x x " "$_r"
+_r=`( _fn78; aliado_ler_id c "https://furiadetitas.net/clan/2671" > /dev/null && printf '%s ' "$_id"
       aliado_ler_id c "https://furiadetitas.net/user/1/" > /dev/null || printf 'recusa' )`
-check "setup: ID de cla pelo link; link de jogador na opcao de cla recusa" "2092 recusa" "$_r"
+check "setup: ID de cla pelo link; link de jogador na opcao de cla recusa" "2671 recusa" "$_r"
 
 # Adicionar: grava na lista do servidor e avisa so as contas dele.
 mkdir -p "$_td78/sh/.sls/BR_Ana" "$_td78/sh/.sls/RU_Ivan"
 date +%s > "$_td78/sh/.sls/BR_Ana/last_aliados3"; date +%s > "$_td78/sh/.sls/RU_Ivan/last_aliados3"
-( _fn78; printf '1\n473431\n\n' | aliado_adicionar j; printf '\nhttps://x/clan/2092\n\n' | aliado_adicionar c
-  printf '1\n473431\n' | aliado_adicionar j ) > /dev/null 2>&1
-check "setup: adicionar grava j|ID e c|ID, sem repetir" "j|473431 c|2092 " \
+( _fn78; printf '1\n482917\n\n' | aliado_adicionar j; printf '\nhttps://x/clan/2671\n\n' | aliado_adicionar c
+  printf '1\n482917\n' | aliado_adicionar j ) > /dev/null 2>&1
+check "setup: adicionar grava j|ID e c|ID, sem repetir" "j|482917 c|2671 " \
     "`tr '\n' ' ' < "$_td78/sh/.sls/aliados_BR.conf"`"
 _r=""; [ -f "$_td78/sh/.sls/BR_Ana/last_aliados3" ] && _r="BR_marca" || _r="BR_refaz"
 [ -f "$_td78/sh/.sls/RU_Ivan/last_aliados3" ] && _r="$_r RU_marca" || _r="$_r RU_refaz"
 check "setup: lista do BR mudou, so as contas BR refazem" "BR_refaz RU_marca" "$_r"
 
 # Listar: o nome que o bot achou, ID nao encontrado e quem ainda espera.
-printf 'j|473431\nc|2092\nj|99999999\nj|5\n' > "$_td78/sh/.sls/aliados_BR.conf"
-printf 'j|473431|Grimlock\nc|2092|Abyssal Draco\nc|2092|Outro\nj|99999999|-\n' > "$_td78/sh/.sls/aliados_BR.nomes"
+printf 'j|482917\nc|2671\nj|99999999\nj|5\n' > "$_td78/sh/.sls/aliados_BR.conf"
+printf 'j|482917|Gaviao\nc|2671|Alfa Rubro\nc|2671|Outro\nj|99999999|-\n' > "$_td78/sh/.sls/aliados_BR.nomes"
 _r=`( _fn78; aliados_linhas BR ) | sed 's/  */ /g' | tr '\n' ';'`
 check "setup: lista com nome, membros, nao encontrado e aguardando" \
-    "1) Jogador 473431 Grimlock;2) Cla 2092 2 membro(s);3) Jogador 99999999 ID nao encontrado;4) Jogador 5 aguardando o bot;" "$_r"
+    "1) Jogador 482917 Gaviao;2) Cla 2671 2 membro(s);3) Jogador 99999999 ID nao encontrado;4) Jogador 5 aguardando o bot;" "$_r"
 # Remover o numero 2 (o cla).
 ( _fn78; printf '1\n2\ny\n' | aliado_remover ) > /dev/null 2>&1
-check "setup: remover tira so a linha escolhida" "j|473431 j|99999999 j|5 " \
+check "setup: remover tira so a linha escolhida" "j|482917 j|99999999 j|5 " \
     "`tr '\n' ' ' < "$_td78/sh/.sls/aliados_BR.conf"`"
 rm -rf "$_td78"; unset _td78 _r _e78; unset -f _perfil78 _conta78 _fn78
 

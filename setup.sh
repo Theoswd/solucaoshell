@@ -167,21 +167,28 @@ rodape() {
 list_accounts() {
     clear
     titulo "Contas Cadastradas" "📜"
-    if [ ! -f "$ACCOUNTS_FILE" ] || [ ! -s "$ACCOUNTS_FILE" ]; then
+    if [ -z "$(contas_validas)" ]; then
         printf "${RED}Nenhuma conta cadastrada ainda.${RESET}\n"
     else
+        # A mesma contas_validas da escolha por numero (opcoes 3, 4 e 6): um
+        # filtro proprio aqui desalinharia o numero da lista com a conta.
         n=1
-        while IFS='|' read -r srv user _enc || [ -n "$srv" ]; do
-            case "$srv" in ''|\#*) continue ;; esac
-            [ -z "$user" ] && continue
-            url=$(server_url "$srv")
+        while IFS='|' read -r srv user _enc; do
             tag=$(server_tag "$srv")
+            if [ -z "$tag" ]; then
+                # O play.sh pula essa linha: remova (opcao 3) e cadastre de novo.
+                printf "${GOLD}%d)${RESET} [?] %-20s ${RED}servidor %s desconhecido${RESET}\n" "$n" "$user" "$srv"
+                n=$((n + 1)); continue
+            fi
+            url=$(server_url "$srv")
             # Modo de batalha so quando nao e o normal (opcao 6).
             _m=$(modo_da_conta "$HOME/.sls/${tag}_${user}")
             [ -n "$_m" ] && _m=" ($(modo_nome "$_m"))"
             printf "${GOLD}%d)${RESET} [%s] %-20s %s%s\n" "$n" "$tag" "$user" "$url" "$_m"
             n=$((n + 1))
-        done < "$ACCOUNTS_FILE"
+        done <<FIM
+$(contas_validas)
+FIM
     fi
     printf "\nENTER para voltar..."
     read -r _d
@@ -346,7 +353,8 @@ escolher_conta() {
     fi
     _n=1
     contas_validas | while IFS='|' read -r srv user _enc; do
-        printf "${GOLD}%d)${RESET} [%s] %s\n" "$_n" "$(server_tag "$srv")" "$user"
+        _t=$(server_tag "$srv")
+        printf "${GOLD}%d)${RESET} [%s] %s\n" "$_n" "${_t:-?}" "$user"
         _n=$((_n + 1))
     done
 
@@ -584,7 +592,7 @@ escolher_contas() {
     _n=1
     contas_validas | while IFS='|' read -r srv user _enc; do
         tag=$(server_tag "$srv")
-        printf "${GOLD}%d)${RESET} [%s] %-20s %s\n" "$_n" "$tag" "$user" \
+        printf "${GOLD}%d)${RESET} [%s] %-20s %s\n" "$_n" "${tag:-?}" "$user" \
             "$(modo_nome "$(modo_da_conta "$HOME/.sls/${tag}_${user}")")"
         _n=$((_n + 1))
     done
@@ -623,6 +631,10 @@ gravar_modo() {
     while IFS='|' read -r srv user _enc; do
         [ -n "$user" ] || continue
         tag=$(server_tag "$srv")
+        if [ -z "$tag" ]; then
+            printf "${RED}[?] %s: servidor %s desconhecido - pulada${RESET}\n" "$user" "$srv"
+            continue
+        fi
         acc_dir="$HOME/.sls/${tag}_${user}"
         _antes=$(modo_da_conta "$acc_dir")
         mkdir -p "$acc_dir" && chmod 700 "$acc_dir" 2>/dev/null
@@ -730,7 +742,7 @@ aliado_ler_id() {
             _in=${_in#*/clan/} ;;
     esac
     _id=${_in%%[!0-9]*}
-    # Depois do numero so pode vir "/" ou "?" do link (ex.: 473431/?show=).
+    # Depois do numero so pode vir "/" ou "?" do link (ex.: 482917/?show=).
     case "${_in#"$_id"}" in ''|/*|\?*) ;; *) _id="" ;; esac
     case "$_id" in ''|0*) _id="" ;; esac
     [ "${#_id}" -le 12 ] || _id=""
@@ -782,9 +794,9 @@ aliados_avisar_bot() {
 aliado_adicionar() {
     clear
     if [ "$1" = j ]; then
-        titulo "Adicionar Jogador Aliado" "🥷"; _qual="jogador"; _ex="473431 ou o link .../user/473431/"
+        titulo "Adicionar Jogador Aliado" "🥷"; _qual="jogador"; _ex="482917 ou o link .../user/482917/"
     else
-        titulo "Adicionar Cla Aliado" "👑"; _qual="cla"; _ex="2092 ou o link .../clan/2092"
+        titulo "Adicionar Cla Aliado" "👑"; _qual="cla"; _ex="2671 ou o link .../clan/2671"
     fi
     show_servers
     escolher_servidor || return
@@ -901,7 +913,9 @@ carregar_icones
 # Loop principal
 while true; do
     show_menu
-    read -r opt
+    # Entrada fechada (terminal que sumiu): sai, em vez de redesenhar o menu
+    # sem parar com 100% de CPU.
+    read -r opt || { printf "\n"; exit 0; }
     case "$opt" in
         1) list_accounts ;;
         2) add_account ;;
