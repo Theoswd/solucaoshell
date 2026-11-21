@@ -4635,7 +4635,8 @@ check "arena sem ataque: so a arena, sem pagina de missao" "/arena/ " "`_ar96 se
 check "arena com ataque: missao (ajuda ou toma), arena relida e luta" \
     "/arena/ missao:arena /arena/ /arena/attack/1/?r=7 checkQuest:3:end checkQuest:4:end " "`_ar96 com`"
 # Chefe (RU, regra do dono de 20/11/2026). Botoes da pagina real:
-# "Все удары" (?usemana=1) e "1 УДАР" (?attack=1), aspas duplas e & cru.
+# "Все удары" (?usemana=1) e "1 УДАР" (?attack=1), aspas duplas e & cru. O
+# "1 УДАР" sozinho e falta de energia: clicado, so abre a oferta paga.
 #   _bf96 cena -> pedidos
 _bf96() {
     ( TMP="$_td20/bf96_$1"; CLD=777; SLS_TAG=RU; export TMP CLD SLS_TAG; mkdir -p "$TMP"; : > "$TMP/req"
@@ -4648,7 +4649,7 @@ _bf96() {
           case "$C:$1" in
               *:/bossfight/\?*) echo "golpe" > "$TMP/SRC" ;;
               umgolpe:/bossfight/) echo '<a href="/bossfight/?attack=1&r=5" class="nbtn1"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
-              ouro:/bossfight/) echo '<a href="/bossfight/?attack=1&r=5"><img src="/images/icon/gold.png"/> 5</a>' > "$TMP/SRC" ;;
+              ouro:/bossfight/) echo '<a href="/bossfight/?usemana=1&r=5"><img src="/images/icon/gold.png"/> 5</a>' > "$TMP/SRC" ;;
               vazio:/bossfight/) echo "Добыча снаряжения" > "$TMP/SRC" ;;
               *:/bossfight/) echo '<a href="/bossfight/?usemana=1&r=5" class="nbtn1"><span>Все удары</span></a> <a href="/bossfight/?attack=1&r=5"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
           esac; }
@@ -4662,8 +4663,8 @@ check "RU: missao de arena do cla tomada/ajudada -> arena" "missao:arena arena "
 check "RU: missao de arena ja com a conta -> arena" "missao:arena ativa:3 ativa:4 arena " "`_bf96 ativa`"
 check "RU: sem missao de arena -> todos os golpes no chefe" \
     "missao:arena ativa:3 ativa:4 /bossfight/ /bossfight/?usemana=1&r=5 " "`_bf96 nada`"
-check "RU: chefe sem 'Все удары' -> 1 golpe" \
-    "missao:arena ativa:3 ativa:4 /bossfight/ /bossfight/?attack=1&r=5 " "`_bf96 umgolpe`"
+check "RU: so o '1 УДАР' (sem energia) -> nao clica (abriria a oferta paga)" \
+    "missao:arena ativa:3 ativa:4 /bossfight/ " "`_bf96 umgolpe`"
 check "RU: golpe que cobra ouro nao e clicado" "missao:arena ativa:3 ativa:4 /bossfight/ " "`_bf96 ouro`"
 check "RU: chefe sem golpe na tela" "missao:arena ativa:3 ativa:4 /bossfight/ " "`_bf96 vazio`"
 check "RU: energia cheia antes do Vale vai para o chefe" "/bossfight/ /bossfight/?usemana=1&r=5 " "`_bf96 cheia`"

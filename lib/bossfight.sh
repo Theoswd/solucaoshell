@@ -9,17 +9,19 @@
 # Regra do dono (20/11/2026): no RU a energia e do chefe; a arena so quando
 # uma missao de arena do cla pede (energia_ru).
 
-# "Все удары" (?usemana=1) gasta a energia toda num pedido so: menos
-# processos que golpe a golpe (limite de ~32 do Android). Sem ele, 1 golpe.
+# "Все удары" (?usemana=1) da todos os golpes que a energia paga (~900 cada)
+# num pedido so: menos processos que golpe a golpe (limite de ~32 do Android).
+# Ele so aparece com energia para um golpe. O "1 УДАР" (?attack=1) aparece
+# SEMPRE: sem energia nao golpeia, abre a oferta "Настойка бодрости ... 308
+# золота" (pagina real de 20/11/2026). Por isso o bot nunca o clica.
 # Nunca gasta ouro (botao_pago).
 bossfight_func() {
     printf "Chefe\n"
     fetch_page "/bossfight/"
     # A pagina traz o & cru (href="/bossfight/?usemana=1&r=N", 20/11/2026).
     _bf=`grep -o -E "/bossfight/[?]usemana=1&r=[0-9]+" "$TMP/SRC" | sed -n 1p`
-    [ -n "$_bf" ] || _bf=`grep -o -E "/bossfight/[?]attack=1&r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -z "$_bf" ]; then
-        printf "  Chefe: sem golpe disponivel agora\n"
+        printf "  Chefe: sem energia para um golpe agora\n"
     elif botao_pago "$TMP/SRC" "$_bf"; then
         printf "  Chefe: golpe cobra ouro - para aqui\n"
     else
