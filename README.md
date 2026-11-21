@@ -102,7 +102,7 @@ Os comandos funcionam de qualquer pasta.
 
 ### Atualizar
 
-No `setup.sh`, opção **5** e depois **1**: ele para o bot, puxa a atualização e sobe de novo. Se não tiver nada novo, nada para.
+No `setup.sh`, opção **5** e depois **1**.
 
 Ou à mão:
 
