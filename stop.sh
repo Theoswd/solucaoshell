@@ -159,9 +159,44 @@ for p in $(pgrep -f "status\.sh" 2>/dev/null); do
     kill -TERM "$p" 2>/dev/null
 done
 
-# Rede de seguranca para orfaos de execucoes antigas (antes do setsid).
-pkill -f "$LIBDIR/sls.sh" 2>/dev/null
-pkill -f "$LIBDIR/worker.sh" 2>/dev/null
+# Rede de seguranca: sls.sh/worker.sh DESTE bot que nenhum .pid conhece
+# (orfao de execucao antiga, .pid velho ou apagado). So TERM nao basta: o
+# sls.sh tem "trap 'exit 143' TERM", e o sh so roda o trap quando o comando
+# da frente termina; num "sleep" longo a conta seguia jogando durante o
+# "stop + git pull" e o play.sh subia outra por cima. Lidos do /proc (sem
+# depender de pgrep/pkill): TERM, ate 2s, e KILL em quem sobrar, com os filhos.
+sobras_do_bot() {
+    for _sp in /proc/[0-9]*; do
+        _sn=${_sp#/proc/}
+        [ "$_sn" = "$$" ] && continue
+        case "$(tr '\0' ' ' < "$_sp/cmdline" 2>/dev/null)" in
+            *"$LIBDIR/sls.sh"*|*"$LIBDIR/worker.sh"*) printf '%s ' "$_sn" ;;
+        esac
+    done
+    unset _sp _sn
+}
+sobras=$(sobras_do_bot)
+if [ -n "$sobras" ]; then
+    _ns=0
+    for pid in $sobras; do
+        kill -TERM "-$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null
+        _ns=$((_ns + 1))
+    done
+    _n=0
+    while [ -n "$sobras" ] && [ "$_n" -lt 10 ]; do
+        sleep 0.2
+        sobras=$(sobras_do_bot)
+        _n=$((_n + 1))
+    done
+    for pid in $sobras; do
+        pkill -KILL -P "$pid" 2>/dev/null
+        kill -KILL "-$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null
+    done
+    printf "  ${GOLD}[SEM .pid]${RESET} %s processo(s) do bot encerrado(s)\n" "$_ns"
+    stopped=$((stopped + _ns))
+    unset _ns _n
+fi
+unset sobras
 
 # Trava global de login: um worker morto segurando-a a deixa para tras, e
 # com o PID reciclado ela so cairia no teto de 180s. Tudo ja foi encerrado,

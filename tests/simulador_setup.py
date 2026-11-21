@@ -728,7 +728,9 @@ def bateria(amb):
        "git -c user.email=s@s -c user.name=sim commit -qam 'Simulador: atualizacao de teste (9.9.9)' && "
        "git push -q origin HEAD:main" % (amb.origem, outro, outro))
     t.linha('1')
-    tela = t.esperar('Subindo o bot...', 60)
+    tela = t.esperar('Iniciar o bot agora? (y/n): ', 60)
+    t.linha('y')
+    tela += t.esperar('Subindo o bot...', 30)
     checar('mostra a atualizacao nova', '1 atualizacao(oes)' in tela and 'Simulador: atualizacao de teste' in tela)
     checar('para o bot e atualiza', 'Parando o bot' in tela and 'Repositorio atualizado' in tela)
     checar('o git pull trouxe a mudanca', '<!-- simulador -->' in ler(amb.bot + '/README.md'))

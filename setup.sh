@@ -468,7 +468,8 @@ atualizar_menu() {
 }
 
 # Puxa o que mudou no GitHub, como no README: para o bot, "git pull
-# --ff-only" e sobe de novo. Sem nada novo, nao para nada.
+# --ff-only" e pergunta se sobe de novo ou volta ao menu. Sem nada novo,
+# nao para nada.
 git_pull_setup() {
     clear
     titulo "Atualizar Repositorio" "🔄"
@@ -510,11 +511,24 @@ git_pull_setup() {
     fi
     chmod +x "$SLSDIR"/*.sh 2>/dev/null
 
-    printf "\n%sSubindo o bot...\n" "$E_SOBE"
+    # Subir agora ou voltar ao menu (pedido do dono, 21/11): as vezes ainda
+    # ha o que fazer nele antes de o bot jogar.
+    printf "\n%sIniciar o bot agora? (y/n): " "$E_SOBE"
+    read -r _ini
+    case "$_ini" in
+        y|Y|s|S)
+            printf "\n%sSubindo o bot...\n" "$E_SOBE"
+            sleep 2
+            # O play.sh fica com o terminal (painel); o setup termina aqui.
+            printf '%s' "$NORMAL"
+            exec sh "$SLSDIR/play.sh" ;;
+    esac
+    printf "\nBot parado. Para subir depois: ${CYAN}8 - Iniciar Bot${RESET}.\n"
     sleep 2
-    # O play.sh fica com o terminal (painel); o setup termina aqui.
+    # O menu volta pelo setup.sh NOVO: o git pull pode te-lo trocado, e este
+    # processo ainda e o da versao antiga.
     printf '%s' "$NORMAL"
-    exec sh "$SLSDIR/play.sh"
+    exec sh "$SLSDIR/setup.sh"
 }
 
 # ---- 6. Modo de Batalha ----------------------------------------------------

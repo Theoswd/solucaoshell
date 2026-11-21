@@ -399,8 +399,27 @@ else
     bad "stop.sh nao remove a trava de login (restart pode atrasar 180s)"
 fi
 # stop.sh tambem derruba painel (status.sh) e tem redes de seguranca finais.
-grep -q 'pkill -f "\$LIBDIR/sls.sh"'    "$ROOT/stop.sh" && ok "stop.sh: rede de seguranca pkill sls.sh"    || bad "stop.sh sem pkill sls.sh"
-grep -q 'pkill -f "\$LIBDIR/worker.sh"' "$ROOT/stop.sh" && ok "stop.sh: rede de seguranca pkill worker.sh" || bad "stop.sh sem pkill worker.sh"
+# Rede de seguranca: sls.sh SEM .pid, parado num "sleep" com o trap de TERM
+# do sls.sh, tem de morrer (so TERM esperava o sleep acabar, e a conta seguia
+# jogando durante o "stop + git pull"). Copia isolada: o stop.sh daqui so
+# alcanca a lib/ da copia, nunca o bot de verdade rodando nesta pasta.
+if [ -d /proc/self ]; then
+    _sp8=`mktemp -d`; mkdir -p "$_sp8/bot/lib" "$_sp8/home/.sls/status"
+    cp "$ROOT/stop.sh" "$_sp8/bot/stop.sh"
+    sh -c 'trap "exit 143" TERM INT; while :; do sleep 30; done' "$_sp8/bot/lib/sls.sh" < /dev/null > /dev/null 2>&1 &
+    _sp8_w=$!
+    sh -c 'trap "exit 143" TERM INT; while :; do sleep 30; done' "$_sp8/bot/lib/worker.sh" < /dev/null > /dev/null 2>&1 &
+    _sp8_v=$!
+    sleep 1
+    HOME="$_sp8/home" sh "$_sp8/bot/stop.sh" < /dev/null > "$_sp8/saida" 2>&1
+    _r=""; for _p in $_sp8_w $_sp8_v; do kill -0 "$_p" 2>/dev/null && _r="${_r}vivo " || _r="${_r}morto "; done
+    kill -KILL $_sp8_w $_sp8_v 2>/dev/null; wait $_sp8_w $_sp8_v 2>/dev/null
+    check "stop.sh: sls.sh e worker.sh sem .pid, presos num sleep com trap, morrem" \
+        "morto morto |1" "$_r|`grep -c 'SEM .pid.* 2 processo' "$_sp8/saida"`"
+    rm -rf "$_sp8"; unset _sp8 _sp8_w _sp8_v _p
+else
+    ok "stop.sh: sem /proc aqui, nada a medir"
+fi
 
 printf "\n=== 12. Escala: isolamento por conta e serializacao do login ===\n"
 # Cada modulo de batalha grava seu estado APOS 'cd \"\$TMP\"' (TMP e por conta).
@@ -6260,25 +6279,32 @@ if [ -r "/proc/$$/cmdline" ]; then
     unset _h77 _p77a _p77b _p
 fi
 
-# Atualizar: sem novidade nao para o bot; com novidade para, puxa e sobe.
+# Atualizar: sem novidade nao para o bot; com novidade para, puxa e pergunta:
+# "y" sobe o bot, "n" (ou nada) volta ao menu pelo setup.sh novo.
 if command -v git > /dev/null 2>&1; then
     _g77="$_td77/git"; mkdir -p "$_g77"
     ( cd "$_g77" && git init -q --bare origem.git && git clone -q origem.git trab
       cd trab && git config user.email t@t && git config user.name t
       printf 'echo PAROU >> "%s/log"\n' "$_g77" > stop.sh
       printf 'echo SUBIU >> "%s/log"\n' "$_g77" > play.sh
+      printf 'echo MENU >> "%s/log"\n' "$_g77" > setup.sh
       git add . && git commit -qm um && git push -q origin HEAD
       git clone -q "$_g77/origem.git" "$_g77/bot" ) > /dev/null 2>&1
-    _gp77() {
-        ( HOME="$_g77/h"; _fn77; SLSDIR="$_g77/bot"; git_pull_setup ) > /dev/null 2>&1 < /dev/null
+    _gp77() { # resposta a "Iniciar o bot agora?"
+        printf '%s\n' "$1" | ( HOME="$_g77/h"; _fn77; SLSDIR="$_g77/bot"; git_pull_setup ) > /dev/null 2>&1
         tr '\n' ' ' < "$_g77/log" 2>/dev/null; rm -f "$_g77/log"
     }
-    check "atualizar: sem nada novo, o bot nao para" "" "`_gp77`"
-    ( cd "$_g77/trab" && echo novo > novo.txt && git add novo.txt && git commit -qm dois \
-      && git push -q origin HEAD ) > /dev/null 2>&1
-    check "atualizar: para o bot, puxa e sobe de novo" "PAROU SUBIU " "`_gp77`"
+    _gp77_novo() { # um commit novo no "GitHub"
+        ( cd "$_g77/trab" && echo "$1" > "$1.txt" && git add "$1.txt" && git commit -qm "$1" \
+          && git push -q origin HEAD ) > /dev/null 2>&1
+    }
+    check "atualizar: sem nada novo, o bot nao para" "" "`_gp77 y`"
+    _gp77_novo novo
+    check "atualizar: para o bot, puxa e, com y, sobe de novo" "PAROU SUBIU " "`_gp77 y`"
     [ -f "$_g77/bot/novo.txt" ] && ok "atualizar: o git pull trouxe o arquivo novo" \
         || bad "atualizar: o arquivo novo nao chegou"
+    _gp77_novo outro
+    check "atualizar: com n, para o bot e volta ao menu (setup.sh novo), sem subir" "PAROU MENU " "`_gp77 n`"
     unset _g77
 fi
 
