@@ -15,18 +15,24 @@
 # SEMPRE: sem energia nao golpeia, abre a oferta "Настойка бодрости ... 308
 # золота" (pagina real de 20/11/2026). Por isso o bot nunca o clica.
 # Nunca gasta ouro (botao_pago).
+# Pedido sem resposta aparece como tal no log: antes a pagina vazia virava
+# "sem energia" e o golpe sem resposta era mostrado como feito.
 bossfight_func() {
     printf "Chefe\n"
-    fetch_page "/bossfight/"
+    if ! fetch_page "/bossfight/"; then
+        printf "  Chefe: sem resposta - tenta na proxima volta\n"
+        return 0
+    fi
     # A pagina traz o & cru (href="/bossfight/?usemana=1&r=N", 20/11/2026).
     _bf=`grep -o -E "/bossfight/[?]usemana=1&r=[0-9]+" "$TMP/SRC" | sed -n 1p`
     if [ -z "$_bf" ]; then
         printf "  Chefe: sem energia para um golpe agora\n"
     elif botao_pago "$TMP/SRC" "$_bf"; then
         printf "  Chefe: golpe cobra ouro - para aqui\n"
-    else
-        fetch_page "$_bf"
+    elif fetch_page "$_bf"; then
         printf "  Chefe: %s\n" "$_bf"
+    else
+        printf "  Chefe: golpe sem resposta (%s) - tenta na proxima volta\n" "$_bf"
     fi
     unset _bf
 }

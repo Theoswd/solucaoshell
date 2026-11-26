@@ -263,7 +263,7 @@ league_play() {
             check_fights)
                 liga_ler
                 cp "$TMP/LEAGUE_SRC" "$TMP/SRC" 2>/dev/null
-                click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
+                click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]+" "$TMP/SRC" | sed -n "${j}p"`
 
                 if [ -n "$click" ]; then
                     ENEMY_NUMBER=`echo "$click" | grep -o -E '[0-9]+' | head -n 1`
@@ -295,7 +295,7 @@ league_play() {
                     fights_done=$((fights_done + 1))
                     enemy_index=1
                     j=1
-                    last_click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
+                    last_click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]+" "$TMP/SRC" | sed -n "${j}p"`
                     ENEMY_NUMBER=`echo "$last_click" | grep -o -E '[0-9]+' | head -n 1`
                     fetch_available_fights
                     action="check_fights"
@@ -323,13 +323,13 @@ league_play() {
                     printf "Strength (%s) < enemy (%s). Skipping.\n" "$PLAYER_STRENGTH" "$E_STRENGTH"
                     enemy_index=$((enemy_index + 1))
                     j=$((j + 2))
-                    last_click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
+                    last_click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]+" "$TMP/SRC" | sed -n "${j}p"`
                     ENEMY_NUMBER=`echo "$last_click" | grep -o -E '[0-9]+' | head -n 1`
                     # Pular nao muda o contador: a pagina lida continua valendo.
                     if [ -z "$last_click" ] && [ "$AVAILABLE_FIGHTS" -gt 1 ]; then
                         printf "Reached the last enemy. Attacking and using a potion...\n"
                         j=$((j - 2))
-                        click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]{1,8}" "$TMP/SRC" | sed -n "${j}p"`
+                        click=`grep -o -E "/league/fight/[0-9]{1,3}/\?r=[0-9]+" "$TMP/SRC" | sed -n "${j}p"`
                         fetch_page "$click"
                         fights_done=$((fights_done + 1))
                         fetch_available_fights
@@ -364,6 +364,14 @@ league_play() {
                             printf "[LIGA] A pocao nao respondeu (rede) - volta na proxima passagem.\n"
                             action="exit_loops"
                         fi
+                    elif [ -z "$last_click" ]; then
+                        # Ultima luta do dia e todos mais fortes (a pocao so
+                        # vale com 2+ lutas): sem a anotacao a Liga voltava a
+                        # cada 30 min, pulava os quatro e retomava as missoes
+                        # 1 e 2 do cla ("No fight buttons found for button 9").
+                        printf "[LIGA] Resta 1 luta e os adversarios sao mais fortes - volta as 00:30.\n"
+                        _lg_travada=1
+                        action="exit_loops"
                     else
                         action="check_fights"
                     fi

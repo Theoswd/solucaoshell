@@ -2972,9 +2972,9 @@ printf "\n=== 45. Liga sem pocao, link vazio ou repetido, uninstall por atalho e
 _td10=`mktemp -d`
 
 # Liga com todos os adversarios mais fortes: ataca o ultimo e busca a pocao.
-_liga45() { # pocao(sim|nao) -> "lutas=N alvos=A,B pocao=N POTION=S|N"
-    ( TMP="$_td10/c$1"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"
-      echo 3 > "$TMP/sim_lutas"; echo "$1" > "$TMP/sim_pocao"; : > "$TMP/sim_req"
+_liga45() { # pocao(sim|nao) [lutas] -> "lutas=N alvos=A,B pocao=N POTION=S|N"
+    ( TMP="$_td10/c$1$2"; URL="http://jogo"; export TMP URL; mkdir -p "$TMP"
+      echo "${2:-3}" > "$TMP/sim_lutas"; echo "$1" > "$TMP/sim_pocao"; : > "$TMP/sim_req"
       . "$LIB/league.sh" > /dev/null 2>&1
       load_config() { :; }; checkQuest() { return 1; }; get_config() { echo 5; }
       player_stats() { echo 3165; }; sleep() { :; }
@@ -3006,6 +3006,13 @@ check "Liga sem pocao: ataca o ultimo e sai, sem luta forcada" "lutas=1 alvos=33
 check "Liga com pocao: usa e ataca o 1o" "lutas=2 alvos=332,302 pocao=1 POTION=N" "`_liga45 sim`"
 check "Liga: pocao sem resposta avisa rede e sai" "lutas=1 alvos=332 pocao=1 POTION=N rede" \
     "`_liga45 rede; grep -q 'A pocao nao respondeu' "$_td10/crede/saida" && printf ' rede'`"
+# Resta 1 luta e todos mais fortes: nao luta e anota a volta as 00:30 (antes
+# voltava a cada 30 min o dia inteiro, tomando as missoes do cla).
+check "Liga: 1 luta e todos mais fortes - volta as 00:30" "lutas=0 alvos= pocao=0 POTION=N 0030" \
+    "`_liga45 sim 1; [ -s "$_td10/csim1/league_restauro" ] && printf ' 0030'`"
+# Codigo ?r= com 9 digitos: o {1,8} cortava o numero e a luta saia com o codigo errado.
+check "Liga: codigo ?r= do link lido inteiro (sem teto de 8 digitos)" "0" \
+    "`grep -c 'r=\[0-9\]{1,8}' "$LIB/league.sh"`"
 unset -f _liga45
 
 _r=$( TMP="$_td10/fp"; mkdir -p "$TMP"; . "$LIB/info.sh" > /dev/null 2>&1
@@ -4666,6 +4673,8 @@ _bf96() {
       cq_ativa() { echo "ativa:$1" >> "$TMP/req"; [ "$C" = ativa ] && [ "$1" = 4 ]; }
       fetch_page() { echo "$1" >> "$TMP/req"
           case "$C:$1" in
+              semrede:/bossfight/) : > "$TMP/SRC"; return 1 ;;
+              golperede:/bossfight/\?*) : > "$TMP/SRC"; return 1 ;;
               *:/bossfight/\?*) echo "golpe" > "$TMP/SRC" ;;
               umgolpe:/bossfight/) echo '<a href="/bossfight/?attack=1&r=5" class="nbtn1"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
               ouro:/bossfight/) echo '<a href="/bossfight/?usemana=1&r=5"><img src="/images/icon/gold.png"/> 5</a>' > "$TMP/SRC" ;;
@@ -4673,11 +4682,16 @@ _bf96() {
               *:/bossfight/) echo '<a href="/bossfight/?usemana=1&r=5" class="nbtn1"><span>Все удары</span></a> <a href="/bossfight/?attack=1&r=5"><span>1 УДАР</span></a>' > "$TMP/SRC" ;;
           esac; }
       case "$C" in
-          cheia) arena_fullmana > /dev/null 2>&1 ;;
-          *) energia_ru > /dev/null 2>&1 ;;
+          cheia) arena_fullmana > "$TMP/saida" 2>&1 ;;
+          *) energia_ru > "$TMP/saida" 2>&1 ;;
       esac
       tr '\n' ' ' < "$TMP/req" )
 }
+# Pedido sem resposta nao vira "sem energia" nem golpe feito no log.
+check "RU: chefe sem resposta nao vira 'sem energia'" "/bossfight/ |1|0" \
+    "`_bf96 semrede | sed 's/^missao:arena ativa:3 ativa:4 //'`|`grep -c 'Chefe: sem resposta' "$_td20/bf96_semrede/saida"`|`grep -c 'sem energia' "$_td20/bf96_semrede/saida"`"
+check "RU: golpe sem resposta nao aparece como feito" "1" \
+    "`_bf96 golperede > /dev/null; grep -c 'golpe sem resposta' "$_td20/bf96_golperede/saida"`"
 check "RU: missao de arena do cla tomada/ajudada -> arena" "missao:arena arena " "`_bf96 toma`"
 check "RU: missao de arena ja com a conta -> arena" "missao:arena ativa:3 ativa:4 arena " "`_bf96 ativa`"
 check "RU: sem missao de arena -> todos os golpes no chefe" \
