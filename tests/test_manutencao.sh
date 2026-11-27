@@ -6622,6 +6622,25 @@ check "modulos: inscricoes pelo evento_inscrever, sem endereco fixo no run_curl_
     "king=2/0 clanfight=2/0 clandmg=3/0 clancoliseum=1/0 flagfight=1/0 " "$_r"
 rm -rf "$_td79"; unset _td79 _r _m79
 
+printf "\n=== 136. Painel recem-aberto depois de atualizar nao pede reinicio ===\n"
+# O setup.sh abre o play.sh por exec (mesmo PID de antes do git pull): o
+# aviso comparava o codigo com o /proc/$$ e pedia "reinicie" logo apos subir.
+_td136=`mktemp -d`
+_r=$( SLSDIR="$_td136/bot"; LIBDIR="$SLSDIR/lib"; STATUS_DIR="$_td136/status"
+      mkdir -p "$LIBDIR" "$STATUS_DIR"; : > "$SLSDIR/play.sh"; : > "$LIBDIR/sls.sh"
+      touch -t 202001010000 "$SLSDIR/play.sh" "$LIBDIR/sls.sh"
+      # Marca velha do mesmo PID (painel antes do exec) e de um PID que saiu.
+      : > "$STATUS_DIR/.painel.$$"; touch -t 200001010000 "$STATUS_DIR/.painel.$$"
+      : > "$STATUS_DIR/.painel.999999999"
+      . "$LIB/panel.sh" > /dev/null 2>&1
+      painel_marcar_inicio
+      painel_desatualizado && printf 'aviso ' || printf 'quieto '
+      [ -f "$STATUS_DIR/.painel.999999999" ] && printf 'sobrou ' || printf 'limpo '
+      touch -t 209901010000 "$LIBDIR/sls.sh"
+      painel_desatualizado && printf 'aviso' || printf 'quieto' )
+check "painel: aberto apos o pull fica quieto, codigo mais novo depois avisa" "quieto limpo aviso" "$_r"
+rm -rf "$_td136"; unset _td136 _r
+
 printf "\n=== RESUMO ===\n"
 printf "  PASS=%s  FALHA=%s\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

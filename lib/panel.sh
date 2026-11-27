@@ -560,11 +560,27 @@ evento_da_pagina_v() {
 # O painel le o panel.sh so ao subir; depois de um git pull um painel aberto
 # (no tmux, que sobrevive ao ./stop.sh) seguiria com o codigo velho sem aviso.
 # A data de /proc/$$ e a hora em que o processo comecou; "-nt" e do shell.
+# Marca o inicio DESTE painel ($STATUS_DIR/.painel.PID). O /proc/$$ nao
+# serve: o setup.sh chega ao play.sh/status.sh por exec, com o PID de antes
+# do git pull, e o painel recem-aberto pedia "reinicie" logo depois de
+# atualizar. Marcas de paineis que ja sairam sao apagadas aqui.
+painel_marcar_inicio() {
+    for _pd_f in "$STATUS_DIR"/.painel.*; do
+        [ -f "$_pd_f" ] || continue
+        kill -0 "${_pd_f##*.}" 2>/dev/null || rm -f "$_pd_f"
+    done
+    _PD_MARCA="$STATUS_DIR/.painel.$$"
+    # Recriada (nao so truncada): mesmo PID depois do exec, hora nova.
+    rm -f "$_PD_MARCA"
+    : > "$_PD_MARCA" 2>/dev/null || _PD_MARCA="/proc/$$"
+    unset _pd_f
+}
+
 painel_desatualizado() {
     # Raiz (comandos) e lib/ (motor): um pull pode tocar so no motor.
     for _pd_f in "$SLSDIR"/*.sh "$LIBDIR"/*.sh; do
         [ -f "$_pd_f" ] || continue
-        if [ "$_pd_f" -nt "/proc/$$" ]; then unset _pd_f; return 0; fi
+        if [ "$_pd_f" -nt "${_PD_MARCA:-/proc/$$}" ]; then unset _pd_f; return 0; fi
     done
     unset _pd_f
     return 1
@@ -1055,6 +1071,8 @@ worker_vivo_painel() { # pid pasta (usa $idx, a posicao da conta)
 }
 
 painel_loop() {
+# Aqui, fora do rodape: ele roda num subshell e a marca se perderia.
+painel_marcar_inicio
 while true; do
     # O que o "clear" escreve num xterm (Termux e WSL), sem o processo.
     [ -t 1 ] && [ "${PANEL_ONCE:-0}" != "1" ] && printf '\033[H\033[2J\033[3J'
