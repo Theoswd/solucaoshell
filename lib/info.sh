@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Versao global: o messages_info a imprime.
-versionNum="3.9.134"
+versionNum="3.9.135"
 # Aguarda o ultimo job em background ($! direto: PID pode ter 7+ digitos).
 # O argumento (segundos) e ignorado: quem corta e o --max-time do curl.
 time_exit() {
@@ -29,7 +29,11 @@ time_exit() {
 
     # 28 = CURLE_OPERATION_TIMEDOUT.
     if [ "$_te_rc" = "28" ]; then
-        printf "timeout: requisicao abortada\n" >> "${TMP:-.}/ERROR_DEBUG"
+        # Pagina e hora: sem elas as milhares de linhas nao diziam onde nem
+        # quando (queda do servidor ou um evento que sempre falha).
+        _te_u=; { read -r _te_u < "${TMP:-.}/.ult_req"; } 2>/dev/null
+        printf "timeout: requisicao abortada (%s, %s)\n" "${_te_u:-?}" "`date '+%d/%m %H:%M'`" >> "${TMP:-.}/ERROR_DEBUG"
+        unset _te_u
         unset _te_rc
         return 1
     fi
@@ -278,7 +282,7 @@ fetch_page() {
     [ -s "${TMP:-.}/.req_meta" ] && tele_registrar "$_fp_rc"
 
     if [ "$_fp_rc" != "0" ]; then
-        printf "curl %s: %s\n" "$_fp_rc" "$relative_url" >> "${TMP:-.}/ERROR_DEBUG"
+        printf "curl %s: %s (%s)\n" "$_fp_rc" "$relative_url" "`date '+%d/%m %H:%M'`" >> "${TMP:-.}/ERROR_DEBUG"
         # O painel mostra o codigo junto do "sem resposta" (60 = certificado).
         printf %s "$_fp_rc" > "${TMP:-.}/.curl_erro" 2>/dev/null
         unset _fp_rc
